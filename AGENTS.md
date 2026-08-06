@@ -39,9 +39,12 @@ Complete the CDS-001 five-hat review and architecture-drift check at every gate.
 - Respect dependency direction and modular-monolith boundaries; do not add microservices.
 - Stop at the assigned layer. Report missing specifications rather than inventing behavior.
 
+## Authorized artifacts
+
+Every CDD must contain an explicit `AUTHORIZED ARTIFACTS` section listing the exact Entities, Services, Value Objects, and Enums that may be created. Each category must use an exhaustive list or state `None`. Examples, open-ended categories, and instructions to infer artifacts from another source do not constitute authorization. Everything not listed is prohibited. If the section is absent, incomplete, or ambiguous, stop and report the missing authorization before implementation.
+
 ## Prompt rules
 
 - Treat CDS, CDD, Constitution, RFC, TAS, logical model, physical model, attribute dictionary, and dataset documents as authoritative.
 - Perform an architecture-drift check before completion.
 - Record design decisions, alternatives, and rejection reasons.
-
