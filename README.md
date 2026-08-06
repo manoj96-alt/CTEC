@@ -28,4 +28,4 @@ make format
 make typecheck
 ```
 
-`make migrate` and `make seed` are reserved command contracts. They intentionally stop with an explanatory message until a later CDD authorizes persistence and dataset-loading behavior.
+CDD-002 activates `make migrate`, `make seed`, and `make reset-db`. See [PERSISTENCE-001](docs/persistence/PERSISTENCE-001.md) before using destructive reset behavior.
