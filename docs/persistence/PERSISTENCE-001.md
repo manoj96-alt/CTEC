@@ -1,7 +1,7 @@
 # PERSISTENCE-001 — Canonical Persistence Architecture
 
 Version: 1.0  
-Status: Development under CDD-002
+Status: Frozen with CDD-002
 
 ## Purpose
 
@@ -76,4 +76,3 @@ Future identity, semantic, assertion, knowledge, decision, reasoning, memory, le
 - Learning
 - REST business APIs
 - Model redesign or convenience columns
-

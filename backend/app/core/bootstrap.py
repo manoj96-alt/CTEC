@@ -9,9 +9,9 @@ BOOTSTRAP_STATUS = "Active"
 SEED_TIMESTAMP = datetime.fromisoformat("2026-01-01T00:00:00+00:00")
 SEED_VERSION = "EDT-001-V3"
 
-# Deterministic support records required by the frozen Physical Model to host
-# the constitutional bootstrap Enterprise Entity. These are implementation
-# identities, not additional model entities or attributes.
+# Implementation support constants. Not part of the Canonical Logical Model.
+# Required solely to satisfy referential integrity during deterministic bootstrap;
+# these identities do not introduce additional business entities or attributes.
 BOOTSTRAP_ENTERPRISE_TYPE_ID = UUID("00000000-0000-0000-0000-000000000002")
 BOOTSTRAP_COUNTRY_ID = UUID("00000000-0000-0000-0000-000000000003")
 BOOTSTRAP_ENTERPRISE_ID = UUID("00000000-0000-0000-0000-000000000004")
