@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ctec}
+      POSTGRES_USER: ${POSTGRES_USER:-ctec}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ctec}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  backend:
+    build: ./backend
+    environment:
+      CTEC_ENVIRONMENT: ${CTEC_ENVIRONMENT:-development}
+      CTEC_LOG_LEVEL: ${CTEC_LOG_LEVEL:-INFO}
+      CTEC_CORS_ORIGINS: ${CTEC_CORS_ORIGINS:-["http://localhost:3000"]}
+      CTEC_DATABASE_URL: ${CTEC_DATABASE_URL:-postgresql+psycopg://ctec:ctec@postgres:5432/ctec}
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports: ["3000:3000"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  postgres_data:
