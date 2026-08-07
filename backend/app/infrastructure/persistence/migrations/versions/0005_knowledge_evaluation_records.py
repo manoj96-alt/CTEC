@@ -6,7 +6,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0005_knowledge_evaluation_records"
+revision: str = "0005_knowledge_evaluation"
 down_revision: str | None = "0004_assertion_records"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
