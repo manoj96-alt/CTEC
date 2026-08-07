@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     assertion_candidate_threshold: float = Field(default=0.65, ge=0, le=1)
     assertion_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
     assertion_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
+    knowledge_policy_version: str = "KRM-001-v1.2-default"
+    knowledge_authorized_acceptance_authorities: list[str] = Field(default_factory=list)
+    knowledge_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
+    knowledge_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
 
 
 @lru_cache
