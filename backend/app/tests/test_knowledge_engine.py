@@ -298,7 +298,7 @@ def test_knowledge_migration_and_immutability(migrated_engine: Engine) -> None:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         trigger_count = connection.execute(
             text(
-                "SELECT count(*) FROM information_schema.triggers "
+                "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers "
                 "WHERE trigger_name = 'knowledge_evaluation_records_immutable'"
             )
         ).scalar_one()
