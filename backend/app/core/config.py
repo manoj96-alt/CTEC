@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     resolution_possible_threshold: float = Field(default=0.65, ge=0, le=1)
     resolution_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
     resolution_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
+    semantic_policy_version: str = "SRM-001-v2.1-default"
+    semantic_resolved_threshold: float = Field(default=0.9, ge=0, le=1)
+    semantic_possible_threshold: float = Field(default=0.65, ge=0, le=1)
+    semantic_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
+    semantic_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
 
 
 @lru_cache
