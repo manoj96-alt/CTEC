@@ -25,7 +25,7 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
             )
         ).scalar_one()
         assert revision == "0006_decision_evaluation"
-    assert table_count == 41
+        assert table_count == 42
 
 
 def test_repository_crud(migrated_engine: Engine) -> None:
