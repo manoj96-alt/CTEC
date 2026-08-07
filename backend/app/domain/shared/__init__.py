@@ -1,0 +1,1 @@
+"""Authorized shared domain artifacts."""
