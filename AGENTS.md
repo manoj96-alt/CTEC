@@ -19,6 +19,8 @@ Every CDD must pass CR-001 before it can be frozen:
 
 Complete the CDS-001 five-hat review and architecture-drift check at every gate.
 
+If a CDD references an approved Business Capability Specification (BCS), that BCS is the sole authority for business semantics. Reviewers must not require duplication of those semantics within the CDD.
+
 ## Git workflow
 
 - Keep commits scoped to one assigned layer or review correction.
