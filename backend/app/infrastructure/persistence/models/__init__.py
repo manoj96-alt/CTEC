@@ -2,6 +2,12 @@
 from app.infrastructure.persistence.models.accountable_owner import AccountableOwner
 from app.infrastructure.persistence.models.assertion import Assertion
 from app.infrastructure.persistence.models.assertion_evidence import AssertionEvidence
+from app.infrastructure.persistence.models.assertion_record import (
+    AssertionRecordEntityResolutionEvidenceModel,
+    AssertionRecordHistoryModel,
+    AssertionRecordModel,
+    AssertionRecordSemanticResolutionEvidenceModel,
+)
 from app.infrastructure.persistence.models.business_domain import BusinessDomain
 from app.infrastructure.persistence.models.context import Context
 from app.infrastructure.persistence.models.country import Country
@@ -56,6 +62,10 @@ __all__ = [
     "AccountableOwner",
     "Assertion",
     "AssertionEvidence",
+    "AssertionRecordEntityResolutionEvidenceModel",
+    "AssertionRecordHistoryModel",
+    "AssertionRecordModel",
+    "AssertionRecordSemanticResolutionEvidenceModel",
     "BusinessDomain",
     "Context",
     "Country",
