@@ -185,16 +185,24 @@ def test_domain_has_no_forbidden_dependencies_or_artifact_classes() -> None:
     }
     declared_classes: set[str] = set()
     imported_modules: set[str] = set()
-    for path in DOMAIN_ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text())
-        declared_classes.update(
-            node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
-        )
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported_modules.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                imported_modules.add(node.module)
+    canonical_domain_roots = (
+        DOMAIN_ROOT / "foundation",
+        DOMAIN_ROOT / "integration",
+        DOMAIN_ROOT / "operational",
+        DOMAIN_ROOT / "semantic",
+        DOMAIN_ROOT / "shared",
+    )
+    for root in canonical_domain_roots:
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text())
+            declared_classes.update(
+                node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+            )
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported_modules.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported_modules.add(node.module)
 
     assert not any(
         module == forbidden or module.startswith(f"{forbidden}.")

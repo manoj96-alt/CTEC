@@ -11,6 +11,10 @@ from app.infrastructure.persistence.models.decision_state import DecisionState
 from app.infrastructure.persistence.models.enterprise import Enterprise
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
 from app.infrastructure.persistence.models.enterprise_type import EnterpriseType
+from app.infrastructure.persistence.models.entity_resolution import (
+    EnterpriseEntityResolutionHistoryModel,
+    EnterpriseEntityResolutionRecordModel,
+)
 from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.evidence import Evidence
 from app.infrastructure.persistence.models.experience import Experience
@@ -56,6 +60,8 @@ __all__ = [
     "DecisionState",
     "Enterprise",
     "EnterpriseEntity",
+    "EnterpriseEntityResolutionHistoryModel",
+    "EnterpriseEntityResolutionRecordModel",
     "EnterpriseType",
     "EntityType",
     "Evidence",

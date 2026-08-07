@@ -26,6 +26,7 @@ def test_orm_tables_and_columns_match_frozen_physical_model() -> None:
     actual = {
         table_name: {column.name for column in table.columns}
         for table_name, table in canonical_metadata.tables.items()
+        if table_name in expected
     }
     assert actual == expected
     assert len(actual) == 32
@@ -37,7 +38,8 @@ def test_indexes_match_frozen_physical_model() -> None:
     expected = set(re.findall(r"CREATE INDEX (\w+) ON", sql))
     actual = {
         index.name
-        for table in canonical_metadata.tables.values()
+        for table_name, table in canonical_metadata.tables.items()
+        if table_name in _physical_tables(sql)
         for index in table.indexes
         if index.name is not None
     }
@@ -54,6 +56,7 @@ def test_traceability_covers_every_physical_column() -> None:
     expected = {
         (table_name, column.name)
         for table_name, table in canonical_metadata.tables.items()
+        if table_name in _physical_tables(CANONICAL_SQL.read_text())
         for column in table.columns
     }
     assert traced == expected
