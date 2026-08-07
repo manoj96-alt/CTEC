@@ -6,9 +6,6 @@ from app.infrastructure.persistence.repositories.accountable_owner_repository im
 from app.infrastructure.persistence.repositories.assertion_evidence_repository import (
     AssertionEvidenceRepository,
 )
-from app.infrastructure.persistence.repositories.assertion_repository import (
-    AssertionRepository,
-)
 from app.infrastructure.persistence.repositories.business_domain_repository import (
     BusinessDomainRepository,
 )
@@ -107,7 +104,6 @@ REPOSITORY_TYPES = {
     EntityType: EntityTypeRepository,
     EnterpriseEntity: EnterpriseEntityRepository,
     Evidence: EvidenceRepository,
-    Assertion: AssertionRepository,
     InstitutionalRelationship: InstitutionalRelationshipRepository,
     Knowledge: KnowledgeRepository,
     Reason: ReasonRepository,

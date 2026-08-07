@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     semantic_possible_threshold: float = Field(default=0.65, ge=0, le=1)
     semantic_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
     semantic_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
+    assertion_policy_version: str = "ASM-001-v2.0-default"
+    assertion_established_threshold: float = Field(default=0.9, ge=0, le=1)
+    assertion_candidate_threshold: float = Field(default=0.65, ge=0, le=1)
+    assertion_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
+    assertion_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
 
 
 @lru_cache
