@@ -39,6 +39,9 @@ from app.infrastructure.persistence.models.institutional_relationship_assertion 
     InstitutionalRelationshipAssertions,
 )
 from app.infrastructure.persistence.models.knowledge import Knowledge
+from app.infrastructure.persistence.models.knowledge_evaluation import (
+    KnowledgeEvaluationRecordModel,
+)
 from app.infrastructure.persistence.models.occasion import Occasion
 from app.infrastructure.persistence.models.outcome import Outcome
 from app.infrastructure.persistence.models.pattern_of_relevance import (
@@ -87,6 +90,7 @@ __all__ = [
     "InstitutionalRelationship",
     "InstitutionalRelationshipAssertions",
     "Knowledge",
+    "KnowledgeEvaluationRecordModel",
     "Occasion",
     "Outcome",
     "PatternOfRelevance",
