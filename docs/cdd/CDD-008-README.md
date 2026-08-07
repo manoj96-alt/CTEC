@@ -65,3 +65,5 @@ docs/cdd/
 
 - `backend/app/core/config.py`
 - `backend/app/infrastructure/persistence/models/__init__.py`
+- `backend/app/tests/test_knowledge_engine.py`
+- `backend/app/tests/test_persistence_integration.py`
