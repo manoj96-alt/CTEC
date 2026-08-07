@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     knowledge_authorized_acceptance_authorities: list[str] = Field(default_factory=list)
     knowledge_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
     knowledge_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
+    decision_policy_reference: str = "DRM-001-default-policy"
+    decision_policy_version: str = "DRM-001-v1.1-default"
+    decision_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
+    decision_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
 
 
 @lru_cache

@@ -12,6 +12,7 @@ from app.infrastructure.persistence.models.business_domain import BusinessDomain
 from app.infrastructure.persistence.models.context import Context
 from app.infrastructure.persistence.models.country import Country
 from app.infrastructure.persistence.models.decision import Decision
+from app.infrastructure.persistence.models.decision_evaluation import DecisionEvaluationORM
 from app.infrastructure.persistence.models.decision_objective import DecisionObjective
 from app.infrastructure.persistence.models.decision_state import DecisionState
 from app.infrastructure.persistence.models.enterprise import Enterprise
@@ -73,6 +74,7 @@ __all__ = [
     "Context",
     "Country",
     "Decision",
+    "DecisionEvaluationORM",
     "DecisionObjective",
     "DecisionState",
     "Enterprise",
