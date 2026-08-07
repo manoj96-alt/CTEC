@@ -19,6 +19,8 @@ Every CDD must pass CR-001 before it can be frozen:
 
 Complete the CDS-001 five-hat review and architecture-drift check at every gate.
 
+If a CDD references an approved Business Capability Specification (BCS), that BCS is the sole authority for business semantics. Reviewers must not require duplication of those semantics within the CDD.
+
 ## Git workflow
 
 - Keep commits scoped to one assigned layer or review correction.
@@ -41,7 +43,7 @@ Complete the CDS-001 five-hat review and architecture-drift check at every gate.
 
 ## Authorized artifacts
 
-Every CDD must contain an explicit `AUTHORIZED ARTIFACTS` section listing the exact Entities, Services, Value Objects, and Enums that may be created. Each category must use an exhaustive list or state `None`. Examples, open-ended categories, and instructions to infer artifacts from another source do not constitute authorization. Everything not listed is prohibited. If the section is absent, incomplete, or ambiguous, stop and report the missing authorization before implementation.
+Every CDD must contain an explicit `AUTHORIZED ARTIFACTS` section listing the exact business Entities, Services, Value Objects, and Enums it may implement, or explicitly incorporate the authoritative business artifacts of an approved Business Capability Model. Private implementation artifacts are engineering responsibilities and need no architectural authorization unless they become externally visible, change canonical business semantics, or cross an architecture boundary. Examples, datasets, and adjacent layers do not authorize business artifacts. If business authorization is absent or ambiguous, stop before implementation.
 
 ## Prompt rules
 
