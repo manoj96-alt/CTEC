@@ -3,6 +3,22 @@ on: [push, pull_request]
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ctec_test
+          POSTGRES_USER: ctec
+          POSTGRES_PASSWORD: ctec
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ctec -d ctec_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CTEC_TEST_DATABASE_URL: postgresql+psycopg://ctec:ctec@localhost:5432/ctec_test
+      CTEC_DATABASE_URL: postgresql+psycopg://ctec:ctec@localhost:5432/ctec_test
     defaults: { run: { working-directory: backend } }
     steps:
       - uses: actions/checkout@v4

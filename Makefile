@@ -1,4 +1,4 @@
-.PHONY: run test lint format typecheck migrate seed
+.PHONY: run test lint format typecheck migrate seed reset-db
 run:
 	docker compose up --build
 test:
@@ -14,8 +14,8 @@ typecheck:
 	cd backend && mypy app
 	cd frontend && npm run typecheck
 migrate:
-	@echo "Unavailable in CDD-001: persistence migrations belong to a later assigned layer."
-	@exit 2
+	cd backend && alembic -c alembic.ini upgrade head
 seed:
-	@echo "Unavailable in CDD-001: dataset loading and database seeding belong to a later assigned layer."
-	@exit 2
+	cd backend && python -m app.infrastructure.persistence.database_cli seed ../datasets/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip
+reset-db:
+	cd backend && python -m app.infrastructure.persistence.database_cli reset-db
