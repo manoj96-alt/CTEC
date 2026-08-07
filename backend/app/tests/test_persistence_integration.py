@@ -24,8 +24,8 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert revision == "0005_knowledge_evaluation"
-    assert table_count == 41
+        assert revision == "0006_decision_evaluation"
+        assert table_count == 42
 
 
 def test_repository_crud(migrated_engine: Engine) -> None:
