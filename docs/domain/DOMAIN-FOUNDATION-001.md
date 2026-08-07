@@ -1,11 +1,12 @@
-# DOMAIN-FOUNDATION-001 — Foundation Reference Model
+# DOMAIN-FOUNDATION-001 — Canonical Enterprise Ontology
 
-Version: 1.0  
-Status: Development under CDD-003
+Version: 2.0
+
+Status: Development under CDD-003 Revision 2
 
 ## Purpose
 
-The Foundation Reference Model expresses the stable enterprise vocabulary authorized by CDD-003. It is a business ontology implemented in pure Python and is independent of persistence, APIs, frameworks, datasets, and deployment technology.
+The Canonical Enterprise Ontology expresses the stable foundation and operational enterprise vocabulary required by EAH-001 and RFC-010. It is a business ontology implemented in pure Python and is independent of persistence, APIs, frameworks, datasets, and deployment technology.
 
 ## Authorized entities
 
@@ -19,7 +20,17 @@ The Foundation Reference Model expresses the stable enterprise vocabulary author
 | Entity Type | Governed classification under an Institutional Concept | References Institutional Concept |
 | Relationship Type | Governed vocabulary for relationships | Referenced by later operational layers |
 
-No other entity is implemented.
+The following three operational entities complete the RFC-010 ontology.
+
+## Operational Canonical Enterprise Ontology
+
+| Entity | Enterprise meaning | Canonical relationships |
+| --- | --- | --- |
+| Enterprise Entity | A uniquely identifiable real-world thing recognized by the enterprise | Classified by Entity Type; owned by Business Domain |
+| Source System | An external system from which source records originate | Provides Source Objects |
+| Source Object | An ungoverned source record preserved at the enterprise boundary | Originates from Source System |
+
+These entities remain structural. Enterprise Entity does not perform identity matching. Source System does not implement a connector. Source Object records provenance and receives no semantic or institutional standing.
 
 ## Value objects
 
@@ -98,5 +109,8 @@ Business rules, workflows, lifecycle transitions, governance decisions, identity
 | Institutional Concept | Understandable as institutionally defined meaning | Recognizable governed semantic concept | Exact constitutional term | None |
 | Entity Type | Understandable classification of enterprise things | Recognizable canonical classification | Exact canonical term | None |
 | Relationship Type | Understandable governed relationship vocabulary | Recognizable semantic relationship definition | Exact canonical term | None |
+| Enterprise Entity | Recognizable supplier, product, facility, person, or organization | Recognizable canonical identity target | Exact RFC-010 term | None |
+| Source System | Recognizable SAP, Oracle, PLM, or another originating system | Recognizable provenance authority | Exact RFC-010 term | None |
+| Source Object | Recognizable original system record | Recognizable ungoverned provenance record | Exact RFC-010 term | None |
 
 The canonical names are retained because clearer substitutes would weaken alignment with the Constitution, Logical Model, and EAD. Python-specific terminology is confined to implementation mechanics and does not enter entity names or attributes.
