@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     database_max_overflow: int = Field(default=10, ge=0)
     database_pool_timeout_seconds: int = Field(default=30, ge=1)
     dataset_archive_path: str = "datasets/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip"
+    resolution_policy_version: str = "ERM-001-v2.1-default"
+    resolution_resolved_threshold: float = Field(default=0.9, ge=0, le=1)
+    resolution_possible_threshold: float = Field(default=0.65, ge=0, le=1)
+    resolution_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
+    resolution_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
 
 
 @lru_cache
