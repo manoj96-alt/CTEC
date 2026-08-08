@@ -13,7 +13,7 @@ from app.domain.shared.enums import GovernanceStatus, LifecycleState
 from app.domain.shared.exceptions import ValidationException
 from app.domain.shared.value_objects import CanonicalName, Identifier
 
-EAD_PATH = Path("../docs/persistence/traceability/EAD-001-v1.3.json")
+EAD_PATH = Path("../../docs/persistence/traceability/EAD-001-v1.3.json")
 IDENTIFIER = Identifier(UUID("20000000-0000-0000-0000-000000000001"))
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 

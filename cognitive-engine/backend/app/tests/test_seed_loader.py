@@ -8,7 +8,7 @@ from app.infrastructure.persistence.models.source_object import SourceObject
 from app.infrastructure.persistence.seed_loader import SeedLoader
 from app.infrastructure.persistence.session import create_session_factory
 
-DATASET = Path("../datasets/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip")
+DATASET = Path("../../sample-data/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip")
 
 
 def test_seed_loader_is_idempotent_and_preserves_candidate_assertions(

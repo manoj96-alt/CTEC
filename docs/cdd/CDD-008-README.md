@@ -26,7 +26,7 @@ Run `make lint`, `make typecheck`, and `make test`. PostgreSQL migration tests r
 ## Repository tree
 
 ```text
-backend/app/
+cognitive-engine/backend/app/
 ├── application/
 │   └── decision_engine.py
 ├── domain/decision_engine/
@@ -47,23 +47,23 @@ docs/cdd/
 
 ## Files created
 
-- `backend/app/application/__init__.py`
-- `backend/app/application/decision_engine.py`
-- `backend/app/domain/decision_engine/__init__.py`
-- `backend/app/domain/decision_engine/configuration.py`
-- `backend/app/domain/decision_engine/model.py`
-- `backend/app/domain/decision_engine/service.py`
-- `backend/app/infrastructure/persistence/decision_repository.py`
-- `backend/app/infrastructure/persistence/migrations/versions/0006_decision_evaluation.py`
-- `backend/app/infrastructure/persistence/models/decision_evaluation.py`
-- `backend/app/tests/test_decision_engine.py`
+- `cognitive-engine/backend/app/application/__init__.py`
+- `cognitive-engine/backend/app/application/decision_engine.py`
+- `cognitive-engine/backend/app/domain/decision_engine/__init__.py`
+- `cognitive-engine/backend/app/domain/decision_engine/configuration.py`
+- `cognitive-engine/backend/app/domain/decision_engine/model.py`
+- `cognitive-engine/backend/app/domain/decision_engine/service.py`
+- `cognitive-engine/backend/app/infrastructure/persistence/decision_repository.py`
+- `cognitive-engine/backend/app/infrastructure/persistence/migrations/versions/0006_decision_evaluation.py`
+- `cognitive-engine/backend/app/infrastructure/persistence/models/decision_evaluation.py`
+- `cognitive-engine/backend/app/tests/test_decision_engine.py`
 - `docs/cdd/CDD-008-DESIGN.md`
 - `docs/cdd/CDD-008-README.md`
 - `docs/cdd/CDD-008-REVIEW.md`
 
 ## Files modified
 
-- `backend/app/core/config.py`
-- `backend/app/infrastructure/persistence/models/__init__.py`
-- `backend/app/tests/test_knowledge_engine.py`
-- `backend/app/tests/test_persistence_integration.py`
+- `cognitive-engine/backend/app/core/config.py`
+- `cognitive-engine/backend/app/infrastructure/persistence/models/__init__.py`
+- `cognitive-engine/backend/app/tests/test_knowledge_engine.py`
+- `cognitive-engine/backend/app/tests/test_persistence_integration.py`

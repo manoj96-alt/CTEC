@@ -1,6 +1,27 @@
-# CTEC — Cognitive Twin Enterprise Core
+# CTEC Alpha
 
-Infrastructure-only project foundation for the Enterprise Cognitive Operating Model supply-chain prototype. This layer intentionally contains no business, persistence, ontology, graph, identity-resolution, reasoning, governance, assertion, knowledge, or decision-assembly logic.
+CTEC Alpha is a modular-monolith workspace for the Enterprise Cognitive Operating Model prototype. The existing CDD-004 through CDD-009 implementation lives unchanged architecturally under `cognitive-engine/`; the new experience and sample-data areas consume that engine without redefining its business semantics.
+
+## Repository structure
+
+```text
+ctec-alpha/
+├── cognitive-engine/      # Existing cognitive implementation and engineering tools
+│   ├── backend/
+│   ├── frontend/
+│   ├── deployment/
+│   ├── scripts/
+│   └── tools/
+├── experience-backend/    # Phase 1 consumer
+├── experience-frontend/   # Phase 2 consumer
+├── sample-data/           # Phase 3 governed demo inputs
+├── docs/
+│   └── demo/
+├── docker-compose.yml
+└── Makefile
+```
+
+The GitHub repository remains `CTEC`; `ctec-alpha` describes its new logical root layout. Git moves preserve the full history of the relocated implementation.
 
 ## Quick start
 
@@ -26,6 +47,8 @@ make test
 make lint
 make format
 make typecheck
+make migrate
+make seed
 ```
 
-CDD-002 activates `make migrate`, `make seed`, and `make reset-db`. See [PERSISTENCE-001](docs/persistence/PERSISTENCE-001.md) before using destructive reset behavior.
+The root commands delegate into `cognitive-engine/`. The Compose file mounts `sample-data/` read-only into the backend container.

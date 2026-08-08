@@ -21,7 +21,7 @@ from app.domain.shared.value_objects import (
 )
 
 DOMAIN_ROOT = Path("app/domain")
-EAD_PATH = Path("../docs/persistence/traceability/EAD-001-v1.3.json")
+EAD_PATH = Path("../../docs/persistence/traceability/EAD-001-v1.3.json")
 IDENTIFIER = Identifier(UUID("10000000-0000-0000-0000-000000000001"))
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 

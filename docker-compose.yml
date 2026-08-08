@@ -13,12 +13,15 @@ services:
       timeout: 5s
       retries: 10
   backend:
-    build: ./backend
+    build: ./cognitive-engine/backend
     environment:
       CTEC_ENVIRONMENT: ${CTEC_ENVIRONMENT:-development}
       CTEC_LOG_LEVEL: ${CTEC_LOG_LEVEL:-INFO}
       CTEC_CORS_ORIGINS: ${CTEC_CORS_ORIGINS:-["http://localhost:3000"]}
       CTEC_DATABASE_URL: ${CTEC_DATABASE_URL:-postgresql+psycopg://ctec:ctec@postgres:5432/ctec}
+      CTEC_DATASET_ARCHIVE_PATH: /sample-data/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip
+    volumes:
+      - ./sample-data:/sample-data:ro
     ports: ["8000:8000"]
     depends_on:
       postgres:
@@ -30,7 +33,7 @@ services:
       retries: 5
   frontend:
     build:
-      context: ./frontend
+      context: ./cognitive-engine/frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports: ["3000:3000"]

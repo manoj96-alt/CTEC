@@ -39,6 +39,7 @@ If a CDD references an approved Business Capability Specification (BCS), that BC
 - Architecture and the assigned CDD always override implementation convenience.
 - Do not introduce or modify business entities, relationships, or attributes without explicit authorization.
 - Respect dependency direction and modular-monolith boundaries; do not add microservices.
+- `experience-backend/`, `experience-frontend/`, and `sample-data/` are consumers of `cognitive-engine/`; they must not redefine or bypass cognitive-engine business semantics.
 - Stop at the assigned layer. Report missing specifications rather than inventing behavior.
 
 ## Authorized artifacts

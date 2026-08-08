@@ -10,10 +10,10 @@ Decision, Governance, Experience, Reasoning, Learning, and canonical-model chang
 
 ## Files changed
 
-- `backend/app/domain/knowledge_engine/` — immutable artifacts, evidence validation, evaluation, confidence, and override.
-- `backend/app/infrastructure/persistence/knowledge_evaluation_store.py` — append and RFC-011 history/currentness queries.
-- `backend/app/infrastructure/persistence/models/knowledge_evaluation.py` — dedicated ORM model.
-- `backend/app/infrastructure/persistence/migrations/versions/0005_knowledge_evaluation_records.py` — append-only schema and mutation trigger.
-- `backend/app/core/config.py` — external knowledge-policy configuration.
-- `backend/app/tests/test_knowledge_engine.py` — domain, configuration, persistence, history, and migration tests.
+- `cognitive-engine/backend/app/domain/knowledge_engine/` — immutable artifacts, evidence validation, evaluation, confidence, and override.
+- `cognitive-engine/backend/app/infrastructure/persistence/knowledge_evaluation_store.py` — append and RFC-011 history/currentness queries.
+- `cognitive-engine/backend/app/infrastructure/persistence/models/knowledge_evaluation.py` — dedicated ORM model.
+- `cognitive-engine/backend/app/infrastructure/persistence/migrations/versions/0005_knowledge_evaluation_records.py` — append-only schema and mutation trigger.
+- `cognitive-engine/backend/app/core/config.py` — external knowledge-policy configuration.
+- `cognitive-engine/backend/app/tests/test_knowledge_engine.py` — domain, configuration, persistence, history, and migration tests.
 - `docs/cdd/CDD-007-*` — design, clarification history, review, and this handoff.
