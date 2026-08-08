@@ -1,6 +1,6 @@
 # CDD-007 Knowledge Engine — Design
 
-KRM-001 v1.2 is the authority for Knowledge semantics, AEM-001 v1.0 defines Acceptance Evidence, and RFC-011 v1.0 defines immutable-record currentness.
+KRM-001 v1.3 is the authority for Knowledge semantics, AEM-001 v1.1 defines Acceptance Evidence under RFC-013 Governance Authority, and RFC-011 v1.0 defines immutable-record currentness.
 
 ```mermaid
 flowchart LR

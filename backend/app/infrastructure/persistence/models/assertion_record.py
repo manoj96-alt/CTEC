@@ -59,10 +59,18 @@ class AssertionRecordSemanticResolutionEvidenceModel(BaseEntity):
 
 
 class AssertionRecordHistoryModel(BaseEntity):
+    """Externally maintained RFC-011 projection for immutable Assertion Records.
+
+    The mapped database column names are retained for migration compatibility only.
+    Records never transition between active and archived business states.
+    """
+
     __tablename__ = "assertion_record_history"
     assertion_identity_key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    active_record_id: Mapped[UUID] = mapped_column(
-        Uuid(), ForeignKey("assertion_records.record_id")
+    current_record_identifier: Mapped[UUID] = mapped_column(
+        "active_record_id", Uuid(), ForeignKey("assertion_records.record_id")
     )
-    archived_record_ids: Mapped[str] = mapped_column(String(4000), nullable=False, default="")
+    historical_record_references: Mapped[str] = mapped_column(
+        "archived_record_ids", String(4000), nullable=False, default=""
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

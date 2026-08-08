@@ -2,7 +2,7 @@
 
 ## Authority
 
-This implementation consumes the frozen Canonical Enterprise Ontology and implements only ERM-001 v2.1. It introduces no canonical entity, attribute, or relationship.
+This implementation consumes the frozen Canonical Enterprise Ontology and implements only ERM-001 v2.2. It introduces no canonical entity, attribute, or relationship.
 
 ## Architecture
 
@@ -14,10 +14,10 @@ flowchart LR
   CE --> ER[Resolution Engine]
   ER --> RR[Immutable Resolution Record]
   RR --> DB[(Append-only record table)]
-  RR --> HP[(Mutable history projection)]
+  RR --> HP[(External currentness and history projection)]
 ```
 
-The Resolution Record is an immutable domain value and append-only database row. Active/archive history is maintained outside it in an implementation projection, as required by ERM-001 v2.1.
+The Resolution Record is an immutable domain value and append-only database row. Currentness is determined externally from the ordered immutable record history in accordance with RFC-011. No Resolution Record changes state from active to archived.
 
 ## Sequence
 
@@ -53,7 +53,7 @@ classDiagram
 ```mermaid
 erDiagram
   ENTERPRISE_ENTITIES ||--o{ ENTERPRISE_ENTITY_RESOLUTION_RECORDS : "may resolve to"
-  ENTERPRISE_ENTITY_RESOLUTION_RECORDS ||--o| ENTERPRISE_ENTITY_RESOLUTION_HISTORY : "is active in"
+  ENTERPRISE_ENTITY_RESOLUTION_RECORDS ||--o| ENTERPRISE_ENTITY_RESOLUTION_HISTORY : "is referenced by"
   ENTERPRISE_ENTITY_RESOLUTION_RECORDS {
     uuid record_id PK
     uuid enterprise_entity_id FK
@@ -68,9 +68,9 @@ erDiagram
 ```
 
 - `enterprise_entity_resolution_records`: append-only ERM business artifacts.
-- `enterprise_entity_resolution_history`: implementation-owned active/archive projection.
+- `enterprise_entity_resolution_history`: implementation-owned currentness/history projection. Its legacy physical column names are retained for migration compatibility and do not represent mutable business state.
 - No canonical physical-model table is changed.
-- The history projection is keyed by the deterministic digest of the supporting Source Object set.
+- The projection is keyed by the deterministic digest of the supporting Source Object set. `current_record_identifier` identifies the externally determined current record, and `historical_record_references` preserve the preceding immutable sequence.
 
 ## Configuration
 

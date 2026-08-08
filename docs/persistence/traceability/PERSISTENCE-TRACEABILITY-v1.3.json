@@ -1,5 +1,5 @@
 {
-  "schema_source": "backend/app/infrastructure/persistence/migrations/canonical_v1_3.sql",
+  "schema_source": "architecture/released/v1.1/ECOM_Physical_Data_Model_v1_3.sql",
   "schema_sha256": "9242abdd3de19f7a2c33f406e71d50ad629132dfe783375d864a7fcb2f90cd2b",
   "ead_source": "docs/persistence/traceability/EAD-001-v1.3.json",
   "tables": 32,

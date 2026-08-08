@@ -1,8 +1,16 @@
 # CDD-005 Architecture Clarification Report — SRM-001 v2.0 Residuals
 
-Status: BLOCKING  
+Status: HISTORICAL — RESOLVED
 Authority: SRM-001 v2.0 FROZEN  
 Supersedes: the unresolved portions of the original CDD-005 clarification report
+
+## Resolution
+
+- Resolved By: SRM-001 v2.1 and RFC-011
+- Resolution Date: 2026-08-08
+- Superseding Version(s): SRM-001 v2.1
+
+SRM-001 v2.1 removes lifecycle state from the immutable record and defines Candidate Semantic Interpretations for possible resolutions. RFC-011 governs externally determined currentness. This report is retained only as historical review evidence and is excluded from current release-gate blocker evaluation.
 
 ## Resolved by SRM-001 v2.0
 

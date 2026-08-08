@@ -32,7 +32,7 @@ class AssertionPolicy:
 
 
 class AssertionEngine:
-    """ASM-001 v2.0 evaluation; cannot operate without governed EER and SR evidence."""
+    """ASM-001 v2.1 evaluation; cannot operate without governed EER and SR evidence."""
 
     def __init__(self, policy: AssertionPolicy) -> None:
         self.policy = policy

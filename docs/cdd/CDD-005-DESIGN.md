@@ -32,4 +32,4 @@ classDiagram
   SemanticResolutionStore --> SemanticResolutionRecord
 ```
 
-The physical implementation adds append-only `semantic_resolution_records` and mutable `semantic_resolution_history`. No canonical physical table is modified. Current understanding is keyed by Enterprise Entity plus Context and exists only in the history projection.
+The physical implementation adds append-only `semantic_resolution_records` and an externally maintained `semantic_resolution_history` projection. No canonical physical table is modified. In accordance with RFC-011, current understanding is determined from ordered immutable record history keyed by Enterprise Entity plus Context. No Semantic Resolution Record changes state from active to archived. Legacy projection column names remain physical compatibility details only.

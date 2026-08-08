@@ -1,8 +1,10 @@
 # CDD-004 Enterprise Entity Resolution Engine
 
+Status: HISTORICAL — IMPLEMENTED
+
 CDD-004 answers one question: which existing Enterprise Entity does a Source Object represent?
 
-The engine normalizes source and enterprise names, discovers and evaluates candidates, classifies the outcome and Business Confidence, produces an explanation, and returns an immutable ERM-001 v2.1 Resolution Record. Human override produces a new record; it never mutates prior understanding. The persistence adapter appends records and maintains active/archive history outside those records.
+The engine normalizes source and enterprise names, discovers and evaluates candidates, classifies the outcome and Business Confidence, produces an explanation, and returns an immutable Resolution Record. Human override produces a new record; it never mutates prior understanding. In accordance with RFC-011 and ERM-001 v2.2, the persistence adapter appends records and maintains externally determined currentness plus the complete immutable record history.
 
 Policy version and numeric thresholds are configured through `CTEC_RESOLUTION_*` environment settings. Numeric scores remain internal engineering details.
 

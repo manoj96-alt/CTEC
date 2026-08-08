@@ -42,12 +42,14 @@ class KnowledgeEvaluationStore:
         )
 
     def history(self, assertion_record_id: UUID) -> tuple[KnowledgeEvaluationRecord, ...]:
+        """Return the complete ordered immutable record history."""
         statement = self._ordered_statement(assertion_record_id)
         return tuple(self._to_domain(model) for model in self.session.scalars(statement))
 
     def current(
         self, assertion_record_id: UUID, *, as_of: datetime
     ) -> KnowledgeEvaluationRecord | None:
+        """Determine currentness externally without changing record state."""
         if as_of.tzinfo is None:
             raise ValueError("Currentness timestamp must be timezone-aware")
         statement = self._ordered_statement(assertion_record_id).where(

@@ -1,6 +1,6 @@
 # CDD-004 Architecture Clarification Report
 
-Status: Resolved by ERM-001 v2.1  
+Status: HISTORICAL — RESOLVED
 Work order: CDD-004 Enterprise Entity Resolution Engine v5.0  
 Authoritative business capability: ERM-001 v2.0 (Frozen)
 
@@ -9,6 +9,12 @@ Authoritative business capability: ERM-001 v2.0 (Frozen)
 Implementation is stopped before code or schema changes. The frozen business specification contains unresolved semantics that engineering cannot choose without redefining the Enterprise Entity Resolution Record.
 
 ## Resolution
+
+- Resolved By: ERM-001 v2.1 and RFC-011
+- Resolution Date: 2026-08-08
+- Superseding Version(s): ERM-001 v2.2
+
+This report is retained only as historical review evidence and is excluded from current release-gate blocker evaluation.
 
 ERM-001 v2.1 resolves all three clarifications and explicitly authorizes CDD-004 to resume after that revision is committed and frozen:
 

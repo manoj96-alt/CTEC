@@ -1,7 +1,8 @@
 # CDD-003 — Foundation Reference Model
 
 Version: 2.1  
-Status: Development
+Status: HISTORICAL — SUPERSEDED
+Superseded By: CDD-003 Revision 2 v2.0
 
 ## Objective
 

@@ -57,13 +57,17 @@ class DecisionHistoryProjection:
 
 
 class DecisionEvaluationRepository(Protocol):
+    """Append-only repository governed by RFC-011 ordering and currentness."""
+
     def append(self, persistence: DecisionPersistenceModel) -> None: ...
 
-    def history(self, decision_identity_key: str) -> DecisionHistoryProjection: ...
+    def history(self, decision_identity_key: str) -> DecisionHistoryProjection:
+        """Return the complete ordered immutable record history."""
+        ...
 
-    def current(
-        self, decision_identity_key: str, *, as_of: datetime
-    ) -> CurrentDecisionProjection: ...
+    def current(self, decision_identity_key: str, *, as_of: datetime) -> CurrentDecisionProjection:
+        """Determine currentness externally without changing record state."""
+        ...
 
     def policy_trace(self, policy_reference: str, policy_version: str) -> tuple[UUID, ...]: ...
 

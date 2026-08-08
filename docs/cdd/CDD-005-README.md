@@ -1,5 +1,7 @@
 # CDD-005 Semantic Resolution Engine
 
+Status: HISTORICAL — IMPLEMENTED
+
 CDD-005 assigns governed Institutional Concepts to identified Enterprise Entities within one governed Context. It supports resolved, possible, and unresolved outcomes; explainable candidate interpretations; Business Confidence; immutable records; external history; human override; and policy traceability.
 
 Configuration uses `CTEC_SEMANTIC_*`. No assertions, knowledge, governance, AI reasoning, or CEO changes are included.

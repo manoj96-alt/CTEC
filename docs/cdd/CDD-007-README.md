@@ -1,5 +1,7 @@
 # CDD-007 Knowledge Engine
 
+Status: HISTORICAL — IMPLEMENTED
+
 CDD-007 evaluates an existing Assertion using externally produced Acceptance Evidence and creates an immutable Knowledge Evaluation Record.
 
 Only an `Institutionalized` outcome establishes Institutional Knowledge. `Candidate` and `Rejected` records preserve evaluation history without creating Institutional Knowledge. Governance approval is never granted or produced by this capability.

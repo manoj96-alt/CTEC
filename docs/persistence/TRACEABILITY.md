@@ -7,6 +7,8 @@ Status: Frozen with CDD-002
 
 This document provides the human-readable path from each SQLAlchemy persistence model to its canonical authority. It complements the machine-readable `traceability/PERSISTENCE-TRACEABILITY-v1.3.json` artifact, which records all 370 columns and 123 foreign keys.
 
+The authoritative schema source is `architecture/released/v1.1/ECOM_Physical_Data_Model_v1_3.sql`. The migration copy is an implementation artifact and is required to match that source byte-for-byte; it is not an architecture authority.
+
 The precedence remains Constitution → RFCs → Logical Model → Physical Model → EAD-001 → Persistence. ORM classes implement the model; they do not define or extend it.
 
 ## Canonical entity models
@@ -63,3 +65,11 @@ These four ORM models implement Physical Model v1.3 many-to-many join tables. Th
 - Canonical schema SHA-256: `9242abdd3de19f7a2c33f406e71d50ad629132dfe783375d864a7fcb2f90cd2b`
 
 No ORM model is permitted without an approved canonical mapping. Changes require the governing model update and RFC or CDD approval before persistence code changes.
+
+## Cognitive immutable-record projections
+
+Cognitive evaluation and resolution records are immutable and append-only. Currentness is determined externally from the complete ordered record history in accordance with RFC-011. No cognitive record changes state from active to archived.
+
+The Identity Resolution, Semantic Resolution, and Assertion persistence projections retain the physical columns `active_record_id` and `archived_record_ids` solely for compatibility with their existing migrations. ORM and repository code expose these fields as `current_record_identifier` and `historical_record_references`. The legacy column names are implementation projection details; they are not business attributes, lifecycle state, or architecture authority.
+
+Decision and Knowledge repositories derive currentness directly from immutable records using effective date, produced timestamp, and record identifier ordering. Their history operations return the complete immutable sequence; they do not update prior records.

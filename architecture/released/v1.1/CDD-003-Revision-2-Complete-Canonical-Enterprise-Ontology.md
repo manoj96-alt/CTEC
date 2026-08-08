@@ -1,7 +1,8 @@
 # CDD-003 Revision 2 — Complete Canonical Enterprise Ontology
 
 Version: 2.0  
-Status: Development
+Status: FROZEN
+Authority: AUTHORITATIVE
 
 ## Purpose
 

@@ -6,7 +6,7 @@ Pass. The engine is deterministic, typed, dependency-light, and separates domain
 
 ## Chief Architect
 
-Pass. The CEO is consumed unchanged. Immutable business artifacts and mutable implementation history are separated exactly as ERM-001 v2.1 requires.
+Pass. The CEO is consumed unchanged. Immutable business records remain append-only, and RFC-011 currentness is maintained exclusively by an external implementation projection. No record changes state from active to archived.
 
 ## Business Reviewer
 

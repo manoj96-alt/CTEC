@@ -37,12 +37,18 @@ class SemanticResolutionRecordModel(BaseEntity):
 
 
 class SemanticResolutionHistoryModel(BaseEntity):
-    """Current-understanding projection outside immutable SRM records."""
+    """Externally maintained RFC-011 projection outside immutable SRM records.
+
+    The mapped database column names are retained for migration compatibility only.
+    Records never transition between active and archived business states.
+    """
 
     __tablename__ = "semantic_resolution_history"
     understanding_key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    active_record_id: Mapped[UUID] = mapped_column(
-        Uuid(), ForeignKey("semantic_resolution_records.record_id")
+    current_record_identifier: Mapped[UUID] = mapped_column(
+        "active_record_id", Uuid(), ForeignKey("semantic_resolution_records.record_id")
     )
-    archived_record_ids: Mapped[list[str]] = mapped_column(JSON(), nullable=False, default=list)
+    historical_record_references: Mapped[list[str]] = mapped_column(
+        "archived_record_ids", JSON(), nullable=False, default=list
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

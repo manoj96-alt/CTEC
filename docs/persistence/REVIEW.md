@@ -10,7 +10,7 @@ PASS. Typed SQLAlchemy 2 models cover all 32 physical tables. Repository CRUD, s
 
 ## Chief Architect Review
 
-PASS. Automated traceability reconciles 32 tables, 370 columns, and 123 foreign keys with no missing EAD trace. The canonical migration SQL checksum is `9242abdd3de19f7a2c33f406e71d50ad629132dfe783375d864a7fcb2f90cd2b`. No entity, attribute, or relationship was added or changed; no layer or approved technology boundary was bypassed.
+PASS. Automated traceability reconciles 32 tables, 370 columns, and 123 foreign keys with no missing EAD trace. The authoritative Physical Model and its byte-identical canonical migration have SHA-256 `9242abdd3de19f7a2c33f406e71d50ad629132dfe783375d864a7fcb2f90cd2b`. The migration is an implementation artifact, not the architecture authority. No entity, attribute, or relationship was added or changed; no layer or approved technology boundary was bypassed.
 
 ## Business Review
 

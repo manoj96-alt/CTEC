@@ -1,6 +1,6 @@
 # CDD-006 Assertion Engine — Design
 
-ASM-001 v2.0 is the sole authority for Assertion business semantics. Every creation path requires governed Enterprise Entity Resolution and Semantic Resolution evidence for the same Subject.
+ASM-001 v2.1 is the sole authority for Assertion business semantics. Every creation path requires governed Enterprise Entity Resolution and Semantic Resolution evidence for the same Subject.
 
 ```mermaid
 flowchart LR

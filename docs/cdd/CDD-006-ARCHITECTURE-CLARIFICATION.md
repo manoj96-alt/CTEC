@@ -1,8 +1,16 @@
 # CDD-006 Architecture Clarification Report
 
-Status: BLOCKING  
+Status: HISTORICAL — RESOLVED
 Capability: Assertion  
 Authority: ASM-001 v1.0 FROZEN
+
+## Resolution
+
+- Resolved By: ASM-001 v2.0, SRM-001 v2.1, and RFC-011
+- Resolution Date: 2026-08-08
+- Superseding Version(s): ASM-001 v2.1
+
+ASM-001 v2.0 supplied the complete Assertion business contract, while ASM-001 v2.1 and RFC-011 aligned immutable history and externally determined currentness. This report is retained only as historical review evidence and is excluded from current release-gate blocker evaluation.
 
 ## Finding
 

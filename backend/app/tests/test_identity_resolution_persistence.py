@@ -43,5 +43,5 @@ def test_append_preserves_record_and_archives_previous_understanding(
 
     assert {record.record_id for record in records} == {first.record_id, second.record_id}
     assert history is not None
-    assert history.active_record_id == second.record_id
-    assert history.archived_record_ids == [str(first.record_id)]
+    assert history.current_record_identifier == second.record_id
+    assert history.historical_record_references == [str(first.record_id)]

@@ -1,8 +1,16 @@
 # CDD-005 Architecture Clarification Report
 
-Status: BLOCKING  
+Status: HISTORICAL — RESOLVED
 Capability: Semantic Resolution  
 Authority reviewed: EAH-001, RFC-010, CDD-003 Revision 2, EAD-001, ERM-001 v2.1, SRM-001 v1.0, CDS-001 v1.2
+
+## Resolution
+
+- Resolved By: SRM-001 v2.0, SRM-001 v2.1, and RFC-011
+- Resolution Date: 2026-08-08
+- Superseding Version(s): SRM-001 v2.1
+
+SRM-001 v2.0 resolved the initial semantic contract, and SRM-001 v2.1 resolved the remaining immutable-status and candidate-interpretation questions. RFC-011 governs externally determined currentness. This report is retained only as historical review evidence and is excluded from current release-gate blocker evaluation.
 
 ## Finding
 

@@ -17,6 +17,8 @@ from app.infrastructure.persistence.models.semantic_resolution import SemanticRe
 
 
 class AssertionRecordStore:
+    """Append immutable records and maintain currentness outside record state."""
+
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -65,21 +67,25 @@ class AssertionRecordStore:
                 )
             )
         key = self.identity_key(record)
-        history = self.session.get(AssertionRecordHistoryModel, key)
-        if history is None:
+        record_history = self.session.get(AssertionRecordHistoryModel, key)
+        if record_history is None:
             self.session.add(
                 AssertionRecordHistoryModel(
                     assertion_identity_key=key,
-                    active_record_id=record.record_id,
-                    archived_record_ids="",
+                    current_record_identifier=record.record_id,
+                    historical_record_references="",
                     updated_at=record.produced_at,
                 )
             )
         else:
-            archived = [value for value in history.archived_record_ids.split(",") if value]
-            history.archived_record_ids = ",".join([*archived, str(history.active_record_id)])
-            history.active_record_id = record.record_id
-            history.updated_at = record.produced_at
+            historical_references = [
+                value for value in record_history.historical_record_references.split(",") if value
+            ]
+            record_history.historical_record_references = ",".join(
+                [*historical_references, str(record_history.current_record_identifier)]
+            )
+            record_history.current_record_identifier = record.record_id
+            record_history.updated_at = record.produced_at
 
     def _verify_governed_evidence(self, record: AssertionRecord) -> None:
         for evidence_id in record.evidence.enterprise_entity_resolution_record_ids:

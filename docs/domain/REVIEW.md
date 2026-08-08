@@ -1,6 +1,6 @@
 # CDD-003 Revision 2 — Complete Canonical Enterprise Ontology Review
 
-Status: Ready for Chief Architect Review
+Status: APPROVED / FROZEN
 
 ## Principal Engineer review
 
@@ -41,4 +41,4 @@ PASS. Thirty-three backend tests pass against PostgreSQL with 93.90% coverage. T
 - [x] Unit tests pass
 - [x] Enterprise Language Validation passes
 - [x] RFC-010 Canonical Enterprise Ontology is complete
-- [x] Ready for Chief Architect review
+- [x] Chief Architect approval completed

@@ -10,7 +10,7 @@ Pass. Assertion creation cannot bypass CDD-004 or CDD-005. Existing CEO artifact
 
 ## Business Reviewer
 
-Pass. SPO identity, outcomes, confidence, evidence, explanations, and override match ASM-001 v2.0.
+Pass. SPO identity, outcomes, confidence, evidence, explanations, override, and RFC-011 currentness match ASM-001 v2.1.
 
 ## QA Reviewer
 

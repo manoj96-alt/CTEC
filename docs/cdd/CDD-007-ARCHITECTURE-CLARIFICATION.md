@@ -1,6 +1,6 @@
 # CDD-007 Architecture Clarification Report
 
-Status: RESOLVED  
+Status: HISTORICAL — RESOLVED
 Capability: Knowledge  
 Authority: KRM-001 v1.1 FROZEN
 
@@ -85,6 +85,12 @@ The clarification should remain technology-neutral. Engineering can then choose 
 - No CDD-007 runtime, persistence, migration, API, or test code was created.
 
 ## Resolution
+
+- Resolved By: AEM-001 v1.0, RFC-011, and KRM-001 v1.2
+- Resolution Date: 2026-08-08
+- Superseding Version(s): AEM-001 v1.1; KRM-001 v1.3; RFC-013
+
+This report is retained only as historical review evidence and is excluded from current release-gate blocker evaluation.
 
 - AEM-001 v1.0 supplies the immutable Acceptance Evidence contract and validation rules.
 - RFC-011 v1.0 supplies deterministic immutable-record ordering and currentness rules.

@@ -2,7 +2,7 @@
 
 Version: 2.0
 
-Status: Development under CDD-003 Revision 2
+Status: FROZEN under authoritative CDD-003 Revision 2 v2.0
 
 ## Purpose
 
@@ -48,6 +48,8 @@ Value objects are immutable and contain only generic structural validation.
 - Governance Status: Proposed, Approved, Retired, Archived.
 
 These values are copied exactly from EAD-001 v1.3. The model records the values but does not perform lifecycle transitions or governance decisions.
+
+These canonical entity classifications are distinct from cognitive evaluation-record currentness. RFC-011 prohibits treating `Active` or `Archived` as mutable state on immutable cognitive records; currentness for those records is determined externally from record history.
 
 ## Structural rules
 

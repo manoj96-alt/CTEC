@@ -1,6 +1,6 @@
 # CDD-008 — Decision Engine
 
-Status: Implementation complete; awaiting formal review and freeze.
+Status: HISTORICAL — IMPLEMENTED
 
 The Decision Engine answers one question: given existing Institutional Knowledge and a governed business policy, what should the enterprise recommend?
 

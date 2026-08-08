@@ -11,6 +11,8 @@ from app.infrastructure.persistence.models.entity_resolution import (
 
 
 class EntityResolutionStore:
+    """Append immutable records and maintain currentness outside record state."""
+
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -35,20 +37,20 @@ class EntityResolutionStore:
         )
         self.session.add(model)
         key = self.understanding_key(record.supporting_source_object_ids)
-        history = self.session.get(EnterpriseEntityResolutionHistoryModel, key)
-        if history is None:
+        record_history = self.session.get(EnterpriseEntityResolutionHistoryModel, key)
+        if record_history is None:
             self.session.add(
                 EnterpriseEntityResolutionHistoryModel(
                     understanding_key=key,
-                    active_record_id=record.record_id,
-                    archived_record_ids=[],
+                    current_record_identifier=record.record_id,
+                    historical_record_references=[],
                     updated_at=record.produced_at,
                 )
             )
         else:
-            history.archived_record_ids = [
-                *history.archived_record_ids,
-                str(history.active_record_id),
+            record_history.historical_record_references = [
+                *record_history.historical_record_references,
+                str(record_history.current_record_identifier),
             ]
-            history.active_record_id = record.record_id
-            history.updated_at = record.produced_at
+            record_history.current_record_identifier = record.record_id
+            record_history.updated_at = record.produced_at

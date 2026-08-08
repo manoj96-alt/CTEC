@@ -52,7 +52,7 @@ class AcceptanceEvidenceValidator:
 
 
 class KnowledgeEngine:
-    """KRM-001 v1.2 evaluation over an existing Assertion and AEM-001 evidence."""
+    """KRM-001 v1.3 evaluation over an existing Assertion and AEM-001 v1.1 evidence."""
 
     def __init__(self, policy: KnowledgePolicy) -> None:
         self.policy = policy

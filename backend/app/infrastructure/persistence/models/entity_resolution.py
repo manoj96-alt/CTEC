@@ -25,13 +25,22 @@ class EnterpriseEntityResolutionRecordModel(BaseEntity):
 
 
 class EnterpriseEntityResolutionHistoryModel(BaseEntity):
-    """Mutable implementation projection; not an ERM business artifact."""
+    """Externally maintained RFC-011 projection; not an ERM business artifact.
+
+    The mapped database column names are retained for migration compatibility only.
+    Records never transition between active and archived business states.
+    """
 
     __tablename__ = "enterprise_entity_resolution_history"
 
     understanding_key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    active_record_id: Mapped[UUID] = mapped_column(
-        Uuid(), ForeignKey("enterprise_entity_resolution_records.record_id"), nullable=False
+    current_record_identifier: Mapped[UUID] = mapped_column(
+        "active_record_id",
+        Uuid(),
+        ForeignKey("enterprise_entity_resolution_records.record_id"),
+        nullable=False,
     )
-    archived_record_ids: Mapped[list[str]] = mapped_column(JSON(), nullable=False, default=list)
+    historical_record_references: Mapped[list[str]] = mapped_column(
+        "archived_record_ids", JSON(), nullable=False, default=list
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
