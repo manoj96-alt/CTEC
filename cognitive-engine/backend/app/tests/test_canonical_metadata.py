@@ -7,7 +7,7 @@ from app.infrastructure.persistence.metadata import canonical_metadata
 
 MIGRATIONS = Path("app/infrastructure/persistence/migrations")
 CANONICAL_SQL = MIGRATIONS / "canonical_v1_3.sql"
-TRACEABILITY = Path("../docs/persistence/traceability/PERSISTENCE-TRACEABILITY-v1.3.json")
+TRACEABILITY = Path("../../docs/persistence/traceability/PERSISTENCE-TRACEABILITY-v1.3.json")
 
 
 def _physical_tables(sql: str) -> dict[str, set[str]]:

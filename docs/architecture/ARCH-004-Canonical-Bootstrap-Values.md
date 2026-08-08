@@ -48,5 +48,5 @@ Repeated `reset-db`, `migrate`, and `seed` sequences produce the same canonical 
 
 ## Code authority
 
-The implementation source of truth for these constants is `backend/app/core/bootstrap.py`. An RFC is required to change any frozen value.
+The implementation source of truth for these constants is `cognitive-engine/backend/app/core/bootstrap.py`. An RFC is required to change any frozen value.
 

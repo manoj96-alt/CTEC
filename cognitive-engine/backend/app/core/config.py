@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     database_pool_size: int = Field(default=5, ge=1)
     database_max_overflow: int = Field(default=10, ge=0)
     database_pool_timeout_seconds: int = Field(default=30, ge=1)
-    dataset_archive_path: str = "datasets/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip"
+    dataset_archive_path: str = "../../sample-data/edt-001/v3/CTEC_YC_SupplyChain_Dataset_v3.zip"
     resolution_policy_version: str = "ERM-001-v2.1-default"
     resolution_resolved_threshold: float = Field(default=0.9, ge=0, le=1)
     resolution_possible_threshold: float = Field(default=0.65, ge=0, le=1)

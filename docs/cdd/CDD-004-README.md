@@ -11,7 +11,7 @@ This capability does not create Enterprise Entities and performs no semantic res
 ## Repository tree
 
 ```text
-backend/app/
+cognitive-engine/backend/app/
 ├── core/config.py
 ├── domain/identity_resolution/
 │   ├── model.py
@@ -35,7 +35,7 @@ The CDD adds the identity-resolution domain package, append-only persistence ada
 
 ## Verification
 
-From `backend/`:
+From `cognitive-engine/backend/`:
 
 ```bash
 ruff check app
