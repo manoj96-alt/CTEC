@@ -1,8 +1,11 @@
 """Deterministic orchestration over six injected opaque capability-step ports."""
 
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
+
+from app.integration.contracts import AuthorityContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +16,8 @@ class CapabilityStepInput:
     session_identifier: UUID
     execution_identifier: UUID
     opaque_payload: bytes
+    authority_context: AuthorityContext | None = None
+    admitted_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +28,11 @@ class CapabilityStepOutput:
     session_identifier: UUID
     execution_identifier: UUID
     opaque_payload: bytes
+    business_gated: bool = False
+    produced_record_references: tuple[UUID, ...] = ()
+    result_code: str | None = None
+    result_value: str | None = None
+    actionable: bool = False
 
 
 class CapabilityStepError(RuntimeError):
@@ -56,6 +66,8 @@ class RuntimeOrchestrator:
         for port in self._ports.ordered():
             output = port.execute(current_input)
             self._validate_metadata(current_input, output)
+            if output.business_gated:
+                return output
             current_input = replace(current_input, opaque_payload=output.opaque_payload)
 
         if output is None:
