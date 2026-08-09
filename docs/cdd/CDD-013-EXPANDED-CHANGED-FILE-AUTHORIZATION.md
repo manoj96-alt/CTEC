@@ -1,7 +1,7 @@
 # CDD-013 — Expanded Changed-File Authorization
 
-Version: 1.0  
-Status: APPROVED FOR IMPLEMENTATION  
+Version: 1.0
+Status: APPROVED FOR IMPLEMENTATION
 Base: `96e5ec10a34b7fbed5b2868330f6e2bb2bc875a4`
 
 Only the paths below may change during the CDD-013 work cycle. The five existing review documents

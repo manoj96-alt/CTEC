@@ -1,6 +1,6 @@
 # ADR-001 — Architecture Drift Report v1.5
 
-Status: FROZEN  
+Status: FROZEN
 Decision: AUTHORIZED DRIFT ONLY
 
 Relative to Baseline v1.3, authorized additions are PAS-001, IDP-001, and

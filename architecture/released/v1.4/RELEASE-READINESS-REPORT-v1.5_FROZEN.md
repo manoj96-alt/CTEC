@@ -1,6 +1,6 @@
 # RRR-001 — Release Readiness Report v1.5
 
-Status: FROZEN  
+Status: FROZEN
 Decision: GO
 
 The Baseline v1.4 Registry, dependency, checksum, manifest, consistency, drift, boundary, and

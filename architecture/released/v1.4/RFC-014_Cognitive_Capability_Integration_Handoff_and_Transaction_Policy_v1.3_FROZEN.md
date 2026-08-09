@@ -1,8 +1,8 @@
 # RFC-014 — Application Security Audit Clarification
 
-Version: 1.3  
-Status: FROZEN  
-Supersedes: RFC-014 v1.2  
+Version: 1.3
+Status: FROZEN
+Supersedes: RFC-014 v1.2
 Approval: CDD-013 bounded governance decision
 
 RFC-014 v1.2 remains controlling. This clarification adds one application-boundary audit record

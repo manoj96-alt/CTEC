@@ -1,8 +1,8 @@
 # PMM-001 — Runtime Persistence Role Mapping
 
-Version: 1.2  
-Status: FROZEN  
-Supersedes: PMM-001 v1.1  
+Version: 1.2
+Status: FROZEN
+Supersedes: PMM-001 v1.1
 Approval: CDD-013 bounded governance decision
 
 PMM-001 v1.1 remains controlling for all existing tables. Physical Model v1.5 adds exactly one

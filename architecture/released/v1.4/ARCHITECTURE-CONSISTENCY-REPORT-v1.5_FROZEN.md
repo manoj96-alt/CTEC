@@ -1,6 +1,6 @@
 # ACR-001 — Architecture Consistency Report v1.5
 
-Status: FROZEN  
+Status: FROZEN
 Decision: PASS
 
 PAS-001 and IDP-001 preserve PAD/EIC trusted-boundary semantics. RFC-014 v1.3, PMM-001 v1.2,

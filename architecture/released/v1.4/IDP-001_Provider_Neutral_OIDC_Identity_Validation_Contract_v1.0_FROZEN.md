@@ -1,8 +1,8 @@
 # IDP-001 — Provider-Neutral OIDC Identity Validation Contract
 
-Version: 1.0  
-Status: FROZEN  
-Owner: ECOM Platform Enterprise (`00000000-0000-0000-0000-000000000004`)  
+Version: 1.0
+Status: FROZEN
+Owner: ECOM Platform Enterprise (`00000000-0000-0000-0000-000000000004`)
 Approval: CDD-013 bounded governance decision
 
 The production verifier accepts bearer access tokens only and validates signature and JOSE header
