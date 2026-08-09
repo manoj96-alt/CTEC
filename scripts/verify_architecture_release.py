@@ -13,8 +13,8 @@ from xml.etree import ElementTree
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ROOT = REPOSITORY_ROOT / "architecture" / "released"
 ARCHITECTURE_REGISTRY = REPOSITORY_ROOT / "architecture" / "INDEX.md"
-DEPENDENCY_MATRIX = RELEASE_ROOT / "v1.5" / "DEPENDENCY-MATRIX-v1.5.csv"
-BASELINES = ("v1.0", "v1.1", "v1.2", "v1.3", "v1.4", "v1.5")
+DEPENDENCY_MATRIX = RELEASE_ROOT / "v1.6" / "DEPENDENCY-MATRIX-v1.6.csv"
+BASELINES = ("v1.0", "v1.1", "v1.2", "v1.3", "v1.4", "v1.5", "v1.6")
 HEADERS = (
     "Relative Path",
     "Document Identifier",
@@ -80,7 +80,7 @@ def _registry_release_entries() -> dict[str, str]:
                 )
             governance_rows += 1
         location_value = row.get("Location", "")
-        location = re.search(r"\]\((released/v(?:1\.0|1\.1|1\.2|1\.3|1\.4|1\.5)/[^)]+)\)", location_value)
+        location = re.search(r"\]\((released/v1\.\d+/[^)]+)\)", location_value)
         if location is None:
             continue
         name = row.get("Document") or row.get("Artifact") or row.get("Review Artifact")
@@ -107,7 +107,7 @@ def _registry_artifacts() -> tuple[dict[str, tuple[str, str, str]], dict[str, se
     current: dict[str, tuple[str, str, str]] = {}
     superseded: dict[str, set[str]] = {}
     for section, row in _registry_rows():
-        location = re.search(r"\]\((released/v(?:1\.0|1\.1|1\.2|1\.3|1\.4|1\.5)/[^)]+)\)", row.get("Location", ""))
+        location = re.search(r"\]\((released/v1\.\d+/[^)]+)\)", row.get("Location", ""))
         if location is None:
             continue
         name = row.get("Document") or row.get("Artifact") or row.get("Review Artifact") or ""
