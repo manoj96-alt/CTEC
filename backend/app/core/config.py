@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     decision_policy_version: str = "DRM-001-v1.1-default"
     decision_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
     decision_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
-    governance_policy_reference: str = "GRM-001-default-policy"
-    governance_policy_version: str = "GRM-001-v1.1-default"
+    governance_policy_reference: str = "GOV-POL-DEFAULT"
+    governance_policy_version: str = "1.0"
     governance_authorized_exception_authorities: list[str] = Field(default_factory=list)
     governance_high_confidence_threshold: float = Field(default=0.9, ge=0, le=1)
     governance_medium_confidence_threshold: float = Field(default=0.65, ge=0, le=1)

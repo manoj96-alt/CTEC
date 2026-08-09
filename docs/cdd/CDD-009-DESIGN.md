@@ -1,6 +1,6 @@
 # CDD-009 Governance Engine — Design
 
-CDD-009 implements GRM-001 v1.1 and consumes GEM-001 v1.0. It evaluates one existing immutable cognitive record against a configured governing enterprise policy and appends one immutable Governance Evaluation Record. The outcome-neutral Governance Attestation is derived from that record and is never persisted independently. Enterprise Trust is neither modeled nor persisted.
+CDD-009 implements GRM-001 v1.2 and consumes GEM-001 v1.1 under RFC-013 v1.1. It evaluates one existing immutable cognitive record against a configured governing enterprise policy and appends one immutable Governance Evaluation Record. The outcome-neutral Governance Attestation is derived from that record and is never persisted independently. Enterprise Trust is neither modeled nor persisted.
 
 ## Architecture
 
