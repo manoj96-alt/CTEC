@@ -25,6 +25,9 @@ governs backend bearer validation but does not define a browser login/session pr
 
 ## Contract-to-implementation findings
 
+The findings below describe the original baseline assessment. All P0 rows are **CLOSED** by
+Baseline v1.6 and CDD-013 remediation merge `021cd1e5bd7062f3e2042e691fa48b5b1a346efb`.
+
 | Finding | Severity | Evidence | Impact |
 |---|---|---|---|
 | No work-queue/list endpoint | P0 | CDD-013 router and OpenAPI contain submit and execution-by-ID only | Required assessment list cannot be implemented without a new external contract. |

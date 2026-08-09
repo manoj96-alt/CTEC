@@ -23,5 +23,5 @@ Version: 1.0
 - **Presentation-only:** dialog state, expanded rows, live-announcement text, non-sensitive display
   preference.
 
-The current API cannot provide all required business-outcome and next-action dimensions. Until the
-P0 response fields are frozen, the frontend must not synthesize the missing mapping.
+PAS-001 v1.1 and the CDD-013 remediation provide every required dimension. The frontend transports
+those fields and does not synthesize missing mappings.

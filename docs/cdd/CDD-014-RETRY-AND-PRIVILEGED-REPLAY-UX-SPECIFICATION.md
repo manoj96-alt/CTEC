@@ -21,8 +21,7 @@ Version: 1.0
   AuthorityContext, or authorization decision. The original attempt is never shown as overwritten.
 - A denial or conflict is rendered as authoritative and audit-sensitive; safe codes only.
 
-## Current blocker
+## Governing resolution
 
-CDD-013 exposes neither retry eligibility nor replay option identifiers. Its replay request has only
-request/correlation IDs and reason. These workflows cannot be implemented by inference from Failed
-state or stage order; the server contract must be clarified first.
+PAS-001 v1.1 exposes CDD-012-owned retry eligibility and authenticated replay option references.
+CDD-014 uses those server values and never infers eligibility from Failed state or stage order.

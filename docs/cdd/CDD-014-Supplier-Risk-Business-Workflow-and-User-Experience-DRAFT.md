@@ -2,7 +2,7 @@
 
 Version: 1.0 DRAFT
 
-Status: ARCHITECTURE REVIEW — BLOCKED
+Status: APPROVED FOR IMPLEMENTATION
 
 Reviewed baseline: remote main `9d2ab3042f22e69b9d41d01fd0905cbb7cd73ec7`
 
@@ -48,9 +48,10 @@ treated only as human-readable capability labels and do not replace the frozen s
 - Production deployment, analytics, notifications, enterprise integrations, unrestricted
   administration, or CDD-015 production-readiness work.
 
-## 5. Required contract remediation
+## 5. Resolved contract remediation
 
-Implementation remains blocked by the consolidated P0 findings in the preimplementation report:
+PAS-001 v1.1, BSP-001 v1.0, and the CDD-013 remediation merged at remote main
+`021cd1e5bd7062f3e2042e691fa48b5b1a346efb` resolve the five consolidated findings:
 
 1. publish a tenant-safe work-queue/list contract or remove that journey from CDD-014;
 2. make the external submission schema explicit and closed in CDD-013 OpenAPI;
@@ -68,8 +69,8 @@ None authorized. CDD-014 presents existing governed records and outcomes only.
 
 ## 7. Authorized external contracts
 
-READ-ONLY until the P0 remediation is frozen: CDD-013 OpenAPI, PAS-001, and IDP-001. CDD-014 may
-generate or implement a client only after the corrected contract is published. No API field,
+READ-ONLY authorities: CDD-013 OpenAPI, PAS-001 v1.1, BSP-001 v1.0, and IDP-001. CDD-014 may
+implement only the published contract. No API field,
 endpoint, enum, scope, or authentication behavior may be invented in frontend code.
 
 ## 8. Authorized persistence artifacts
@@ -119,6 +120,5 @@ stop if satisfying the UI requires any such change.
 
 ## 14. Gate
 
-**BLOCKED — ADDITIONAL GOVERNANCE DECISION REQUIRED.** The package is complete, but the five
-contract/security gaps in Section 5 must be resolved as one bounded CDD-013/PAS/IDP clarification
-before CDD-014 can be approved for implementation.
+**APPROVED FOR IMPLEMENTATION.** Baseline v1.6 and the published CDD-013 API remediation resolve all
+P0 findings. Implementation remains bounded by `CDD-014-FRONTEND-IMPLEMENTATION-ALLOWLIST.md`.
