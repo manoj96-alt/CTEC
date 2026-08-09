@@ -1,11 +1,15 @@
 # CDD-010 — Cognitive Engine Runtime
 
-Version: 1.0  
-CDD Gate: ARCHITECTURE REVIEW — BLOCKED  
+Version: 1.1 DRAFT
+
+CDD Gate: DRAFT
+
 Implementation State: NOT STARTED  
 Architecture Baseline: v1.1  
 Mandatory Template: CDD Template v2.2  
 Effective Review Date: 2026-08-08
+
+This is a non-authorizing draft. Do not implement, create production artifacts, or modify any file listed in the authorization sections while this CDD is DRAFT or ARCHITECTURE REVIEW — BLOCKED.
 
 ## 1. Implementation objective and business outcome
 
@@ -19,8 +23,10 @@ This CDD introduces no business semantics and creates no business artifact.
 
 | Gate | Date | Result | Evidence |
 |---|---|---|---|
-| DRAFT | 2026-08-08 | Completed | Work order prepared against Baseline v1.1 and CDD Template v2.2. |
-| ARCHITECTURE REVIEW | 2026-08-08 | Blocked | Dependency reconciliation and template governance pass; CDD-009 Governance Engine remains absent from `main`. |
+| DRAFT v1.0 | 2026-08-08 | Superseded before approval | Initial draft contained a superseded Baseline Record reference and used TAS-001 in one authorization source. It never reached APPROVED or IMPLEMENTATION. |
+| DRAFT v1.1 | 2026-08-08 | Current draft | Corrected in place because v1.0 was never approved or formally issued as an authoritative work order. Dependencies now resolve through the current Registry. |
+| P0 prerequisite verification | 2026-08-08 | Closed, remote evidence verified | Baseline release `834582b` and CDD-009 merge/evidence commits `16b96a8` / `0211634` are present on remote `main`; CDD-009 is registered as IMPLEMENTED / FROZEN. Closure does not approve this draft. |
+| ARCHITECTURE REVIEW | — | Not reached | Requires the new CDD-010 prompt and a complete authority review of this corrected draft. |
 | APPROVED | — | Not reached | Requires closure of every stop condition and an explicit approval record. |
 | IMPLEMENTATION | — | Prohibited | No code or product artifact may be created or modified under CDD-010 before approval. |
 
@@ -33,6 +39,11 @@ This CDD introduces no business semantics and creates no business artifact.
 - RFC-013 v1.1
 - CDS-001 v1.3
 - CDD Template v2.2
+- CTEC Architecture Baseline Record v1.3 — `architecture/released/v1.1/BASELINE-RECORD-v1.3_FROZEN.md`
+- ACR-001 v1.2 — Architecture Consistency Report — `architecture/released/v1.1/ARCHITECTURE-CONSISTENCY-REPORT-v1.2_FROZEN.md`
+- ADR-001 v1.2 — Architecture Drift Report — `architecture/released/v1.1/ARCHITECTURE-DRIFT-REPORT-v1.2_FROZEN.md`
+- RRR-001 v1.2 — Release Readiness Report — `architecture/released/v1.1/RELEASE-READINESS-REPORT-v1.2_FROZEN.md`
+- RND-001 v1.0 — Architecture Registry Normalization Decision — `architecture/released/v1.1/RND-001_Architecture_Registry_Normalization_v1.0_FROZEN.md`
 - EIC-001 v1.2
 - EOM-001 v1.2
 - ESM-001 v1.2
@@ -47,9 +58,8 @@ This CDD introduces no business semantics and creates no business artifact.
 - GRM-001 v1.2
 - CAM-001 v1.1
 - Architecture Dependency Matrix v1.1
-- Architecture Baseline Record v1.1
 
-TAS-001, the Logical Model, and EAD-001 are Development and non-binding. CDD-010 may not rely on them as authority.
+TAS-001 is `DEVELOPMENT + NO + NON-AUTHORITATIVE`. It is not a governing dependency, constraint, or authorization source for CDD-010. The Logical Model and EAD-001 are likewise Development and non-binding. None of these artifacts may authorize implementation. This draft does not rely on them and does not list them as informational dependencies.
 
 ## 4. In scope
 
@@ -124,7 +134,7 @@ These internal implementation files are exhaustive. They do not expand the five 
 | Execution-state component | `backend/app/runtime/execution_state.py` | CREATE | ESM-001 v1.2; RFC-011 v1.0 | Enforce authorized states, transitions, and immutable transition history. | No business lifecycle state or extra runtime state. | State-transition tests. |
 | In-memory execution store | `backend/app/runtime/execution_store.py` | CREATE | ESM-001 v1.2; CDD-010 | Hold non-durable execution snapshots and append-only transitions within one process. | No database, filesystem persistence, durable queue, or canonical outcome storage. | Persistence-prohibition architecture test. |
 | Cognitive Engine runtime facade | `backend/app/runtime/engine.py` | CREATE | EIC-001 v1.2; EOM-001 v1.2; ESM-001 v1.2 | Compose invocation, orchestration, and state ownership behind one facade. | No product route, business semantics, or direct capability exposure. | End-to-end runtime tests. |
-| Dependency container integration | `backend/app/core/dependency_container.py` | MODIFY | TAS-001 constraints inherited through existing implementation; CDD-010 | Compose the authorized runtime components only. | No new dependency, layer bypass, or capability behavior change. | Dependency diff and architecture tests. |
+| Dependency container integration | `backend/app/core/dependency_container.py` | MODIFY | EIC-001 v1.2; EOM-001 v1.2; ESM-001 v1.2; CDS-001 v1.3; CDD-010 | Compose the authorized runtime components only. | No new dependency, layer bypass, or capability behavior change. | Dependency diff and architecture tests. |
 | Application startup integration | `backend/app/main.py` | MODIFY | CDD-010 | Initialize the internal runtime facade at startup. | No external route or protocol implementation. | Startup test and route-surface diff. |
 | Backend project metadata | `backend/pyproject.toml` | MODIFY | CDS-001 v1.3; CDD-010 | Include authorized source/tests only if required. | No dependency addition or technology change. | Dependency-lock diff showing no addition. |
 | Developer documentation | `README.md` | MODIFY | CDD-010 | Document internal runtime setup and validation commands. | No business-semantic or architecture-authority changes. | Documentation review against CDD-010. |
@@ -195,12 +205,16 @@ No compatibility shim, dual-write path, schema rollback, or persisted-state conv
 
 ## 17. Stop conditions
 
-Implementation must not begin until:
+Before any transition to APPROVED or IMPLEMENTATION, Codex must verify both P0 closure conditions against remote `main`. Local branches, local commits, local working-tree files, or unpushed evidence are insufficient:
 
-- CDD-009 Governance Engine is merged to `main`;
-- its tests pass;
-- its implemented/frozen disposition is recorded in the Architecture Registry;
+- the remediated Architecture Baseline v1.1 release is committed and pushed to remote `main`, including Baseline Record v1.3 and its mandatory release authorities; and
+- CDD-009 is reconciled, tested, merged to remote `main`, and registered with its implementation evidence.
+
+Remote prerequisite evidence was observed while preparing Draft v1.1, but it must be reverified at the approval gate. Implementation must also not begin until:
+
 - the changed-file plan is verified against every v2.2 authorization record; and
 - CDD-010 receives an explicit APPROVED gate entry.
 
 Any ambiguity requiring new business semantics, ontology, canonical structure, persistence, external API, security policy, or technology requires an Architecture Clarification Report.
+
+While this document remains DRAFT or ARCHITECTURE REVIEW — BLOCKED, Codex shall not implement CDD-010, create production artifacts, or modify any authorized implementation file.

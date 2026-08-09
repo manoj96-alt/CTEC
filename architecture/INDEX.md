@@ -91,7 +91,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | Work Order | Version | CDD Gate | Implementation State | Location |
 |---|---:|---|---|---|
 | CDD-009 Governance Engine | 1.1 | FROZEN | IMPLEMENTED | [Authorization](../docs/cdd/CDD-009-AUTHORIZATION.md) · [Evidence](../docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
-| CDD-010 Cognitive Engine Runtime | 1.0 | DRAFT — AWAITING NEW WORK ORDER | NOT STARTED | [Historical draft](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) |
+| CDD-010 Cognitive Engine Runtime | 1.1 | DRAFT — AWAITING NEW WORK ORDER | NOT STARTED | [Non-authorizing draft](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) |
 
 ## Historical review artifacts
 
