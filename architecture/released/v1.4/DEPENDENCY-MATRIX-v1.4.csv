@@ -1,0 +1,116 @@
+Dependent Identifier,Dependent Version,Dependency Identifier,Dependency Version,Dependency Status,Relationship,Semantic Compatibility,Approval Reference
+AEM-001,1.1,RFC-013,1.2,FROZEN,Governance Authority boundary,Compatible,DRR-001
+ARCH-005,1.0,ARCH-004,1.0,FROZEN,Bootstrap authority qualification,Compatible,Closure Gate 1 release decision
+ASM-001,2.3,ERM-001,2.2,FROZEN,Resolved identity prerequisite,Compatible,Closure Gate 1 release decision
+ASM-001,2.3,RFC-014,1.3,FROZEN,Pre-ASM evidence gate,Compatible,Closure Gate 1 release decision
+ASM-001,2.3,SRM-001,2.2,FROZEN,Resolved semantics prerequisite,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,AEM-001,1.1,FROZEN,Acceptance Evidence contract,Compatible,DRR-001
+CAM-001,1.2,ASM-001,2.3,FROZEN,Assertion outcome projection,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,DRM-001,1.3,FROZEN,Decision outcome projection,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,EIC-001,1.3,FROZEN,Runtime separation,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,EOM-001,1.4,FROZEN,Runtime separation,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,ERM-001,2.2,FROZEN,Identity outcome projection,Compatible,DRR-001
+CAM-001,1.2,ESM-001,1.3,FROZEN,Runtime separation,Compatible,DRR-001
+CAM-001,1.2,GEM-001,1.2,FROZEN,Exception Authorization contract,Compatible,DRR-001
+CAM-001,1.2,GRM-001,1.3,FROZEN,Governance outcome projection,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,KRM-001,1.5,FROZEN,Knowledge outcome projection,Compatible,DRR-001
+CAM-001,1.2,PAD-001,1.5,FROZEN,Product access boundary,Compatible,Closure Gate 1 release decision
+CAM-001,1.2,SRM-001,2.2,FROZEN,Semantic outcome projection,Compatible,DRR-001
+CDD Template,2.2,CDS-001,1.3,FROZEN,CDD authorization governance,Compatible,Architecture Registry v1.1 release decision
+CDD-010,1.0,EIC-001,1.3,FROZEN,Trusted runtime control metadata,Compatible,Closure Gate 1 release decision
+CDD-010,1.0,EOM-001,1.4,FROZEN,Runtime metadata propagation,Compatible,Closure Gate 1 release decision
+CIM-001,1.1,CVR-001,1.0,FROZEN,Supplier-risk vocabulary,Compatible,Closure Gate 1 release decision
+CIM-001,1.1,RFC-014,1.3,FROZEN,Integration policy,Compatible,Closure Gate 1 release decision
+CVR-001,1.0,ARCH-005,1.0,FROZEN,Bounded owner and UUID authority,Compatible,Closure Gate 1 release decision
+CVR-001,1.0,CDD-003,2.0,FROZEN,Canonical vocabulary ownership,Compatible,Closure Gate 1 release decision
+CVR-001,1.0,RFC-010,1.0,FROZEN,Canonical ontology boundary,Compatible,Closure Gate 1 release decision
+DRM-001,1.3,CIM-001,1.1,FROZEN,Recommendation contract,Compatible,Closure Gate 1 release decision
+DRM-001,1.3,KRM-001,1.5,FROZEN,Institutional Knowledge input,Compatible,Closure Gate 1 release decision
+DRM-001,1.3,RFC-011,1.0,FROZEN,External currentness,Compatible,Closure Gate 1 release decision
+DRM-001,1.3,RFC-014,1.3,FROZEN,Bounded recommendation policy,Compatible,Closure Gate 1 release decision
+EAH-001,1.5,CAM-001,1.2,FROZEN,Canonical projection,Compatible,DRR-001
+EAH-001,1.5,CDD Template,2.2,FROZEN,Work-order authorization,Compatible,DRR-001
+EAH-001,1.5,CDS-001,1.3,FROZEN,Engineering governance,Compatible,DRR-001
+EAH-001,1.5,Enterprise Constitution,1.0,FROZEN,Constitutional authority,Compatible,DRR-001
+EAH-001,1.5,PMM-001,1.2,FROZEN,Persistence roles,Compatible,DRR-001
+EAH-001,1.5,RFC-010,1.0,FROZEN,Ontology boundary,Compatible,DRR-001
+EAH-001,1.5,RFC-011,1.0,FROZEN,Immutable record currentness,Compatible,DRR-001
+EAH-001,1.5,RFC-012,1.0,FROZEN,Constitutional reconciliation,Compatible,DRR-001
+EAH-001,1.5,RFC-013,1.2,FROZEN,Governance boundary,Compatible,DRR-001
+EIC-001,1.3,CIM-001,1.1,FROZEN,Trusted control metadata,Compatible,Closure Gate 1 release decision
+EIC-001,1.3,EOM-001,1.4,FROZEN,Admission handoff,Compatible,Closure Gate 1 release decision
+EIC-001,1.3,ESM-001,1.3,FROZEN,Accepted execution state,Compatible,Closure Gate 1 release decision
+EIC-001,1.3,PAD-001,1.5,FROZEN,Invocation protocol,Compatible,Closure Gate 1 release decision
+EOM-001,1.4,EIC-001,1.3,FROZEN,Admission handoff,Compatible,Closure Gate 1 release decision
+EOM-001,1.4,ESM-001,1.3,FROZEN,Execution-state ownership,Compatible,Closure Gate 1 release decision
+EOM-001,1.4,RFC-014,1.3,FROZEN,Attempt and checkpoint semantics,Compatible,CDD-012 governance decision
+EOM-001,1.4,RFC-014,1.3,FROZEN,Business-gated termination,Compatible,Closure Gate 1 release decision
+ESM-001,1.3,EIC-001,1.3,FROZEN,Pre-execution rejection boundary,Compatible,Closure Gate 1 release decision
+ESM-001,1.3,EOM-001,1.4,FROZEN,Execution coordination,Compatible,Closure Gate 1 release decision
+ESM-001,1.3,PAD-001,1.5,FROZEN,Execution observation protocol,Compatible,Closure Gate 1 release decision
+GEM-001,1.2,AEM-001,1.1,FROZEN,Cross-cutting evidence pattern,Compatible,DRR-001
+GEM-001,1.2,RFC-013,1.2,FROZEN,Governance Authority boundary,Compatible,DRR-001
+GRM-001,1.3,ASM-001,2.3,FROZEN,Governed assertion record,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,DRM-001,1.3,FROZEN,Governed decision record,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,ERM-001,2.2,FROZEN,Governed resolution record,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,GEM-001,1.2,FROZEN,Exception Authorization input,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,KRM-001,1.5,FROZEN,Governed knowledge record,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,RFC-011,1.0,FROZEN,External currentness,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,RFC-013,1.2,FROZEN,Governance Authority separation,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,RFC-014,1.3,FROZEN,Recommendation standing,Compatible,Closure Gate 1 release decision
+GRM-001,1.3,SRM-001,2.2,FROZEN,Governed semantic record,Compatible,Closure Gate 1 release decision
+KRM-001,1.5,AEM-001,1.1,FROZEN,Acceptance Evidence input,Compatible,DRR-001
+KRM-001,1.5,ASM-001,2.3,FROZEN,Assertion input,Compatible,Closure Gate 1 release decision
+KRM-001,1.5,ERM-001,2.2,FROZEN,Identity provenance,Compatible,DRR-001
+KRM-001,1.5,RFC-013,1.2,FROZEN,Governance Authority boundary,Compatible,DRR-001
+KRM-001,1.5,SRM-001,2.2,FROZEN,Semantic provenance,Compatible,DRR-001
+PAD-001,1.5,AEM-001,1.1,FROZEN,Acceptance Evidence traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,ASM-001,2.3,FROZEN,Assertion traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,DRM-001,1.3,FROZEN,Decision traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,EIC-001,1.3,FROZEN,Invocation boundary,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,EOM-001,1.4,FROZEN,Orchestration boundary,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,ERM-001,2.2,FROZEN,Identity semantics traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,ESM-001,1.3,FROZEN,Execution-state boundary,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,GEM-001,1.2,FROZEN,Exception Authorization traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,GRM-001,1.3,FROZEN,Governance traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,KRM-001,1.5,FROZEN,Knowledge traceability,Compatible,Closure Gate 1 release decision
+PAD-001,1.5,SRM-001,2.2,FROZEN,Semantic Resolution traceability,Compatible,Closure Gate 1 release decision
+PMM-001,1.2,CDS-001,1.3,FROZEN,Implementation governance,Compatible,Architecture Registry v1.1 release decision
+PMM-001,1.2,ECOM Physical Data Model,1.5,FROZEN,Runtime table structure,Compatible,CDD-012 governance decision
+PMM-001,1.2,ECOM Physical Data Model,1.5,FROZEN,Schema authority,Compatible,Architecture Registry v1.1 release decision
+PMM-001,1.2,RFC-011,1.0,FROZEN,Projection currentness,Compatible,Architecture Registry v1.1 release decision
+PMM-001,1.2,RFC-014,1.3,FROZEN,Runtime record ownership,Compatible,CDD-012 governance decision
+RFC-010,1.0,Enterprise Constitution,1.0,FROZEN,Constitutional authority,Compatible,Architecture Registry v1.1 release decision
+RFC-011,1.0,RFC-010,1.0,FROZEN,Canonical boundary,Compatible,Architecture Registry v1.1 release decision
+RFC-012,1.0,Enterprise Constitution,1.0,FROZEN,Constitutional authority,Compatible,Architecture Registry v1.1 release decision
+RFC-013,1.2,AEM-001,1.1,FROZEN,Acceptance Evidence semantics,Compatible,DRR-001
+RFC-013,1.2,CAM-001,1.2,FROZEN,Projection boundary,Compatible,DRR-001
+RFC-013,1.2,DRM-001,1.3,FROZEN,Decision semantics,Compatible,Closure Gate 1 release decision
+RFC-013,1.2,GEM-001,1.2,FROZEN,Exception Authorization semantics,Compatible,DRR-001
+RFC-013,1.2,GRM-001,1.3,FROZEN,Governance Evaluation semantics,Compatible,Closure Gate 1 release decision
+RFC-013,1.2,KRM-001,1.5,FROZEN,Knowledge semantics,Compatible,DRR-001
+RFC-013,1.2,RFC-010,1.0,FROZEN,Canonical boundary,Compatible,DRR-001
+RFC-013,1.2,RFC-011,1.0,FROZEN,Immutable record currentness,Compatible,DRR-001
+RFC-013,1.2,RFC-012,1.0,FROZEN,Constitutional reconciliation,Compatible,DRR-001
+RFC-014,1.3,ARCH-005,1.0,FROZEN,Vocabulary ownership,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,ASM-001,2.3,FROZEN,Assertion evidence gate,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,CVR-001,1.0,FROZEN,Supplier-risk vocabulary,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,DRM-001,1.3,FROZEN,Recommendation semantics,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,EIC-001,1.3,FROZEN,Trusted invocation metadata,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,EOM-001,1.4,FROZEN,Durable recovery orchestration,Compatible,CDD-012 governance decision
+RFC-014,1.3,EOM-001,1.4,FROZEN,Outcome-gated orchestration,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,GRM-001,1.3,FROZEN,Standing semantics,Compatible,Closure Gate 1 release decision
+RFC-014,1.3,PMM-001,1.2,FROZEN,Bounded runtime persistence roles,Compatible,CDD-012 governance decision
+RFC-014,1.3,RSP-001,1.0,FROZEN,Replay security and retention,Compatible,CDD-012 governance decision
+RSP-001,1.0,RFC-014,1.3,FROZEN,Replay authority and retention,Compatible,CDD-012 governance decision
+PAS-001,1.0,IDP-001,1.0,FROZEN,Trusted bearer-token validation,Compatible,CDD-013 governance decision
+PAS-001,1.0,PAD-001,1.5,FROZEN,Product access boundary,Compatible,CDD-013 governance decision
+PAS-001,1.0,EIC-001,1.3,FROZEN,Engine invocation boundary,Compatible,CDD-013 governance decision
+PAS-001,1.0,RFC-014,1.3,FROZEN,Audit and transaction policy,Compatible,CDD-013 governance decision
+PAS-001,1.0,RSP-001,1.0,FROZEN,Replay security and retention,Compatible,CDD-013 governance decision
+IDP-001,1.0,PAD-001,1.5,FROZEN,Trusted product boundary,Compatible,CDD-013 governance decision
+PMM-001,1.2,ECOM Physical Data Model,1.5,FROZEN,API audit table structure,Compatible,CDD-013 governance decision
+PMM-001,1.2,RFC-014,1.3,FROZEN,API audit role and writer,Compatible,CDD-013 governance decision
+RFC-014,1.3,PAS-001,1.0,FROZEN,Application security audit events,Compatible,CDD-013 governance decision
+RFC-014,1.3,PMM-001,1.2,FROZEN,Audit persistence role,Compatible,CDD-013 governance decision
+SRM-001,2.2,ERM-001,2.2,FROZEN,Resolved identity input,Compatible,DRR-001
