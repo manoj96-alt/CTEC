@@ -1,8 +1,8 @@
 # CDD-014 — Exact Changed-File Authorization
 
-Version: 1.0 PROPOSED
+Version: 1.1
 
-Status: INACTIVE WHILE PREIMPLEMENTATION GATE IS BLOCKED
+Status: SUPERSEDED BY `CDD-014-FRONTEND-IMPLEMENTATION-ALLOWLIST.md`
 
 All paths not listed are READ-ONLY. DELETE is not authorized. This list must be revised atomically
 after the P0 contract/session remediation selects the client-generation, OIDC, accessibility, and

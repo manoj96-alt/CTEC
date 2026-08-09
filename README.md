@@ -90,3 +90,13 @@ PostgreSQL migrations through `0009_api_security_audit`, and a deployment-owned 
 handoff key. `X-User` is never trusted. Tokens, complete claims, protected payloads, and sensitive evidence
 are not logged or persisted. The API reuses the CDD-010 runtime, CDD-011 six-capability flow, and
 CDD-012 durable store; it does not create another orchestration path or execute sourcing actions.
+
+## Supplier-risk business workflow
+
+CDD-014 exposes the governed workflow at `/supplier-risk`. It consumes only CDD-013 for the tenant
+work queue, assessment submission, execution/attempt/stage observation, governed results, retry
+eligibility, and privileged replay. Configure the public client with
+`NEXT_PUBLIC_OIDC_AUTHORITY`, `NEXT_PUBLIC_OIDC_CLIENT_ID`, `NEXT_PUBLIC_OIDC_REDIRECT_URI`,
+`NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI`, `NEXT_PUBLIC_OIDC_SCOPE`, and
+`NEXT_PUBLIC_CTEC_API_ORIGIN`. BSP-001 requires Authorization Code + PKCE and memory-only tokens;
+never place credentials or tokens in these public settings.

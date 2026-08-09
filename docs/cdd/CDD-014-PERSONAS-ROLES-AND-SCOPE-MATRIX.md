@@ -19,7 +19,7 @@ Personas are presentation aids, not new roles or authorization authorities.
 |---|---|---|---|
 | Submit assessment | `supplier-risk:submit` | Show enabled form when present; otherwise explain unavailable action | Yes |
 | Read execution, attempts, stages, result | `supplier-risk:read` | Show links and views when present | Yes |
-| Read evidence/provenance | Requires frozen read/disclosure rule; not separately named by PAS-001 | Blocked pending clarification | Yes |
+| Read evidence/provenance | `supplier-risk:evidence:read` for protected content; ordinary read returns safe references only | Show only server-permitted references/content | Yes |
 | Retry | `supplier-risk:retry` plus server eligibility | Show only when server reports eligible; confirm before send | Yes |
 | Replay | `execution:replay` plus `EXECUTION_RECOVERY_OPERATOR` and server options | Privileged workflow with reason and confirmation | Yes |
 

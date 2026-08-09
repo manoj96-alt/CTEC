@@ -24,6 +24,5 @@ the page heading or first invalid field, and polite live announcements for async
 | Rate/conflict/unavailable | Any | Current operation | Safe message for `409`, `429`, `503`; bounded retry when allowed | Respect Retry-After if governed; no tight loop |
 | Return after refresh | Read user | Deep link → execution/status calls | Reconstruct only from URL and server | Not-found is tenant-safe; do not use cached complete responses |
 
-The assessment work queue journey is specified but cannot call an endpoint until PAS/CDD-013 adds a
-tenant-safe paginated list contract. Empty, loading, error, pagination, and refresh behavior will
-follow the same read rules once that contract is frozen.
+PAS-001 v1.1 supplies the tenant-safe paginated work queue. Empty, loading, error, pagination, and
+refresh behavior use the same protected-read rules.

@@ -4,14 +4,16 @@ Version: 1.0
 
 | UI operation | Frozen endpoint | Request construction | View mapping / gap |
 |---|---|---|---|
-| Submit | `POST /api/v1/supplier-risk/assessments` | UUID request/correlation/session; Idempotency-Key equals request ID; closed supplier-risk body required | Response IDs → overview; body is currently untyped (P0) |
-| Execution | `GET /executions/{logical_execution_id}` | Bearer token; URL ID only | State/timestamps/result fields; terminal classification absent (P0) |
+| Submit | `POST /api/v1/supplier-risk/assessments` | UUID request/correlation/session; Idempotency-Key equals request ID; PAS-001 v1.1 closed body | Response IDs → overview |
+| Execution | `GET /executions/{logical_execution_id}` | Bearer token; URL ID only | Explicit execution and terminal classification |
 | Attempts | `GET /executions/{id}/attempts?cursor&limit` | Opaque cursor; bounded limit | Immutable attempt history and next cursor |
 | Stages | `GET /executions/{logical}/attempts/{attempt}/stages` | IDs from server | Ordered timeline, safe failure, references |
-| Result | `GET /executions/{logical}/result` | Logical ID | `202` pending; result fields lack conditions/evidence/policy (P0) |
-| Retry | `POST /executions/{logical}/retry` | New request/correlation IDs, matching key, reason | Existing logical ID plus returned new attempt; eligibility absent (P0) |
-| Replay | `POST /executions/{logical}/replay` | New IDs/key and reason; never checkpoint payload | Server checkpoint options and authorization reference not exposed (P0) |
-| Work queue | None | — | P0: required paginated tenant-safe endpoint absent |
+| Result | `GET /executions/{logical}/result` | Logical ID | `202` pending; explicit conditions, references and policy trace when terminal |
+| Retry eligibility | `GET /executions/{logical}/retry-eligibility` | Logical ID | CDD-012-owned eligibility and revision |
+| Retry | `POST /executions/{logical}/retry` | New IDs/key, reason and expected revision | Existing logical ID plus returned attempt |
+| Replay options | `GET /executions/{logical}/replay-options` | Logical ID | Server-authenticated option references only |
+| Replay | `POST /executions/{logical}/replay` | New IDs/key, option, revision and reason | Never checkpoint payload |
+| Work queue | `GET /executions?cursor&limit` | Tenant from trusted token only | Bounded stable pagination and safe summaries |
 
 ## Client behavior
 

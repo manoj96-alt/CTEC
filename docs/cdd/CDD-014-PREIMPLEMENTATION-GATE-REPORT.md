@@ -2,18 +2,21 @@
 
 Version: 1.0
 
-Status: BLOCKED
+Status: READY / APPROVED
 
 Reviewed baseline: `9d2ab3042f22e69b9d41d01fd0905cbb7cd73ec7`
 
 ## Recommendation
 
-**BLOCKED — ADDITIONAL GOVERNANCE DECISION REQUIRED.** No frontend production or test file may be
-modified. The current frontend technology is sufficient for ordinary UI work, but the frozen and
-implemented external contract cannot support the complete required workflow without inference or
-an insecure browser-authentication choice.
+**READY FOR CDD-014 IMPLEMENTATION — APPROVED.** PAS-001 v1.1 and BSP-001 v1.0 were published in
+Baseline v1.6 through PR #46. The corresponding CDD-013 API remediation was independently validated
+and merged through PR #47 at `021cd1e5bd7062f3e2042e691fa48b5b1a346efb`. All five P0 findings are
+closed without business-semantic drift.
 
 ## Consolidated blockers
+
+All findings are **CLOSED** by PAS-001 v1.1, BSP-001 v1.0, and PR #47. The table is retained as
+review traceability, not as an active blocker list.
 
 | ID | Severity | Blocker | Minimum governed resolution |
 |---|---|---|---|

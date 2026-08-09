@@ -4,8 +4,8 @@ Version: 1.0
 
 ## Required controls
 
-- Use a governed OIDC Authorization Code flow with PKCE or an approved same-origin session boundary;
-  the exact browser mechanism is P0-unresolved. Never use client credentials in the browser.
+- Use the BSP-001 public-client OIDC Authorization Code flow with PKCE S256 and memory-only tokens.
+  Never use client credentials in the browser.
 - Bearer tokens must not appear in URLs, browser history, local/session storage, IndexedDB, logs,
   analytics, error reports, or serialized application state. Prefer memory or secure HttpOnly
   same-site cookies according to the approved session architecture.
@@ -31,8 +31,7 @@ Evidence and provenance views render only CDD-013-permitted references. They do 
 records directly, expose opaque handoffs, or persist full responses. A server `403/404` replaces
 stale client visibility immediately and reveals no cross-tenant existence.
 
-## Blocker
+## Governing resolution
 
-IDP-001 governs resource-server validation, not browser session establishment. A narrow Product UI
-Session Security clarification must freeze login flow, token transport/storage, renewal, logout,
-redirect, CSRF, and public client configuration before implementation.
+BSP-001 v1.0 freezes login, token transport/storage, renewal, logout, redirects, CSRF, caching, and
+public client configuration. IDP-001 remains the resource-server validation authority.

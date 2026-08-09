@@ -1,7 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-const links = ["Home", "Architecture", "Dataset", "Prototype", "About"];
+const links = [
+  "Home",
+  "Supplier Risk",
+  "Architecture",
+  "Dataset",
+  "Prototype",
+  "About",
+];
 
 export function SiteShell({ children }: { children: ReactNode }) {
   return (
@@ -18,7 +25,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
             {links.map((label) => (
               <Link
                 key={label}
-                href={label === "Home" ? "/" : `/${label.toLowerCase()}`}
+                href={
+                  label === "Home"
+                    ? "/"
+                    : `/${label.toLowerCase().replace(" ", "-")}`
+                }
               >
                 {label}
               </Link>
