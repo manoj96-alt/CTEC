@@ -1,6 +1,6 @@
 # CDD-012 — Durable Execution Persistence and Recovery
 
-Version: 1.0 DRAFT
+Version: 1.1 DRAFT — Authorization Clarification
 
 Status: APPROVED FOR IMPLEMENTATION
 
@@ -199,6 +199,7 @@ None authorized. Database session factories, clocks, replay-authority validators
 | `backend/app/tests/test_runtime_orchestration.py` | MODIFY | Checkpoint hooks, ordering, business gates, failure behavior. |
 | `backend/app/tests/test_supplier_risk_pipeline.py` | MODIFY | Full six-stage durable success/gated/restart scenarios. |
 | `backend/app/tests/test_integration_transactions.py` | MODIFY | Atomic capability-record/checkpoint/handoff behavior. |
+| `backend/app/tests/test_runtime_architecture.py` | MODIFY | Extend the frozen CDD-010 structural allowlist only for paths expressly authorized by CDD-012; preserve every CDD-010 prohibition. |
 
 No other test artifact is authorized.
 
