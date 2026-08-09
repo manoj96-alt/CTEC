@@ -53,3 +53,16 @@ mypy app/runtime app/tests/test_runtime_contracts.py \
   app/tests/test_runtime_execution_state.py \
   app/tests/test_runtime_architecture.py
 ```
+
+## Supplier-risk capability integration
+
+CDD-011 provides an internally constructible supplier-risk chain through
+`app.integration.pipeline.supplier_risk_capability_ports`. Callers inject the governed ERM, SRM,
+ASM, KRM, DRM, and GRM services, their existing persistence stores, policy classifiers, and a UTC
+clock. The resulting six ports are supplied to the CDD-010 `CognitiveEngineRuntime`.
+
+Protocol `1.0` remains the legacy opaque runtime contract. Protocol `2.0` requires trusted
+`AuthorityContext` control metadata version `1.0`; missing, unsupported, malformed, expired, or
+conflicting metadata is rejected before capability execution. The integration produces a governed
+recommendation and record references only. It does not expose a REST API or execute sourcing,
+supplier, contractual, financial, or operational actions.

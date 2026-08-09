@@ -1,10 +1,12 @@
 """Opaque contracts exposed by the in-process Cognitive Engine runtime shell."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
+from app.integration.contracts import AuthorityContext
 from app.runtime.execution_state import ExecutionState, ExecutionTransition
 
 
@@ -30,6 +32,8 @@ class InvocationRequest:
     session_identifier: UUID
     request_classification: str
     opaque_payload: bytes
+    authority_context: AuthorityContext | None = None
+    control_metadata_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +56,12 @@ class ExecutionSnapshot:
     session_identifier: UUID
     state: ExecutionState
     transition_history: tuple[ExecutionTransition, ...]
+    admitted_at: datetime | None = None
+    completed_at: datetime | None = None
+    produced_record_references: tuple[UUID, ...] = ()
+    result_code: str | None = None
+    result_value: str | None = None
+    actionable: bool = False
 
 
 class CognitiveEngineInvocationPort(Protocol):

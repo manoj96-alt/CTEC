@@ -41,6 +41,8 @@ def test_invocation_request_contains_only_governed_fields() -> None:
         "session_identifier",
         "request_classification",
         "opaque_payload",
+        "authority_context",
+        "control_metadata_version",
     }
 
 

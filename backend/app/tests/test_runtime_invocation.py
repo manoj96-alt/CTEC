@@ -1,9 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from threading import Event, Lock
 from time import monotonic, sleep
 from uuid import uuid4
 
+from app.integration.contracts import AuthorityContext
 from app.runtime.contracts import (
     IDEMPOTENCY_CONFLICT_REASON,
     InvocationRejectionCategory,
@@ -80,6 +82,39 @@ def test_invalid_invocation_is_rejected_without_execution_identifier() -> None:
     assert response.rejection_category is InvocationRejectionCategory.INVALID_INVOCATION
     assert response.execution_identifier is None
     assert response.execution_reference is None
+
+
+def test_new_protocol_rejects_missing_malformed_and_conflicting_authority() -> None:
+    runtime = runtime_with(CountingStep())
+    missing = runtime.invoke(replace(request(), protocol_version="2.0"))
+    assert missing.status is InvocationStatus.REJECTED
+    now = datetime.now(UTC)
+    value = request()
+    authority = AuthorityContext(
+        "principal",
+        "Service",
+        "enterprise",
+        ("role",),
+        ("scope",),
+        "AUTHORIZED",
+        "authz",
+        "gateway",
+        value.request_identifier,
+        value.correlation_identifier,
+        now - timedelta(seconds=1),
+        now + timedelta(minutes=1),
+    )
+    accepted_request = replace(
+        value, protocol_version="2.0", authority_context=authority, control_metadata_version="1.0"
+    )
+    accepted = runtime.invoke(accepted_request)
+    assert accepted.status is InvocationStatus.ACCEPTED
+    conflict = runtime.invoke(
+        replace(accepted_request, authority_context=replace(authority, roles=("other",)))
+    )
+    assert conflict.status is InvocationStatus.REJECTED
+    unsupported = runtime.invoke(replace(request(), protocol_version="99"))
+    assert unsupported.status is InvocationStatus.REJECTED
 
 
 def test_concurrent_identical_admission_creates_one_execution() -> None:

@@ -1,9 +1,18 @@
 """Single facade for the in-process Cognitive Engine runtime shell."""
 
-from threading import Thread
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from hashlib import sha256
+from threading import RLock, Thread
 from uuid import UUID
 
-from app.runtime.contracts import ExecutionSnapshot, InvocationRequest, InvocationResponse
+from app.runtime.contracts import (
+    ExecutionSnapshot,
+    InvocationRejectionCategory,
+    InvocationRequest,
+    InvocationResponse,
+    InvocationStatus,
+)
 from app.runtime.execution_state import ExecutionState
 from app.runtime.execution_store import InMemoryExecutionStore
 from app.runtime.invocation import InvocationAdmissionService
@@ -15,13 +24,42 @@ from app.runtime.orchestration import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _ResultOverlay:
+    admitted_at: datetime
+    completed_at: datetime | None = None
+    produced_record_references: tuple[UUID, ...] = ()
+    result_code: str | None = None
+    result_value: str | None = None
+    actionable: bool = False
+
+
 class CognitiveEngineRuntime:
     def __init__(self, ports: CapabilityStepPorts) -> None:
         self._store = InMemoryExecutionStore()
         self._admission = InvocationAdmissionService(self._store)
         self._orchestrator = RuntimeOrchestrator(ports)
+        self._result_lock = RLock()
+        self._control_fingerprints: dict[tuple[str, UUID], bytes] = {}
+        self._result_overlays: dict[UUID, _ResultOverlay] = {}
 
     def invoke(self, request: InvocationRequest) -> InvocationResponse:
+        validation = self._validate_control_metadata(request)
+        if validation is not None:
+            return validation
+        key = (request.protocol_version, request.request_identifier)
+        control_fingerprint = sha256(
+            repr((request.control_metadata_version, request.authority_context)).encode()
+        ).digest()
+        with self._result_lock:
+            existing = self._control_fingerprints.get(key)
+            if existing is not None and existing != control_fingerprint:
+                return InvocationResponse(
+                    status=InvocationStatus.REJECTED,
+                    rejection_category=InvocationRejectionCategory.INVOCATION_REJECTION,
+                    rejection_reason="Idempotency Conflict",
+                )
+            self._control_fingerprints.setdefault(key, control_fingerprint)
         admission = self._admission.admit(request)
         response = admission.response
         if admission.starts_execution:
@@ -37,9 +75,27 @@ class CognitiveEngineRuntime:
         return response
 
     def get_execution(self, execution_identifier: UUID) -> ExecutionSnapshot | None:
-        return self._store.get(execution_identifier)
+        snapshot = self._store.get(execution_identifier)
+        if snapshot is None:
+            return None
+        with self._result_lock:
+            overlay = self._result_overlays.get(execution_identifier)
+        if overlay is None:
+            return snapshot
+        return replace(
+            snapshot,
+            admitted_at=overlay.admitted_at,
+            completed_at=overlay.completed_at,
+            produced_record_references=overlay.produced_record_references,
+            result_code=overlay.result_code,
+            result_value=overlay.result_value,
+            actionable=overlay.actionable,
+        )
 
     def _execute(self, request: InvocationRequest, execution_identifier: UUID) -> None:
+        admitted_at = datetime.now(UTC)
+        with self._result_lock:
+            self._result_overlays[execution_identifier] = _ResultOverlay(admitted_at)
         self._store.advance(execution_identifier, ExecutionState.EXECUTING)
         step_input = CapabilityStepInput(
             protocol_version=request.protocol_version,
@@ -48,10 +104,60 @@ class CognitiveEngineRuntime:
             session_identifier=request.session_identifier,
             execution_identifier=execution_identifier,
             opaque_payload=request.opaque_payload,
+            authority_context=request.authority_context,
+            admitted_at=admitted_at,
         )
         try:
-            self._orchestrator.execute(step_input)
-        except CapabilityStepError:
+            result = self._orchestrator.execute(step_input)
+        # The runtime boundary must convert every unexpected adapter failure into
+        # the governed technical-failure state without leaking implementation data.
+        except (CapabilityStepError, Exception):  # noqa: BLE001
             self._store.advance(execution_identifier, ExecutionState.FAILED)
             return
+        with self._result_lock:
+            self._result_overlays[execution_identifier] = _ResultOverlay(
+                admitted_at=admitted_at,
+                completed_at=datetime.now(UTC),
+                produced_record_references=result.produced_record_references,
+                result_code=result.result_code,
+                result_value=result.result_value,
+                actionable=result.actionable,
+            )
         self._store.advance(execution_identifier, ExecutionState.COMPLETED)
+
+    @staticmethod
+    def _validate_control_metadata(request: InvocationRequest) -> InvocationResponse | None:
+        if not request.protocol_version.strip():
+            return None
+        if request.protocol_version == "1.0":
+            if (
+                request.authority_context is not None
+                or request.control_metadata_version is not None
+            ):
+                return CognitiveEngineRuntime._control_rejection(
+                    "Legacy invocation cannot carry trusted control metadata"
+                )
+            return None
+        if request.protocol_version != "2.0":
+            return CognitiveEngineRuntime._control_rejection("Unsupported Protocol Version")
+        if request.control_metadata_version != "1.0" or request.authority_context is None:
+            return CognitiveEngineRuntime._control_rejection(
+                "Required AuthorityContext is missing or unsupported"
+            )
+        try:
+            request.authority_context.validate_for(
+                request_id=request.request_identifier,
+                correlation_id=request.correlation_identifier,
+                now=datetime.now(UTC),
+            )
+        except (ValueError, PermissionError):
+            return CognitiveEngineRuntime._control_rejection("AuthorityContext validation failed")
+        return None
+
+    @staticmethod
+    def _control_rejection(reason: str) -> InvocationResponse:
+        return InvocationResponse(
+            status=InvocationStatus.REJECTED,
+            rejection_category=InvocationRejectionCategory.VALIDATION_FAILURE,
+            rejection_reason=reason,
+        )
