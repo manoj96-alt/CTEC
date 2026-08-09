@@ -100,7 +100,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 |---|---:|---|---|---|
 | CDD-009 Governance Engine | 1.1 | FROZEN | IMPLEMENTED | [Authorization](../docs/cdd/CDD-009-AUTHORIZATION.md) · [Evidence](../docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
 | CDD-010 Cognitive Engine Runtime Shell | 1.3 | FROZEN | IMPLEMENTED | [Work order](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) · [Resolved clarification](../docs/cdd/CDD-010-ARCHITECTURE-CLARIFICATION.md) · [Gate report](../docs/cdd/CDD-010-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-010-IMPLEMENTATION-EVIDENCE.md) |
-| CDD-011 Supplier-Risk Capability Integration | 1.0 | ARCHITECTURE REVIEW | NOT STARTED | [Draft](../docs/cdd/CDD-011-Supplier-Risk-Capability-Integration-DRAFT.md) · [Gate report](../docs/cdd/CDD-011-PREIMPLEMENTATION-GATE-REPORT.md) |
+| CDD-011 Supplier-Risk Capability Integration | 1.0 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-011-Supplier-Risk-Capability-Integration.md) · [Gate report](../docs/cdd/CDD-011-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-011-IMPLEMENTATION-EVIDENCE.md) · [Closure report](../docs/cdd/Closure-Gate-2-CDD-011-Implementation-and-Validation-Report.md) |
 
 ## Historical review artifacts
 
@@ -278,3 +278,22 @@ CDD-010 is governed implementation evidence, not an Architecture Baseline v1.1 a
 | CI result | `PASS — backend, frontend, and container jobs for PR #28` |
 | Quality result | `Ruff PASS; Black PASS; isort PASS; mypy PASS (175 source files); frontend quality PASS` |
 | Architecture validation | `PASS — registry/schema, dependency, checksum, manifest, authorization, and drift checks` |
+
+## CDD-011 implementation evidence
+
+CDD-011 is governed implementation evidence, not an Architecture Baseline v1.2 artifact. Its closure does not alter a frozen architecture authority and therefore does not regenerate an Architecture Release Manifest or the Architecture Dependency Matrix. The implementation remains the bounded, application-neutral, in-process supplier-risk adapter chain; durable execution persistence and product access remain outside CDD-011.
+
+| Evidence | Value |
+|---|---|
+| Implementation status | `IMPLEMENTED / VERIFIED / FROZEN` |
+| Approved implementation base | [`36221b64346cd2a8696985f1a3b787daf42f7dc6`](https://github.com/manoj96-alt/CTEC/commit/36221b64346cd2a8696985f1a3b787daf42f7dc6) |
+| Implementation commit | [`312dca991362500e9db2f32f5d839c38f77724e1`](https://github.com/manoj96-alt/CTEC/commit/312dca991362500e9db2f32f5d839c38f77724e1) |
+| Implementation pull request | [PR #33](https://github.com/manoj96-alt/CTEC/pull/33) |
+| Implementation merge | [`01c7d068f75eccbab579502512adbd5504b75a6d`](https://github.com/manoj96-alt/CTEC/commit/01c7d068f75eccbab579502512adbd5504b75a6d) |
+| Closure-report pull request | [PR #34](https://github.com/manoj96-alt/CTEC/pull/34) |
+| Closure-report merge | [`1f04d0aff3220b5c5c3be9713a1f04bb62fa402a`](https://github.com/manoj96-alt/CTEC/commit/1f04d0aff3220b5c5c3be9713a1f04bb62fa402a) |
+| Implementation evidence | [CDD-011 implementation evidence](../docs/cdd/CDD-011-IMPLEMENTATION-EVIDENCE.md) |
+| Closure report | [Closure Gate 2 report](../docs/cdd/Closure-Gate-2-CDD-011-Implementation-and-Validation-Report.md) |
+| Test result | `25 focused tests passed; 125 backend tests passed; 9 environment-dependent tests skipped; 90.61% coverage` |
+| CI result | `PASS — backend, frontend, and container jobs for PRs #33 and #34` |
+| Architecture validation | `PASS — Registry, dependency, checksum, manifest, authorization, and release-boundary checks` |
