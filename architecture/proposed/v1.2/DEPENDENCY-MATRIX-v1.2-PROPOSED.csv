@@ -1,0 +1,28 @@
+Dependent Identifier,Dependent Version,Dependency Identifier,Dependency Version,Intended Dependency Status,Relationship,Semantic Compatibility,Approval Reference
+ASM-001,2.3,ERM-001,2.2,FROZEN,Identity evidence,Compatible,Closure Gate 1A accepted
+ASM-001,2.3,SRM-001,2.2,FROZEN,Semantic evidence,Compatible,Closure Gate 1A accepted
+ASM-001,2.3,RFC-011,1.0,FROZEN,Immutable currentness,Compatible,Closure Gate 1A accepted
+ASM-001,2.3,RFC-014,1.1,FROZEN,Pre-ASM evidence gate,Compatible pending release approval,Closure Gate 1A accepted
+EOM-001,1.3,EIC-001,1.3,FROZEN,Admission handoff and trusted control metadata,Compatible pending release approval,Closure Gate 1A accepted
+EOM-001,1.3,ESM-001,1.2,FROZEN,Execution states,Compatible,Closure Gate 1A accepted
+EOM-001,1.3,RFC-014,1.1,FROZEN,Business-gated termination,Compatible pending release approval,Closure Gate 1A accepted
+EIC-001,1.3,PAD-001,1.4,FROZEN,Product access boundary,Compatible,Closure Gate 1A accepted
+EIC-001,1.3,CIM-001,1.1,FROZEN,AuthorityContext schema,Compatible pending release approval,Closure Gate 1A accepted
+CDD-010-CLARIFICATION,1.0,EIC-001,1.3,FROZEN,Trusted runtime control metadata,Compatible pending release approval,Closure Gate 1A accepted
+CDD-010-CLARIFICATION,1.0,EOM-001,1.3,FROZEN,Runtime metadata propagation,Compatible pending release approval,Closure Gate 1A accepted
+GRM-001,1.3,GEM-001,1.1,FROZEN,Exception authorization,Compatible,Closure Gate 1A accepted
+GRM-001,1.3,RFC-013,1.1,FROZEN,Authority/evaluation separation,Compatible,Closure Gate 1A accepted
+GRM-001,1.3,RFC-014,1.1,FROZEN,Recommendation standing,Compatible pending release approval,Closure Gate 1A accepted
+CVR-001,1.0,RFC-010,1.0,FROZEN,Canonical ontology boundary,Compatible,Closure Gate 1A accepted
+CVR-001,1.0,CDD-003 Revision 2,2.0,FROZEN,Canonical vocabulary ownership,Compatible,Closure Gate 1A accepted
+DRM-001,1.3,KRM-001,1.4,FROZEN,Institutional Knowledge inputs,Compatible,Closure Gate 1A accepted
+DRM-001,1.3,RFC-014,1.1,FROZEN,Bounded recommendation policy,Compatible pending release approval,Closure Gate 1A accepted
+DRM-001,1.3,CIM-001,1.1,FROZEN,Recommendation contract,Compatible pending release approval,Closure Gate 1A accepted
+RFC-014,1.1,ASM-001,2.3,FROZEN,Assertion gate,Compatible pending release approval,Closure Gate 1A accepted
+RFC-014,1.1,DRM-001,1.3,FROZEN,Recommendation semantics,Compatible pending release approval,Closure Gate 1A accepted
+RFC-014,1.1,GRM-001,1.3,FROZEN,Standing semantics,Compatible pending release approval,Closure Gate 1A accepted
+RFC-014,1.1,EIC-001,1.3,FROZEN,Trusted invocation metadata,Compatible pending release approval,Closure Gate 1A accepted
+RFC-014,1.1,EOM-001,1.3,FROZEN,Outcome-gated orchestration,Compatible pending release approval,Closure Gate 1A accepted
+RFC-014,1.1,CVR-001,1.0,FROZEN,Supplier-risk vocabulary,Compatible pending release approval,Closure Gate 1A accepted
+CIM-001,1.1,RFC-014,1.1,FROZEN,Integration policy,Compatible pending release approval,Closure Gate 1A accepted
+CIM-001,1.1,CVR-001,1.0,FROZEN,Supplier-risk vocabulary,Compatible pending release approval,Closure Gate 1A accepted
