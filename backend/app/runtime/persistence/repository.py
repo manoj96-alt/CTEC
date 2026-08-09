@@ -11,17 +11,19 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.integration.contracts import AuthorityContext
+from app.integration.contracts import AuthorityContext, IntegrationEnvelope
 from app.runtime.contracts import ExecutionSnapshot, InvocationRequest
 from app.runtime.execution_state import ExecutionState, initial_transition, transition
 from app.runtime.execution_store import AdmissionResult
 from app.runtime.persistence.contracts import (
     AttemptProjection,
+    ExecutionSummaryProjection,
     HandoffProtector,
     ProtectedPayloadIntegrityError,
     ProtectedPayloadMissingError,
     ProtectionContext,
     ReplayAuthorization,
+    ReplayOptionProjection,
     ResultProjection,
     RetryAuthorization,
     StageProjection,
@@ -37,6 +39,23 @@ from app.runtime.persistence.models import (
 from app.runtime.recovery import STAGES, ValidatedRecoveryInvocation, validated_recovery_invocation
 
 _HANDOFF_CONTRACT = "CIM-001-v1.1"
+
+
+def _terminal_classification(state: str, result: RuntimeResultORM | None) -> str | None:
+    if state not in {ExecutionState.COMPLETED.value, ExecutionState.FAILED.value}:
+        return None
+    if state == ExecutionState.FAILED.value:
+        return "TECHNICAL_FAILURE"
+    if result is None:
+        return "BUSINESS_GATED"
+    code = result.result_code or ""
+    if code in {"APPROVED", "CONDITIONALLY_APPROVED", "REJECTED", "INDETERMINATE"}:
+        return code
+    if code in {"EVIDENCE_INDETERMINATE", "IDENTITY_NOT_RESOLVED", "SEMANTICS_NOT_RESOLVED"}:
+        return "INDETERMINATE"
+    if not result.actionable:
+        return "BUSINESS_GATED"
+    return "APPROVED"
 
 
 class SqlAlchemyExecutionStore:
@@ -194,6 +213,123 @@ class SqlAlchemyExecutionStore:
         finally:
             session.close()
 
+    def list_executions(
+        self, tenant_id: str, *, offset: int, limit: int, state: str | None = None
+    ) -> tuple[ExecutionSummaryProjection, ...]:
+        session = self._sessions()
+        try:
+            query = select(RuntimeExecutionORM).where(RuntimeExecutionORM.tenant_id == tenant_id)
+            if state is not None:
+                query = query.where(RuntimeExecutionORM.state == state)
+            rows = tuple(
+                session.scalars(
+                    query.order_by(
+                        RuntimeExecutionORM.admitted_at.desc(),
+                        RuntimeExecutionORM.logical_execution_id.desc(),
+                    )
+                    .offset(offset)
+                    .limit(limit)
+                )
+            )
+            values: list[ExecutionSummaryProjection] = []
+            seen: set[UUID] = set()
+            for row in rows:
+                if row.logical_execution_id in seen:
+                    continue
+                seen.add(row.logical_execution_id)
+                latest = session.scalar(
+                    select(RuntimeExecutionORM)
+                    .where(
+                        RuntimeExecutionORM.logical_execution_id == row.logical_execution_id,
+                        RuntimeExecutionORM.tenant_id == tenant_id,
+                    )
+                    .order_by(RuntimeExecutionORM.admitted_at.desc())
+                    .limit(1)
+                )
+                if latest is None:
+                    continue
+                stage = session.scalar(
+                    select(RuntimeStageORM)
+                    .where(RuntimeStageORM.execution_id == latest.execution_id)
+                    .order_by(RuntimeStageORM.stage_ordinal.desc())
+                    .limit(1)
+                )
+                result = session.scalar(
+                    select(RuntimeResultORM).where(
+                        RuntimeResultORM.execution_id == latest.execution_id
+                    )
+                )
+                values.append(
+                    ExecutionSummaryProjection(
+                        latest.logical_execution_id,
+                        latest.execution_id,
+                        latest.request_classification,
+                        latest.admitted_at,
+                        latest.state,
+                        stage.stage_name if stage else None,
+                        _terminal_classification(latest.state, result),
+                        latest.state == ExecutionState.FAILED.value,
+                        latest.state
+                        in {ExecutionState.COMPLETED.value, ExecutionState.FAILED.value}
+                        and stage is not None,
+                        latest.terminal_at
+                        or (
+                            stage.completed_at
+                            if stage and stage.completed_at
+                            else latest.admitted_at
+                        ),
+                        latest.revision,
+                    )
+                )
+            return tuple(values)
+        finally:
+            session.close()
+
+    def replay_options(
+        self, logical_execution_id: UUID, tenant_id: str
+    ) -> tuple[ReplayOptionProjection, ...]:
+        session = self._sessions()
+        try:
+            execution = session.scalar(
+                select(RuntimeExecutionORM)
+                .where(
+                    RuntimeExecutionORM.logical_execution_id == logical_execution_id,
+                    RuntimeExecutionORM.tenant_id == tenant_id,
+                )
+                .order_by(RuntimeExecutionORM.admitted_at.desc())
+                .limit(1)
+            )
+            if execution is None:
+                return ()
+            stage = session.scalar(
+                select(RuntimeStageORM)
+                .where(
+                    RuntimeStageORM.execution_id == execution.execution_id,
+                    RuntimeStageORM.status == "COMMITTED",
+                )
+                .order_by(RuntimeStageORM.stage_ordinal.desc())
+                .limit(1)
+            )
+            if stage is None:
+                return ()
+            eligible = execution.state in {
+                ExecutionState.COMPLETED.value,
+                ExecutionState.FAILED.value,
+            }
+            return (
+                ReplayOptionProjection(
+                    stage.stage_id,
+                    execution.execution_id,
+                    stage.stage_name,
+                    stage.completed_at or stage.started_at,
+                    eligible,
+                    "REPLAY_ELIGIBLE" if eligible else "ATTEMPT_NOT_TERMINAL",
+                    execution.revision,
+                ),
+            )
+        finally:
+            session.close()
+
     def list_stages(
         self, logical_execution_id: UUID, execution_id: UUID, tenant_id: str
     ) -> tuple[StageProjection, ...]:
@@ -272,6 +408,7 @@ class SqlAlchemyExecutionStore:
                     )
                 )
             )
+            envelope = self._result_envelope(session, execution)
             return ResultProjection(
                 execution.execution_id,
                 result.result_code,
@@ -279,9 +416,74 @@ class SqlAlchemyExecutionStore:
                 result.actionable,
                 result.completed_at,
                 references,
+                _terminal_classification(execution.state, result) or "TECHNICAL_FAILURE",
+                envelope.diagnostic_code.value if envelope and envelope.diagnostic_code else None,
+                envelope.request.governance_conditions if envelope else (),
+                envelope.request.verified_conditions if envelope else (),
+                (
+                    tuple(
+                        observation.evidence_reference
+                        for observation in envelope.request.observations
+                    )
+                    if envelope
+                    else ()
+                ),
+                (
+                    tuple(
+                        observation.source_record_reference
+                        for observation in envelope.request.observations
+                    )
+                    if envelope
+                    else ()
+                ),
+                (
+                    envelope.policy_traceability.policy_identifier
+                    if envelope and envelope.policy_traceability
+                    else None
+                ),
+                (
+                    envelope.policy_traceability.policy_version
+                    if envelope and envelope.policy_traceability
+                    else None
+                ),
+                (
+                    envelope.policy_traceability.evaluated_rule
+                    if envelope and envelope.policy_traceability
+                    else None
+                ),
+                envelope.references.decision_evaluation if envelope else None,
             )
         finally:
             session.close()
+
+    def _result_envelope(
+        self, session: Session, execution: RuntimeExecutionORM
+    ) -> IntegrationEnvelope | None:
+        stage = session.scalar(
+            select(RuntimeStageORM)
+            .where(RuntimeStageORM.execution_id == execution.execution_id)
+            .order_by(RuntimeStageORM.stage_ordinal.desc())
+            .limit(1)
+        )
+        if stage is None or stage.output_handoff_id is None:
+            return None
+        handoff = session.get(RuntimeHandoffORM, stage.output_handoff_id)
+        if handoff is None:
+            return None
+        context = ProtectionContext(
+            execution.tenant_id,
+            execution.logical_execution_id,
+            execution.execution_id,
+            stage.stage_name,
+            "OUTPUT",
+            handoff.contract_version,
+        )
+        try:
+            return IntegrationEnvelope.from_bytes(
+                self._handoff_protector.recover(handoff.protected_payload, context)
+            )
+        except (ValueError, KeyError, TypeError):
+            return None
 
     def advance(self, execution_identifier: UUID, target_state: ExecutionState) -> None:
         session = self._sessions()

@@ -30,7 +30,7 @@ def test_replay_requires_recovery_role_even_with_scope() -> None:
     trusted = TrustedPrincipal(
         "principal",
         "tenant",
-        ("execution:replay",),
+        ("supplier-risk:replay",),
         ("analyst",),
         "issuer",
         now - timedelta(seconds=1),

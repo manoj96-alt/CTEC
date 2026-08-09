@@ -93,7 +93,7 @@ def test_retry_and_privileged_replay_routes_are_bounded_and_audited() -> None:
     trusted = TrustedPrincipal(
         "operator",
         "tenant-a",
-        ("supplier-risk:retry", "execution:replay"),
+        ("supplier-risk:retry", "supplier-risk:replay"),
         ("EXECUTION_RECOVERY_OPERATOR",),
         "https://issuer.example/",
         now - timedelta(seconds=1),

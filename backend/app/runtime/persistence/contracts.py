@@ -112,3 +112,39 @@ class ResultProjection:
     actionable: bool
     completed_at: datetime
     produced_record_references: tuple[UUID, ...]
+    terminal_classification: str
+    diagnostic_code: str | None = None
+    conditions: tuple[str, ...] = ()
+    verified_conditions: tuple[str, ...] = ()
+    evidence_references: tuple[str, ...] = ()
+    provenance_references: tuple[str, ...] = ()
+    policy_reference: str | None = None
+    policy_version: str | None = None
+    policy_rule: str | None = None
+    decision_reference: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionSummaryProjection:
+    logical_execution_id: UUID
+    current_execution_id: UUID
+    subject_summary: str
+    submitted_at: datetime
+    state: str
+    current_stage: str | None
+    terminal_classification: str | None
+    retry_eligible: bool
+    replay_eligible: bool
+    last_updated_at: datetime
+    revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayOptionProjection:
+    option_reference: UUID
+    source_execution_id: UUID
+    stage_name: str
+    checkpoint_at: datetime
+    eligible: bool
+    reason_code: str
+    revision: int

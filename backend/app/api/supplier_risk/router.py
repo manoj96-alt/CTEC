@@ -10,9 +10,12 @@ from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.api.supplier_risk.dependencies import api_service, container, principal
 from app.api.supplier_risk.schemas import (
     AttemptListResponse,
+    ExecutionListResponse,
     ExecutionResponse,
     GovernedResultResponse,
+    ReplayOptionsResponse,
     ReplayRequest,
+    RetryEligibilityResponse,
     RetryRequest,
     StageListResponse,
     SubmissionResponse,
@@ -22,6 +25,30 @@ from app.application.supplier_risk_api import SupplierRiskApiService
 from app.core.dependency_container import Container
 
 router = APIRouter(prefix="/api/v1/supplier-risk", tags=["supplier-risk"])
+
+
+@router.get("/executions", response_model=ExecutionListResponse)
+def list_executions(
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    service: Annotated[SupplierRiskApiService, Depends(api_service)],
+    dependencies: Annotated[Container, Depends(container)],
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    execution_status: Annotated[str | None, Query(alias="status")] = None,
+) -> ExecutionListResponse:
+    _authorize(authenticated, "supplier-risk:read", dependencies, UUID(int=0))
+    _rate_limit(authenticated, dependencies)
+    if execution_status not in {None, "Accepted", "Executing", "Completed", "Failed"}:
+        raise HTTPException(400, detail={"code": "INVALID_EXECUTION_STATUS_FILTER"})
+    try:
+        offset = int(cursor or "0")
+        if offset < 0:
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(400, detail={"code": "INVALID_CURSOR"}) from exc
+    result = service.executions(authenticated, offset=offset, limit=limit, state=execution_status)
+    _audit_disclosure(dependencies, authenticated, UUID(int=0), "EXECUTION_QUEUE_READ")
+    return result
 
 
 @router.post(
@@ -153,6 +180,44 @@ def get_result(
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
+@router.get(
+    "/executions/{logical_execution_id}/retry-eligibility",
+    response_model=RetryEligibilityResponse,
+)
+def get_retry_eligibility(
+    logical_execution_id: UUID,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    service: Annotated[SupplierRiskApiService, Depends(api_service)],
+    dependencies: Annotated[Container, Depends(container)],
+) -> RetryEligibilityResponse:
+    _authorize(authenticated, "supplier-risk:retry", dependencies, logical_execution_id)
+    result = service.retry_eligibility(logical_execution_id, authenticated)
+    if result is None:
+        raise HTTPException(404, detail={"code": "RESOURCE_NOT_FOUND"})
+    _audit_disclosure(dependencies, authenticated, logical_execution_id, "RETRY_ELIGIBILITY_READ")
+    return result
+
+
+@router.get(
+    "/executions/{logical_execution_id}/replay-options",
+    response_model=ReplayOptionsResponse,
+)
+def get_replay_options(
+    logical_execution_id: UUID,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    service: Annotated[SupplierRiskApiService, Depends(api_service)],
+    dependencies: Annotated[Container, Depends(container)],
+) -> ReplayOptionsResponse:
+    _authorize(authenticated, "supplier-risk:replay", dependencies, logical_execution_id)
+    if "EXECUTION_RECOVERY_OPERATOR" not in authenticated.roles:
+        raise HTTPException(403, detail={"code": "RECOVERY_ROLE_REQUIRED"})
+    result = service.replay_options(logical_execution_id, authenticated)
+    if result is None:
+        raise HTTPException(404, detail={"code": "RESOURCE_NOT_FOUND"})
+    _audit_disclosure(dependencies, authenticated, logical_execution_id, "REPLAY_OPTIONS_READ")
+    return result
+
+
 @router.post(
     "/executions/{logical_execution_id}/retry",
     response_model=SubmissionResponse,
@@ -216,7 +281,7 @@ def replay_execution(
 ) -> SubmissionResponse:
     _authorize(
         authenticated,
-        "execution:replay",
+        "supplier-risk:replay",
         dependencies,
         body.correlation_identifier,
     )
@@ -299,3 +364,8 @@ def _audit_disclosure(
         principal=authenticated,
         execution_id=logical_execution_id,
     )
+
+
+def _rate_limit(authenticated: TrustedPrincipal, dependencies: Container) -> None:
+    if dependencies.rate_limiter and not dependencies.rate_limiter.admit(authenticated.tenant_id):
+        raise HTTPException(429, detail={"code": "RATE_LIMITED"})
