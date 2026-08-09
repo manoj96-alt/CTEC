@@ -18,6 +18,16 @@ Closure Gate 1 is complete. Architecture Baseline v1.2 was published through the
 | Approved-base ancestry | PASS |
 | GitHub CI | PASS — backend, frontend, and containers on push and pull request |
 
+Closure evidence and the CDD-011 preimplementation package were published separately so the release merge identifiers could be recorded exactly:
+
+| Evidence | Value |
+|---|---|
+| Closure/package branch | `agent/cdd-011-preimplementation` |
+| Closure/package commit | `1f1f643727e1e096dd99656d6dfd4a563d3369ca` |
+| Closure/package pull request | [PR #31](https://github.com/manoj96-alt/CTEC/pull/31) |
+| Closure/package merge commit | `5959d92378f8dd34bf227426f2a5a5b40a10131e` |
+| Closure/package GitHub CI | PASS — backend, frontend, and containers on push and pull request |
+
 ## Released authority versions
 
 - Architecture Baseline v1.2; Registry v1.2; Baseline Record v1.4.

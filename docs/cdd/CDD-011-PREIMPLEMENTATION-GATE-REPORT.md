@@ -1,8 +1,13 @@
 # CDD-011 — Preimplementation Gate Report
 
-Version: 1.0  
-Status: READY FOR APPROVAL  
-Reviewed remote main: `5acb7b4ccd44ad46afce656a5f8b3314b7077396`  
+Version: 1.0
+
+Status: READY FOR APPROVAL
+
+Reviewed release base: `5acb7b4ccd44ad46afce656a5f8b3314b7077396`
+
+Published governance package: `5959d92378f8dd34bf227426f2a5a5b40a10131e`
+
 Reviewed work order: CDD-011 Draft v1.0
 
 ## Gate decision
@@ -70,4 +75,4 @@ No new business entity, canonical attribute, unapproved relationship, architectu
 
 ## Recommendation
 
-**READY FOR APPROVAL.** The reviewed release base is `5acb7b4ccd44ad46afce656a5f8b3314b7077396`. Before granting implementation approval, governance must verify and cite the remote-main commit that publishes this exact CDD-011 package. Implementation must start from that cited commit (or stop if remote main changes), modify only the exhaustive allowlist in CDD-011 Draft v1.0, and stop with an Implementation Completion Report before any merge, publication, registration, or status transition.
+**READY FOR APPROVAL.** The exact CDD-011 governance package is published on remote main at `5959d92378f8dd34bf227426f2a5a5b40a10131e`. Any implementation approval must cite that commit. Implementation must start from that cited commit (or stop if remote main changes), modify only the exhaustive allowlist in CDD-011 Draft v1.0, and stop with an Implementation Completion Report before any merge, publication, registration, or status transition.
