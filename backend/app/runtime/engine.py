@@ -14,7 +14,7 @@ from app.runtime.contracts import (
     InvocationStatus,
 )
 from app.runtime.execution_state import ExecutionState
-from app.runtime.execution_store import InMemoryExecutionStore
+from app.runtime.execution_store import ExecutionStore, InMemoryExecutionStore
 from app.runtime.invocation import InvocationAdmissionService
 from app.runtime.orchestration import (
     CapabilityStepError,
@@ -35,10 +35,10 @@ class _ResultOverlay:
 
 
 class CognitiveEngineRuntime:
-    def __init__(self, ports: CapabilityStepPorts) -> None:
-        self._store = InMemoryExecutionStore()
+    def __init__(self, ports: CapabilityStepPorts, store: ExecutionStore | None = None) -> None:
+        self._store = store or InMemoryExecutionStore()
         self._admission = InvocationAdmissionService(self._store)
-        self._orchestrator = RuntimeOrchestrator(ports)
+        self._orchestrator = RuntimeOrchestrator(ports, self._store)
         self._result_lock = RLock()
         self._control_fingerprints: dict[tuple[str, UUID], bytes] = {}
         self._result_overlays: dict[UUID, _ResultOverlay] = {}
@@ -114,15 +114,23 @@ class CognitiveEngineRuntime:
         except (CapabilityStepError, Exception):  # noqa: BLE001
             self._store.advance(execution_identifier, ExecutionState.FAILED)
             return
+        completed_at = datetime.now(UTC)
         with self._result_lock:
             self._result_overlays[execution_identifier] = _ResultOverlay(
                 admitted_at=admitted_at,
-                completed_at=datetime.now(UTC),
+                completed_at=completed_at,
                 produced_record_references=result.produced_record_references,
                 result_code=result.result_code,
                 result_value=result.result_value,
                 actionable=result.actionable,
             )
+        self._store.record_result(
+            execution_identifier,
+            result_code=result.result_code,
+            result_value=result.result_value,
+            actionable=result.actionable,
+            completed_at=completed_at,
+        )
         self._store.advance(execution_identifier, ExecutionState.COMPLETED)
 
     @staticmethod

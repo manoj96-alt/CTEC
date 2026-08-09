@@ -1,7 +1,7 @@
 """Deterministic orchestration over six injected opaque capability-step ports."""
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -43,6 +43,20 @@ class CapabilityStepPort(Protocol):
     def execute(self, step_input: CapabilityStepInput) -> CapabilityStepOutput: ...
 
 
+class CheckpointPort(Protocol):
+    def checkpoint(
+        self,
+        execution_identifier: UUID,
+        *,
+        stage_name: str,
+        stage_ordinal: int,
+        input_payload: bytes,
+        output_payload: bytes,
+        artifact_references: tuple[UUID, ...],
+        completed_at: datetime,
+    ) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityStepPorts:
     erm: CapabilityStepPort
@@ -57,15 +71,29 @@ class CapabilityStepPorts:
 
 
 class RuntimeOrchestrator:
-    def __init__(self, ports: CapabilityStepPorts) -> None:
+    def __init__(
+        self, ports: CapabilityStepPorts, checkpoints: CheckpointPort | None = None
+    ) -> None:
         self._ports = ports
+        self._checkpoints = checkpoints
 
     def execute(self, initial_input: CapabilityStepInput) -> CapabilityStepOutput:
         current_input = initial_input
         output: CapabilityStepOutput | None = None
-        for port in self._ports.ordered():
+        names = ("ERM", "SRM", "ASM", "KRM", "DRM", "GRM")
+        for ordinal, (name, port) in enumerate(zip(names, self._ports.ordered(), strict=True)):
             output = port.execute(current_input)
             self._validate_metadata(current_input, output)
+            if self._checkpoints is not None:
+                self._checkpoints.checkpoint(
+                    current_input.execution_identifier,
+                    stage_name=name,
+                    stage_ordinal=ordinal,
+                    input_payload=current_input.opaque_payload,
+                    output_payload=output.opaque_payload,
+                    artifact_references=output.produced_record_references,
+                    completed_at=datetime.now(UTC),
+                )
             if output.business_gated:
                 return output
             current_input = replace(current_input, opaque_payload=output.opaque_payload)
