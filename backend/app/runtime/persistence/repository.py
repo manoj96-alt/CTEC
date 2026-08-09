@@ -1,5 +1,6 @@
 """PostgreSQL-backed atomic execution admission and durable observation."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from threading import RLock
@@ -41,6 +42,17 @@ from app.runtime.recovery import STAGES, ValidatedRecoveryInvocation, validated_
 _HANDOFF_CONTRACT = "CIM-001-v1.1"
 
 
+def _trusted_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("Trusted admission clock must return a timezone-aware timestamp")
+    return value.astimezone(UTC)
+
+
+def _stored_utc(value: datetime) -> datetime:
+    """Normalize database timestamps; SQLite drops timezone metadata in tests."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 def _terminal_classification(state: str, result: RuntimeResultORM | None) -> str | None:
     if state not in {ExecutionState.COMPLETED.value, ExecutionState.FAILED.value}:
         return None
@@ -62,10 +74,14 @@ class SqlAlchemyExecutionStore:
     """Durable store with database-enforced admission and optimistic revision."""
 
     def __init__(
-        self, session_factory: sessionmaker[Session], handoff_protector: HandoffProtector
+        self,
+        session_factory: sessionmaker[Session],
+        handoff_protector: HandoffProtector,
+        admission_clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._sessions = session_factory
         self._handoff_protector = handoff_protector
+        self._admission_clock = admission_clock
         self._replay_lock = RLock()
 
     def admit(self, request: InvocationRequest, payload_fingerprint: bytes) -> AdmissionResult:
@@ -89,9 +105,48 @@ class SqlAlchemyExecutionStore:
                     existing.payload_fingerprint != payload_fingerprint
                     or existing.control_fingerprint != control
                 )
-                return AdmissionResult(None if conflict else existing.execution_id, False, conflict)
+                if conflict:
+                    return AdmissionResult(None, False, True)
+                handoff = session.scalar(
+                    select(RuntimeHandoffORM).where(
+                        RuntimeHandoffORM.execution_id == existing.execution_id,
+                        RuntimeHandoffORM.source_stage.is_(None),
+                        RuntimeHandoffORM.target_stage == STAGES[0],
+                    )
+                )
+                if handoff is None:
+                    raise RuntimeError("Committed admission handoff is unavailable")
+                context = ProtectionContext(
+                    tenant_id=tenant,
+                    logical_execution_id=existing.logical_execution_id,
+                    attempt_id=existing.execution_id,
+                    stage_name=STAGES[0],
+                    direction="INPUT",
+                    contract_version=handoff.contract_version,
+                )
+                admitted_payload = self._handoff_protector.recover(
+                    handoff.protected_payload, context
+                )
+                if sha256(admitted_payload).digest() != handoff.content_hash:
+                    raise ProtectedPayloadIntegrityError(
+                        "Committed admission payload integrity check failed"
+                    )
+                return AdmissionResult(
+                    existing.execution_id,
+                    False,
+                    False,
+                    admitted_payload=admitted_payload,
+                    admitted_at=_stored_utc(existing.admitted_at),
+                )
             execution_id = uuid4()
-            admitted_at = datetime.now(UTC)
+            admitted_at = _trusted_utc(self._admission_clock())
+            admitted_payload = (
+                request.admitted_payload_builder(admitted_at)
+                if request.admitted_payload_builder
+                else request.opaque_payload
+            )
+            if not isinstance(admitted_payload, bytes):
+                raise TypeError("The admitted payload builder must return bytes")
             session.add(
                 RuntimeExecutionORM(
                     execution_id=execution_id,
@@ -127,15 +182,19 @@ class SqlAlchemyExecutionStore:
                     source_stage=None,
                     target_stage=STAGES[0],
                     contract_version=_HANDOFF_CONTRACT,
-                    protected_payload=self._handoff_protector.protect(
-                        request.opaque_payload, context
-                    ),
-                    content_hash=sha256(request.opaque_payload).digest(),
+                    protected_payload=self._handoff_protector.protect(admitted_payload, context),
+                    content_hash=sha256(admitted_payload).digest(),
                     created_at=admitted_at,
                 )
             )
             session.commit()
-            return AdmissionResult(execution_id, True, False)
+            return AdmissionResult(
+                execution_id,
+                True,
+                False,
+                admitted_payload=admitted_payload,
+                admitted_at=admitted_at,
+            )
         except IntegrityError:
             session.rollback()
             return self.admit(request, payload_fingerprint)

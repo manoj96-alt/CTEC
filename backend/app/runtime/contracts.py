@@ -1,5 +1,6 @@
 """Opaque contracts exposed by the in-process Cognitive Engine runtime shell."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -34,6 +35,7 @@ class InvocationRequest:
     opaque_payload: bytes
     authority_context: AuthorityContext | None = None
     control_metadata_version: str | None = None
+    admitted_payload_builder: Callable[[datetime], bytes] | None = None
 
 
 @dataclass(frozen=True, slots=True)

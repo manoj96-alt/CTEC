@@ -43,6 +43,7 @@ def test_invocation_request_contains_only_governed_fields() -> None:
         "opaque_payload",
         "authority_context",
         "control_metadata_version",
+        "admitted_payload_builder",
     }
 
 

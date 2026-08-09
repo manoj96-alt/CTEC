@@ -75,6 +75,47 @@ def test_atomic_admission_duplicate_conflict_and_terminal_retention() -> None:
     assert snapshot and snapshot.state is ExecutionState.COMPLETED
 
 
+def test_restart_reuses_original_trusted_timestamp_and_admitted_payload() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(engine, expire_on_commit=False)
+    assigned = datetime(2026, 2, 3, 4, 5, tzinfo=UTC)
+    calls: list[datetime] = []
+    value = request(b'{"canonical":"client"}')
+
+    def build_admitted_payload(timestamp: datetime) -> bytes:
+        calls.append(timestamp)
+        return f"admitted:{timestamp.isoformat()}".encode()
+
+    value = InvocationRequest(
+        value.protocol_version,
+        value.correlation_identifier,
+        value.request_identifier,
+        value.session_identifier,
+        value.request_classification,
+        value.opaque_payload,
+        value.authority_context,
+        value.control_metadata_version,
+        build_admitted_payload,
+    )
+    first_store = SqlAlchemyExecutionStore(
+        sessions, FakeHandoffProtector(), admission_clock=lambda: assigned
+    )
+
+    first = first_store.admit(value, b"canonical-client-hash")
+    restarted = SqlAlchemyExecutionStore(
+        sessions,
+        FakeHandoffProtector(),
+        admission_clock=lambda: (_ for _ in ()).throw(AssertionError("clock called")),
+    )
+    duplicate = restarted.admit(value, b"canonical-client-hash")
+
+    assert duplicate.execution_identifier == first.execution_identifier
+    assert duplicate.admitted_at == assigned
+    assert duplicate.admitted_payload == f"admitted:{assigned.isoformat()}".encode()
+    assert calls == [assigned]
+
+
 def test_checkpoint_result_and_references_are_durable() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

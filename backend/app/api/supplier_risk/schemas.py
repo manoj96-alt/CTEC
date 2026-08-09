@@ -23,7 +23,6 @@ class SourceObservationRequest(ClosedModel):
     value: str = Field(min_length=1, max_length=1000)
     severity: RiskSeverity
     observed_at: datetime
-    received_at: datetime
     evidence_reference: str = Field(min_length=1, max_length=1000)
     schema_version: Literal["1.0"] = "1.0"
     conflicting: bool = False
