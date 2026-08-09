@@ -4,11 +4,14 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.config.router import router as config_router
 from app.api.health.router import router as health_router
+from app.api.supplier_risk.router import router as supplier_risk_router
 from app.api.version.router import router as version_router
 from app.core.constants import API_PREFIX, APP_NAME, APP_VERSION, REQUEST_ID_HEADER
 from app.core.dependency_container import build_container
@@ -39,6 +42,38 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.exception_handler(HTTPException)
+    async def supplier_risk_http_error(request: Request, exc: HTTPException) -> JSONResponse:
+        if not request.url.path.startswith("/api/v1/supplier-risk"):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        detail: dict[str, object] = exc.detail if isinstance(exc.detail, dict) else {}
+        code = str(detail.get("code", "REQUEST_REJECTED"))
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": code,
+                "message": "Request could not be completed",
+                "correlation_id": _safe_request_id(request),
+                "retryable": exc.status_code in {429, 500, 503},
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def supplier_risk_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        if not request.url.path.startswith("/api/v1/supplier-risk"):
+            return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "REQUEST_VALIDATION_FAILED",
+                "message": "Request could not be completed",
+                "correlation_id": _safe_request_id(request),
+                "retryable": False,
+            },
+        )
+
     @app.middleware("http")
     async def request_context(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -61,7 +96,6 @@ def create_app() -> FastAPI:
                 "path": request.url.path,
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
-                "user": request.headers.get("X-User", "anonymous"),
             },
         )
         request_id_context.reset(token)
@@ -72,7 +106,16 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=API_PREFIX)
     app.include_router(config_router, prefix=API_PREFIX)
     app.include_router(version_router, prefix=API_PREFIX)
+    app.include_router(supplier_risk_router)
     return app
+
+
+def _safe_request_id(request: Request) -> str:
+    value = request.headers.get(REQUEST_ID_HEADER, "")
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return str(uuid.uuid4())
 
 
 app = create_app()

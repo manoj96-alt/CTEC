@@ -81,3 +81,12 @@ logical execution and requires tenant-matched `EXECUTION_RECOVERY_OPERATOR` auth
 `execution:replay` scope, an authorization reference, reason, correlation identifier, and UTC
 timestamp. Terminal records are retained for seven years; legal hold suspends deletion. This
 layer provides no API, UI, deployment wiring, or business-rule interpretation.
+
+## Supplier-risk application API
+
+CDD-013 exposes the bounded `/api/v1/supplier-risk` boundary. It requires a cryptographically
+verified OIDC/OAuth 2.0 bearer access token, tenant-scoped PAS-001 scopes, an `Idempotency-Key`,
+PostgreSQL migrations through `0009_api_security_audit`, and a deployment-owned versioned AES-GCM
+handoff key. `X-User` is never trusted. Tokens, complete claims, protected payloads, and sensitive evidence
+are not logged or persisted. The API reuses the CDD-010 runtime, CDD-011 six-capability flow, and
+CDD-012 durable store; it does not create another orchestration path or execute sourcing actions.

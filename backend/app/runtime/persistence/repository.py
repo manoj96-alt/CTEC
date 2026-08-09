@@ -16,11 +16,15 @@ from app.runtime.contracts import ExecutionSnapshot, InvocationRequest
 from app.runtime.execution_state import ExecutionState, initial_transition, transition
 from app.runtime.execution_store import AdmissionResult
 from app.runtime.persistence.contracts import (
+    AttemptProjection,
     HandoffProtector,
     ProtectedPayloadIntegrityError,
     ProtectedPayloadMissingError,
     ProtectionContext,
     ReplayAuthorization,
+    ResultProjection,
+    RetryAuthorization,
+    StageProjection,
 )
 from app.runtime.persistence.models import (
     RuntimeArtifactReferenceORM,
@@ -144,6 +148,137 @@ class SqlAlchemyExecutionStore:
                 result_code=result.result_code if result else None,
                 result_value=result.result_value if result else None,
                 actionable=result.actionable if result else False,
+            )
+        finally:
+            session.close()
+
+    def tenant_owns(self, execution_identifier: UUID, tenant_id: str) -> bool:
+        session = self._sessions()
+        try:
+            return (
+                session.scalar(
+                    select(RuntimeExecutionORM.execution_id).where(
+                        RuntimeExecutionORM.execution_id == execution_identifier,
+                        RuntimeExecutionORM.tenant_id == tenant_id,
+                    )
+                )
+                is not None
+            )
+        finally:
+            session.close()
+
+    def list_attempts(
+        self, logical_execution_id: UUID, tenant_id: str
+    ) -> tuple[AttemptProjection, ...]:
+        session = self._sessions()
+        try:
+            rows = session.scalars(
+                select(RuntimeExecutionORM)
+                .where(
+                    RuntimeExecutionORM.logical_execution_id == logical_execution_id,
+                    RuntimeExecutionORM.tenant_id == tenant_id,
+                )
+                .order_by(RuntimeExecutionORM.admitted_at, RuntimeExecutionORM.execution_id)
+            )
+            return tuple(
+                AttemptProjection(
+                    row.execution_id,
+                    row.logical_execution_id,
+                    row.state,
+                    row.admitted_at,
+                    row.terminal_at,
+                    row.revision,
+                )
+                for row in rows
+            )
+        finally:
+            session.close()
+
+    def list_stages(
+        self, logical_execution_id: UUID, execution_id: UUID, tenant_id: str
+    ) -> tuple[StageProjection, ...]:
+        session = self._sessions()
+        try:
+            owned = session.scalar(
+                select(RuntimeExecutionORM.execution_id).where(
+                    RuntimeExecutionORM.execution_id == execution_id,
+                    RuntimeExecutionORM.logical_execution_id == logical_execution_id,
+                    RuntimeExecutionORM.tenant_id == tenant_id,
+                )
+            )
+            if owned is None:
+                return ()
+            rows = tuple(
+                session.scalars(
+                    select(RuntimeStageORM)
+                    .where(RuntimeStageORM.execution_id == execution_id)
+                    .order_by(RuntimeStageORM.stage_ordinal)
+                )
+            )
+            references = tuple(
+                session.scalars(
+                    select(RuntimeArtifactReferenceORM).where(
+                        RuntimeArtifactReferenceORM.execution_id == execution_id
+                    )
+                )
+            )
+            by_stage: dict[UUID, list[UUID]] = {}
+            for reference in references:
+                if reference.stage_id is not None:
+                    by_stage.setdefault(reference.stage_id, []).append(reference.artifact_id)
+            return tuple(
+                StageProjection(
+                    row.stage_id,
+                    row.stage_name,
+                    row.stage_ordinal,
+                    row.status,
+                    row.started_at,
+                    row.completed_at,
+                    row.safe_failure_code,
+                    tuple(by_stage.get(row.stage_id, ())),
+                )
+                for row in rows
+            )
+        finally:
+            session.close()
+
+    def get_result_for_logical(
+        self, logical_execution_id: UUID, tenant_id: str
+    ) -> ResultProjection | None:
+        session = self._sessions()
+        try:
+            execution = session.scalar(
+                select(RuntimeExecutionORM)
+                .where(
+                    RuntimeExecutionORM.logical_execution_id == logical_execution_id,
+                    RuntimeExecutionORM.tenant_id == tenant_id,
+                )
+                .order_by(RuntimeExecutionORM.admitted_at.desc())
+                .limit(1)
+            )
+            if execution is None:
+                return None
+            result = session.scalar(
+                select(RuntimeResultORM).where(
+                    RuntimeResultORM.execution_id == execution.execution_id
+                )
+            )
+            if result is None:
+                return None
+            references = tuple(
+                session.scalars(
+                    select(RuntimeArtifactReferenceORM.artifact_id).where(
+                        RuntimeArtifactReferenceORM.execution_id == execution.execution_id
+                    )
+                )
+            )
+            return ResultProjection(
+                execution.execution_id,
+                result.result_code,
+                result.result_value,
+                result.actionable,
+                result.completed_at,
+                references,
             )
         finally:
             session.close()
@@ -301,6 +436,22 @@ class SqlAlchemyExecutionStore:
         authorization: ReplayAuthorization,
         authority_context: AuthorityContext,
     ) -> ValidatedRecoveryInvocation:
+        return self._prepare_recovery(original_execution_id, authorization, authority_context)
+
+    def prepare_retry(
+        self,
+        original_execution_id: UUID,
+        authorization: RetryAuthorization,
+        authority_context: AuthorityContext,
+    ) -> ValidatedRecoveryInvocation:
+        return self._prepare_recovery(original_execution_id, authorization, authority_context)
+
+    def _prepare_recovery(
+        self,
+        original_execution_id: UUID,
+        authorization: ReplayAuthorization | RetryAuthorization,
+        authority_context: AuthorityContext,
+    ) -> ValidatedRecoveryInvocation:
         """Validate a checkpoint and atomically create or return its linked replay."""
         with self._replay_lock:
             session = self._sessions()
@@ -399,7 +550,8 @@ class SqlAlchemyExecutionStore:
 
     @staticmethod
     def _validate_replay_authority(
-        authorization: ReplayAuthorization, authority_context: AuthorityContext
+        authorization: ReplayAuthorization | RetryAuthorization,
+        authority_context: AuthorityContext,
     ) -> None:
         if (
             authority_context.principal_id != authorization.principal_id
@@ -416,7 +568,9 @@ class SqlAlchemyExecutionStore:
 
     @staticmethod
     def _lock_replay_identity(
-        session: Session, original_execution_id: UUID, authorization: ReplayAuthorization
+        session: Session,
+        original_execution_id: UUID,
+        authorization: ReplayAuthorization | RetryAuthorization,
     ) -> None:
         if session.bind is not None and session.bind.dialect.name == "postgresql":
             identity = (
