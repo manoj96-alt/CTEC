@@ -83,4 +83,6 @@ def test_concurrent_replay_admission_creates_one_linked_attempt() -> None:
     with sessions() as session:
         assert session.query(RuntimeRecoveryAttemptORM).count() == 1
         assert session.query(RuntimeExecutionORM).count() == 2
-        assert session.get(RuntimeExecutionORM, original).state == ExecutionState.FAILED.value
+        original_row = session.get(RuntimeExecutionORM, original)
+        assert original_row is not None
+        assert original_row.state == ExecutionState.FAILED.value
