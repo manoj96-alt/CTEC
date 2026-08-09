@@ -91,7 +91,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | Work Order | Version | CDD Gate | Implementation State | Location |
 |---|---:|---|---|---|
 | CDD-009 Governance Engine | 1.1 | FROZEN | IMPLEMENTED | [Authorization](../docs/cdd/CDD-009-AUTHORIZATION.md) · [Evidence](../docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
-| CDD-010 Cognitive Engine Runtime Shell | 1.3 | ARCHITECTURE REVIEW — READY FOR APPROVAL | NOT STARTED | [Non-authorizing draft](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) · [Resolved clarification](../docs/cdd/CDD-010-ARCHITECTURE-CLARIFICATION.md) · [Gate report](../docs/cdd/CDD-010-PREIMPLEMENTATION-GATE-REPORT.md) |
+| CDD-010 Cognitive Engine Runtime Shell | 1.3 | FROZEN | IMPLEMENTED | [Work order](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) · [Resolved clarification](../docs/cdd/CDD-010-ARCHITECTURE-CLARIFICATION.md) · [Gate report](../docs/cdd/CDD-010-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-010-IMPLEMENTATION-EVIDENCE.md) |
 
 ## Historical review artifacts
 
@@ -229,3 +229,21 @@ CDD-009 is governed implementation evidence, not an Architecture Baseline v1.1 a
 | Quality result | `Ruff PASS; Black PASS; isort PASS; mypy PASS (163 source files)` |
 | Architecture validation | `PASS — registry/schema, dependency, checksum, manifest and drift checks` |
 | Changed-artifact authorization | `PASS — exact path/action allowlist; no unauthorized artifacts changed` |
+
+## CDD-010 implementation evidence
+
+CDD-010 is governed implementation evidence, not an Architecture Baseline v1.1 artifact. Its integration does not alter a frozen architecture artifact and therefore does not regenerate either Architecture Release Manifest. The implementation is a process-local runtime shell only; production capability adapters and semantic handoff mappings remain outside CDD-010.
+
+| Evidence | Value |
+|---|---|
+| Implementation status | `IMPLEMENTED / FROZEN` |
+| Approved governance base | [`47031682d54ee27406e25d6c3a52ac704be0eebb`](https://github.com/manoj96-alt/CTEC/commit/47031682d54ee27406e25d6c3a52ac704be0eebb) |
+| Implementation commit | [`c44914b4dc58223dde1221c703356c974093c79e`](https://github.com/manoj96-alt/CTEC/commit/c44914b4dc58223dde1221c703356c974093c79e) |
+| Pull request | [PR #28](https://github.com/manoj96-alt/CTEC/pull/28) |
+| Merge commit | [`c70afc43de71ec94ed2a8f1eb32a8cdb8dc56c5e`](https://github.com/manoj96-alt/CTEC/commit/c70afc43de71ec94ed2a8f1eb32a8cdb8dc56c5e) |
+| Implementation evidence | [CDD-010 implementation evidence](../docs/cdd/CDD-010-IMPLEMENTATION-EVIDENCE.md) |
+| Reviewer decision | `APPROVED — zero P0/P1 findings and zero unauthorized changes` |
+| Test result | `15 focused runtime tests passed; 112 backend tests passed; 9 existing persistence tests skipped; 90.73% backend coverage` |
+| CI result | `PASS — backend, frontend, and container jobs for PR #28` |
+| Quality result | `Ruff PASS; Black PASS; isort PASS; mypy PASS (175 source files); frontend quality PASS` |
+| Architecture validation | `PASS — registry/schema, dependency, checksum, manifest, authorization, and drift checks` |

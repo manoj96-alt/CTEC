@@ -1,15 +1,15 @@
 # CDD-010 — Cognitive Engine Runtime
 
-Version: 1.3 DRAFT
+Version: 1.3 FROZEN
 
-CDD Gate: ARCHITECTURE REVIEW — READY FOR APPROVAL
+CDD Gate: FROZEN
 
-Implementation State: NOT STARTED  
+Implementation State: IMPLEMENTED
 Architecture Baseline: v1.1  
 Mandatory Template: CDD Template v2.2  
 Effective Review Date: 2026-08-08
 
-This is a non-authorizing draft. It supersedes Draft v1.2 after resolution of the runtime-shell Architecture Clarification Report. Do not implement, create production artifacts, or modify any file listed in the authorization sections until explicit implementation approval is recorded.
+This frozen work order supersedes Draft v1.2 after resolution of the runtime-shell Architecture Clarification Report. Implementation was explicitly approved against governance-package commit `47031682d54ee27406e25d6c3a52ac704be0eebb`, delivered by implementation commit `c44914b4dc58223dde1221c703356c974093c79e`, and merged through PR #28 as `c70afc43de71ec94ed2a8f1eb32a8cdb8dc56c5e`. Closure evidence is recorded in `CDD-010-IMPLEMENTATION-EVIDENCE.md`.
 
 ## 1. Implementation objective and business outcome
 
@@ -26,11 +26,12 @@ CDD-010 does not deliver an externally callable, fully integrated CTEC capabilit
 | DRAFT v1.0 | 2026-08-08 | Superseded before approval | Initial draft contained a superseded Baseline Record reference and used TAS-001 in one authorization source. It never reached APPROVED or IMPLEMENTATION. |
 | DRAFT v1.1 | 2026-08-08 | Superseded after blocked review | Corrected release authorities but left production capability handoffs and concurrent idempotency underspecified. The accepted preimplementation report classified one P0 and one P1 finding. |
 | DRAFT v1.2 | 2026-08-08 | Superseded after clarification | Narrowed delivery to a runtime shell but retained two unresolved replay-response questions. |
-| DRAFT v1.3 | 2026-08-08 | Current draft | Incorporates the approved runtime-shell, sequencing, failure, replay, conflict, and process-local concurrency clarification. |
+| DRAFT v1.3 | 2026-08-08 | Approved and implemented | Incorporated the approved runtime-shell, sequencing, failure, replay, conflict, and process-local concurrency clarification. |
 | P0 prerequisite verification | 2026-08-08 | Closed, remote evidence verified | Baseline release `834582b` and CDD-009 merge/evidence commits `16b96a8` / `0211634` are present on remote `main`; CDD-009 is registered as IMPLEMENTED / FROZEN. Closure does not approve this draft. |
 | ARCHITECTURE REVIEW | 2026-08-08 | Ready for approval | Prerequisites, exhaustive authorization, runtime-shell scope, contract, idempotency, failure, testability, security, persistence, configuration, rollback, traceability, and drift review pass with zero P0/P1 findings. |
-| APPROVED | — | Not reached | Requires closure of every stop condition and an explicit approval record. |
-| IMPLEMENTATION | — | Prohibited | No code or product artifact may be created or modified under CDD-010 before approval. |
+| APPROVED | 2026-08-08 | Passed | Explicit implementation approval recorded against remote-main governance commit `47031682d54ee27406e25d6c3a52ac704be0eebb`. |
+| IMPLEMENTATION | 2026-08-08 | Passed | Commit `c44914b4dc58223dde1221c703356c974093c79e`; 13 authorized paths; PR #28; merge `c70afc43de71ec94ed2a8f1eb32a8cdb8dc56c5e`. |
+| CLOSURE | 2026-08-08 | Approved — FROZEN / IMPLEMENTED | Completion evidence, CI, authorization, dependency, architecture, checksum, manifest, and drift validations passed with zero unauthorized changes. |
 
 ## 3. Authoritative dependencies
 
@@ -191,7 +192,7 @@ Opaque identifiers carry no business meaning. Logs must not emit opaque payload 
 
 ## 15. Acceptance criteria and testing scope
 
-Implementation approval will require evidence that:
+Implementation closure evidence confirms that:
 
 1. every invocation enters through exactly one boundary;
 2. rejected invocations create no Execution Identifier;
@@ -236,7 +237,7 @@ Any affirmative answer stops implementation.
 |---|---|---|---|
 | Single opaque invocation boundary | EIC-001 v1.2 | `contracts.py`, `invocation.py`, `engine.py` | `test_runtime_contracts.py`, `test_runtime_invocation.py` |
 | Six ordered injected capability-step ports | EOM-001 v1.2 | `orchestration.py`, `engine.py` | `test_runtime_orchestration.py`, `test_runtime_architecture.py` |
-| Opaque internal step envelopes | EIC-001 v1.2; EOM-001 v1.2; CDD-010 v1.2 | `orchestration.py` | `test_runtime_orchestration.py`, `test_runtime_architecture.py` |
+| Opaque internal step envelopes | EIC-001 v1.2; EOM-001 v1.2; CDD-010 v1.3 | `orchestration.py` | `test_runtime_orchestration.py`, `test_runtime_architecture.py` |
 | Accepted, Executing, Completed, Failed | ESM-001 v1.2 | `execution_state.py`, `execution_store.py`, `engine.py` | `test_runtime_execution_state.py` |
 | Atomic process-local replay and conflict rules | PAD-001 v1.4; CDD-010 Architecture Clarification; CDD-010 v1.3 | `invocation.py`, `execution_store.py`, `engine.py` | `test_runtime_invocation.py` |
 | No persistence, adapters, semantic mappings, or direct capability access | Baseline Record v1.3; EIC/EOM/ESM v1.2; CDD-010 v1.3 | Entire authorized runtime package | `test_runtime_architecture.py` |
@@ -264,7 +265,7 @@ Implementation rollback consists only of reverting the approved CDD-010 runtime-
 
 No compatibility shim, dual-write path, schema rollback, or persisted-state conversion is authorized.
 
-## 20. Stop conditions
+## 20. Approval and closure conditions
 
 Before any transition to APPROVED or IMPLEMENTATION, Codex must verify both P0 closure conditions against remote `main`. Local branches, local commits, local working-tree files, or unpushed evidence are insufficient:
 
@@ -278,6 +279,4 @@ Remote prerequisite evidence was observed while preparing Draft v1.1, but it mus
 
 Any ambiguity requiring new business semantics, ontology, canonical structure, persistence, external API, security policy, or technology requires an Architecture Clarification Report.
 
-While this document remains DRAFT or ARCHITECTURE REVIEW — BLOCKED, Codex shall not implement CDD-010, create production artifacts, or modify any authorized implementation file.
-
-The Architecture Clarification Report is resolved. The remaining gate is explicit implementation approval; `READY FOR APPROVAL` is not approval.
+All approval and closure conditions were satisfied before this work order transitioned to `FROZEN / IMPLEMENTED`. The Architecture Clarification Report is resolved, implementation was explicitly approved, and the reviewed implementation was merged and validated before closure.
