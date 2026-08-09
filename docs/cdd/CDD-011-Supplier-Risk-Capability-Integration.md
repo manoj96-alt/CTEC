@@ -1,9 +1,15 @@
 # CDD-011 — Supplier-Risk Capability Integration
 
-Version: 1.0 DRAFT  
-Status: ARCHITECTURE REVIEW  
-Implementation authorization: NOT GRANTED  
-Architecture Baseline: v1.2  
+Version: 1.0 FROZEN
+
+Status: FROZEN
+
+Implementation state: IMPLEMENTED / VERIFIED
+
+Closure authority: Closure Gate 2 approval at remote main `1f04d0aff3220b5c5c3be9713a1f04bb62fa402a`
+
+Architecture Baseline: v1.2
+
 Mandatory template: CDD Template v2.2
 
 ## 1. Objective and business outcome
