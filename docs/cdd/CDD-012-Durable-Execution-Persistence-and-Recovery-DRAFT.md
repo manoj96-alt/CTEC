@@ -1,6 +1,6 @@
 # CDD-012 — Durable Execution Persistence and Recovery
 
-Version: 1.1 DRAFT — Authorization Clarification
+Version: 1.2 DRAFT — Authorization Clarification
 
 Status: APPROVED FOR IMPLEMENTATION
 
@@ -200,6 +200,10 @@ None authorized. Database session factories, clocks, replay-authority validators
 | `backend/app/tests/test_supplier_risk_pipeline.py` | MODIFY | Full six-stage durable success/gated/restart scenarios. |
 | `backend/app/tests/test_integration_transactions.py` | MODIFY | Atomic capability-record/checkpoint/handoff behavior. |
 | `backend/app/tests/test_runtime_architecture.py` | MODIFY | Extend the frozen CDD-010 structural allowlist only for paths expressly authorized by CDD-012; preserve every CDD-010 prohibition. |
+| `backend/app/tests/test_persistence_integration.py` | MODIFY | Advance only the expected Alembic head from `0007_governance_eval` to the authorized CDD-012 migration. |
+| `backend/app/tests/test_decision_engine.py` | MODIFY | Advance only the expected Alembic head; decision behavior remains unchanged. |
+| `backend/app/tests/test_governance_engine.py` | MODIFY | Advance only the expected Alembic head; governance behavior remains unchanged. |
+| `backend/app/tests/test_knowledge_engine.py` | MODIFY | Advance only the expected Alembic head; knowledge behavior remains unchanged. |
 
 No other test artifact is authorized.
 
