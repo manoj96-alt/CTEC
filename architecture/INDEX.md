@@ -100,6 +100,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 |---|---:|---|---|---|
 | CDD-009 Governance Engine | 1.1 | FROZEN | IMPLEMENTED | [Authorization](../docs/cdd/CDD-009-AUTHORIZATION.md) · [Evidence](../docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
 | CDD-010 Cognitive Engine Runtime Shell | 1.3 | FROZEN | IMPLEMENTED | [Work order](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) · [Resolved clarification](../docs/cdd/CDD-010-ARCHITECTURE-CLARIFICATION.md) · [Gate report](../docs/cdd/CDD-010-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-010-IMPLEMENTATION-EVIDENCE.md) |
+| CDD-011 Supplier-Risk Capability Integration | 1.0 | ARCHITECTURE REVIEW | NOT STARTED | [Draft](../docs/cdd/CDD-011-Supplier-Risk-Capability-Integration-DRAFT.md) · [Gate report](../docs/cdd/CDD-011-PREIMPLEMENTATION-GATE-REPORT.md) |
 
 ## Historical review artifacts
 
@@ -113,6 +114,7 @@ Artifacts in this section preserve architecture-review history. They are not arc
 | CDD-006 Architecture Clarification Report | HISTORICAL | NO | NON-AUTHORITATIVE | RESOLVED — ASM-001 v2.0; SRM-001 v2.1; RFC-011; superseded by ASM-001 v2.1 | [Report](../docs/cdd/CDD-006-ARCHITECTURE-CLARIFICATION.md) |
 | CDD-007 Architecture Clarification Report | HISTORICAL | NO | NON-AUTHORITATIVE | RESOLVED — AEM-001 v1.0; RFC-011; KRM-001 v1.2; superseded by AEM-001 v1.1, KRM-001 v1.3, RFC-013 | [Report](../docs/cdd/CDD-007-ARCHITECTURE-CLARIFICATION.md) |
 | PWD-001 Architecture Clarification Report | HISTORICAL | NO | NON-AUTHORITATIVE | RESOLVED — PAD-001 v1.2; EIC-001 v1.1; EOM-001 v1.1; ESM-001 v1.1 | [Report](../docs/architecture/PWD-001-ARCHITECTURE-CLARIFICATION.md) |
+| Closure Gate 1C Clarification Release and Architecture Remediation Closure Report | HISTORICAL | NO | NON-AUTHORITATIVE | CLOSED — Architecture Baseline v1.2; RFC-014 v1.1; CIM-001 v1.1 | [Report](../docs/architecture/Closure-Gate-1C-Clarification-Release-and-Architecture-Remediation-Closure-Report.md) |
 
 ## Historical implementation artifacts
 
