@@ -102,6 +102,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-009 Governance Engine | 1.1 | FROZEN | IMPLEMENTED | [Authorization](../docs/cdd/CDD-009-AUTHORIZATION.md) · [Evidence](../docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
 | CDD-010 Cognitive Engine Runtime Shell | 1.3 | FROZEN | IMPLEMENTED | [Work order](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) · [Resolved clarification](../docs/cdd/CDD-010-ARCHITECTURE-CLARIFICATION.md) · [Gate report](../docs/cdd/CDD-010-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-010-IMPLEMENTATION-EVIDENCE.md) |
 | CDD-011 Supplier-Risk Capability Integration | 1.0 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-011-Supplier-Risk-Capability-Integration.md) · [Gate report](../docs/cdd/CDD-011-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-011-IMPLEMENTATION-EVIDENCE.md) · [Closure report](../docs/cdd/Closure-Gate-2-CDD-011-Implementation-and-Validation-Report.md) |
+| CDD-012 Durable Execution Persistence and Recovery | 1.2 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-012-Durable-Execution-Persistence-and-Recovery.md) · [Gate report](../docs/cdd/CDD-012-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-012-IMPLEMENTATION-EVIDENCE.md) · [Closure report](../docs/cdd/Closure-Gate-3-CDD-012-Durable-Persistence-and-Recovery-Report.md) |
 
 ## Historical review artifacts
 

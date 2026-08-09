@@ -1,10 +1,10 @@
 # CDD-012 — Durable Execution Persistence and Recovery
 
-Version: 1.2 DRAFT — Authorization Clarification
+Version: 1.2
 
-Status: APPROVED FOR IMPLEMENTATION
+Status: IMPLEMENTED / VERIFIED / FROZEN
 
-Implementation authorization: GRANTED — CDD-012 governance decision
+Implementation authorization: COMPLETED — merge `e3d2ca2ba5c93761fc397ea514d957bb1ba05899`
 
 Architecture Baseline: v1.3
 
