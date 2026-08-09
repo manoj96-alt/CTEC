@@ -47,14 +47,16 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | CVR-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CVR-001_Supplier_Risk_Canonical_Vocabulary_Clarification_v1.0_FROZEN.docx) |
 | ARCH-005 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCH-005-Bounded-Supplier-Risk-Vocabulary-Ownership-v1.0_FROZEN.md) |
 | PAD-EIC Compatibility Clarification | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/PAD-EIC-Legacy-Invocation-Compatibility-Clarification-v1.0_FROZEN.md) |
-| CDD-010 Control Metadata Clarification | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-010-Trusted-Runtime-Control-Metadata-Clarification-v1.0_FROZEN.md) |
+| CDD-010 | 1.4 | 1.3 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/CDD-010_Resume_From_Stage_Clarification_v1.4_FROZEN.md) |
+| CDD-012 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/CDD-012_Authenticated_Replay_Clarification_v1.3_FROZEN.md) |
+| RCP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/RCP-001_Authenticated_Replay_Execution_Contract_v1.0_FROZEN.md) |
 | CAM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CAM-001_Canonical_Projection_Model_v1.2_FROZEN.docx) |
 | Architecture Glossary | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-GLOSSARY-v1.2_FROZEN.md) |
-| Baseline Record | 1.6 | Baseline Record v1.5 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/BASELINE-RECORD-v1.6_FROZEN.md) |
-| Architecture Consistency Report | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/ARCHITECTURE-CONSISTENCY-REPORT-v1.5_FROZEN.md) |
-| Architecture Drift Report | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/ARCHITECTURE-DRIFT-REPORT-v1.5_FROZEN.md) |
+| Baseline Record | 1.7 | Baseline Record v1.6 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/BASELINE-RECORD-v1.7_FROZEN.md) |
+| Architecture Consistency Report | 1.6 | 1.5 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/ARCHITECTURE-CONSISTENCY-REPORT-v1.6_FROZEN.md) |
+| Architecture Drift Report | 1.6 | 1.5 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/ARCHITECTURE-DRIFT-REPORT-v1.6_FROZEN.md) |
 | Architecture Remediation Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-REMEDIATION-REPORT-v1.2_FROZEN.md) |
-| Release Readiness Report | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/RELEASE-READINESS-REPORT-v1.5_FROZEN.md) |
+| Release Readiness Report | 1.6 | 1.5 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/RELEASE-READINESS-REPORT-v1.6_FROZEN.md) |
 | PMM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/PMM-001_Runtime_Persistence_Role_Mapping_v1.2_FROZEN.md) |
 | CDS-001 | 1.3 | CDS-001 v1.2 and Authorized Artifacts Amendment | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDS-001_Codex_Development_Standard_v1.3_FROZEN.docx) |
 | CDD-003 Revision 2 | 2.0 | CDD-003 Foundation Reference Model | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-003-Revision-2-Complete-Canonical-Enterprise-Ontology.md) |
@@ -79,7 +81,7 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | CDD Template | 2.2 | CDD Template v2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD_TEMPLATE_v2.2_FROZEN.docx) |
 | CDD Authorization Gap Review | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-AUTHORIZATION-GAP-REVIEW-v1.1_FROZEN.md) |
 | Dependency Resolution Report | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/DEPENDENCY-RESOLUTION-REPORT-v1.1_FROZEN.md) |
-| Architecture Dependency Matrix | 1.4 | 1.3 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/DEPENDENCY-MATRIX-v1.4.csv) |
+| Architecture Dependency Matrix | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/DEPENDENCY-MATRIX-v1.5.csv) |
 | RND-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RND-001_Architecture_Registry_Normalization_v1.0_FROZEN.md) |
 | RELEASE-README | v1.2 | v1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/README.md) |
 
@@ -228,7 +230,8 @@ The Architecture Release Manifest is the authoritative integrity register for it
 
 | Baseline | Status | Manifest | Manifest SHA-256 |
 |---|---|---|---|
-| v1.4 | CURRENT | [RELEASE-MANIFEST-v1.4.xlsx](released/v1.4/RELEASE-MANIFEST-v1.4.xlsx) | `d7fd45a87acae813a5507660e37dad99cca8189a374033a167c83aeeee0ff183` |
+| v1.5 | CURRENT | [RELEASE-MANIFEST-v1.5.xlsx](released/v1.5/RELEASE-MANIFEST-v1.5.xlsx) | `3aa832d53c96245297471b6afefb54326234cb4631614927ad6ea9522f3a9547` |
+| v1.4 | HISTORICAL | [RELEASE-MANIFEST-v1.4.xlsx](released/v1.4/RELEASE-MANIFEST-v1.4.xlsx) | `d7fd45a87acae813a5507660e37dad99cca8189a374033a167c83aeeee0ff183` |
 | v1.3 | HISTORICAL | [RELEASE-MANIFEST-v1.3.xlsx](released/v1.3/RELEASE-MANIFEST-v1.3.xlsx) | `0fdf443911a0821f5828498612e3af50f525ef1d7ddedaa6b12a8f4414e671e7` |
 | v1.2 | HISTORICAL | [RELEASE-MANIFEST-v1.2.xlsx](released/v1.2/RELEASE-MANIFEST-v1.2.xlsx) | `489cb3d8844562e3ffc8638afaa6a065862023bdfe64871245e09e92fa549b5a` |
 | v1.1 | HISTORICAL | [RELEASE-MANIFEST-v1.1.xlsx](released/v1.1/RELEASE-MANIFEST-v1.1.xlsx) | `121bf46e4eeb3849f2fdc00116fc8955dc482341afa0846451fd4d71f5a2f850` |
