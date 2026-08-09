@@ -90,7 +90,8 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 
 | Work Order | Version | CDD Gate | Implementation State | Location |
 |---|---:|---|---|---|
-| CDD-010 Cognitive Engine Runtime | 1.0 | ARCHITECTURE REVIEW — BLOCKED | NOT STARTED | [Document](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) |
+| CDD-009 Governance Engine | 1.1 | FROZEN | IMPLEMENTED | [Authorization](../docs/cdd/CDD-009-AUTHORIZATION.md) · [Evidence](../docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
+| CDD-010 Cognitive Engine Runtime | 1.0 | DRAFT — AWAITING NEW WORK ORDER | NOT STARTED | [Historical draft](../docs/cdd/CDD-010-Cognitive-Engine-Runtime.md) |
 
 ## Historical review artifacts
 
@@ -118,6 +119,7 @@ These records document completed or superseded implementation work. They do not 
 | CDD-006 implementation record | HISTORICAL | NO | NON-AUTHORITATIVE | IMPLEMENTED — ASM-001 v2.1; RFC-011 | [Record](../docs/cdd/CDD-006-README.md) |
 | CDD-007 implementation record | HISTORICAL | NO | NON-AUTHORITATIVE | IMPLEMENTED — KRM-001 v1.3; AEM-001 v1.1; RFC-011; RFC-013 | [Record](../docs/cdd/CDD-007-README.md) |
 | CDD-008 implementation record | HISTORICAL | NO | NON-AUTHORITATIVE | IMPLEMENTED — DRM-001 v1.1; RFC-011 | [Record](../docs/cdd/CDD-008-README.md) |
+| CDD-009 implementation record | HISTORICAL | NO | NON-AUTHORITATIVE | IMPLEMENTED — GRM-001 v1.2; GEM-001 v1.1; RFC-011; RFC-013 | [Record](../docs/cdd/CDD-009-README.md) |
 
 ## Historical baseline — v1.0
 
@@ -208,3 +210,22 @@ The Architecture Release Manifest is the authoritative integrity register for it
 | Drift evidence | [ADR-001 v1.2](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/ARCHITECTURE-DRIFT-REPORT-v1.2_FROZEN.md) |
 | Readiness evidence | [RRR-001 v1.2](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/RELEASE-READINESS-REPORT-v1.2_FROZEN.md) |
 | Integrity manifest | [Release Manifest v1.1](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/RELEASE-MANIFEST-v1.1.xlsx) |
+
+## CDD-009 implementation evidence
+
+CDD-009 is governed implementation evidence, not an Architecture Baseline v1.1 artifact. Its integration does not alter a frozen architecture artifact and therefore does not regenerate either Architecture Release Manifest. The authorized `governance_evaluation_records` table is registered here as a capability-owned **immutable source record** extension under PMM-001; the canonical `governances` table remains a read-only canonical outcome projection.
+
+| Evidence | Value |
+|---|---|
+| Implementation status | `IMPLEMENTED / FROZEN` |
+| Source commit | [`5fa51e7`](https://github.com/manoj96-alt/CTEC/commit/5fa51e7) |
+| Reconciled candidate commit | [`c45f3096df173a092ae3b078c615a6bed9698404`](https://github.com/manoj96-alt/CTEC/commit/c45f3096df173a092ae3b078c615a6bed9698404) |
+| Merge commit | [`16b96a8c0359a28f5d4324d745c9dbab6d074a1f`](https://github.com/manoj96-alt/CTEC/commit/16b96a8c0359a28f5d4324d745c9dbab6d074a1f) |
+| Authorization evidence | [CDD-009 authorization](https://github.com/manoj96-alt/CTEC/blob/16b96a8c0359a28f5d4324d745c9dbab6d074a1f/docs/cdd/CDD-009-AUTHORIZATION.md) |
+| Review evidence | [CDD-009 reconciliation report](https://github.com/manoj96-alt/CTEC/blob/16b96a8c0359a28f5d4324d745c9dbab6d074a1f/docs/cdd/CDD-009-RECONCILIATION-REPORT.md) |
+| Reviewer decision | `APPROVED — zero P0/P1 findings` |
+| Unit test result | `97 passed; 9 PostgreSQL tests skipped; 89.79% coverage` |
+| PostgreSQL integration result | `106 passed; 0 skipped; 94.81% coverage; PostgreSQL 15.17; Alembic head 0007_governance_eval` |
+| Quality result | `Ruff PASS; Black PASS; isort PASS; mypy PASS (163 source files)` |
+| Architecture validation | `PASS — registry/schema, dependency, checksum, manifest and drift checks` |
+| Changed-artifact authorization | `PASS — exact path/action allowlist; no unauthorized artifacts changed` |

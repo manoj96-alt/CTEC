@@ -41,6 +41,6 @@ PASS subject to the recorded verification results. Automated coverage includes a
 - [x] No unauthorized configuration artifact
 - [x] No unauthorized test artifact
 - [x] No architecture layer bypass
-- [x] No technology outside the current Frozen TAS-001 authority
+- [x] No new technology introduced; Development TAS-001 is not treated as binding authority
 
 The Governance Evaluation Record and Exception Authorization are explicitly authorized cognitive and cross-cutting business artifacts. They are not CEO entities and do not modify the canonical ontology.

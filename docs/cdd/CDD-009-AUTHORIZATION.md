@@ -16,7 +16,7 @@ Implement Governance Evaluation exactly as defined by GRM-001 v1.2. The capabili
 
 ## Authoritative dependencies
 
-EAH-001 v1.4; RFC-010 v1.1; RFC-011 v1.0; RFC-013 v1.1; CDD-003 Revision 2 v2.0; EAD-001 v1.3; ERM-001 v2.2; SRM-001 v2.1; ASM-001 v2.1; AEM-001 v1.1; KRM-001 v1.3; DRM-001 v1.2; GEM-001 v1.1; GRM-001 v1.2; PMM-001 v1.0; CDS-001 v1.3; CDD Template v2.2; and the Architecture Baseline v1.1 Registry.
+EAH-001 v1.4; RFC-010 v1.0; RFC-011 v1.0; RFC-013 v1.1; CDD-003 Revision 2 v2.0; ERM-001 v2.2; SRM-001 v2.2; ASM-001 v2.2; AEM-001 v1.1; KRM-001 v1.4; DRM-001 v1.2; GEM-001 v1.1; GRM-001 v1.2; PMM-001 v1.0; CDS-001 v1.3; CDD Template v2.2; and the Architecture Baseline v1.1 Registry. The Registry classifies TAS-001, the Logical Model and EAD-001 as Development/non-authoritative; CDD-009 does not use them as binding implementation authorities.
 
 ## Authorized Business Artifacts
 
@@ -92,6 +92,6 @@ Acceptance requires static checks, complete tests against PostgreSQL, append-onl
 - No canonical attribute invented.
 - No RFC, BCS, EAH, EAD, Logical Model or Physical Model modified.
 - No architecture layer bypassed.
-- No technology outside current TAS-001 introduced.
+- No new technology introduced; CDD-009 uses only the repository's existing approved implementation stack and does not rely on Development TAS-001 as binding authority.
 - No Governance Authority implementation introduced.
 - No canonical outcome table writer introduced.

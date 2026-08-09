@@ -38,7 +38,7 @@ Executed 2026-08-08 from `agent/cdd-009-reconcile`:
 
 ## Architecture drift result
 
-PASS. No business entity was introduced or modified; no canonical relationship or attribute changed; no RFC or BCS changed; no layer was bypassed; and no technology outside TAS-001 was introduced. The only new table is the work-order-authorized, capability-owned immutable Governance Evaluation source-record table. The canonical Physical Model and its `governances` outcome table are unchanged and receive no writer. Configuration examples were normalized so a BCS document version is not represented as a governed policy version.
+PASS. No business entity was introduced or modified; no canonical relationship or attribute changed; no RFC or BCS changed; no layer was bypassed; and no new technology was introduced. CDD-009 uses only the repository's existing implementation stack and does not treat Development TAS-001 as binding authority. The only new table is the work-order-authorized, capability-owned immutable Governance Evaluation source-record table. The canonical Physical Model and its `governances` outcome table are unchanged and receive no writer. Configuration examples were normalized so a BCS document version is not represented as a governed policy version.
 
 No unauthorized artifacts changed. Reconciliation added only the authorization and evidence documents and updated stale authority references in CDD-009 documentation plus neutral governance configuration examples.
 
