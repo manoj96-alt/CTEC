@@ -1,0 +1,6 @@
+Dependent Identifier,Dependent Version,Dependency Identifier,Dependency Version,Dependency Status,Relationship,Semantic Compatibility,Approval Reference
+PAS-001,1.1,CDD-012,1.3,FROZEN,Recovery eligibility and replay authority,Compatible,CDD-014 remediation decision
+PAS-001,1.1,IDP-001,1.0,FROZEN,Trusted product authentication boundary,Compatible,CDD-014 remediation decision
+PAS-001,1.1,RCP-001,1.0,FROZEN,Authenticated replay option integrity,Compatible,CDD-014 remediation decision
+BSP-001,1.0,IDP-001,1.0,FROZEN,OIDC validation and trusted identity,Compatible,CDD-014 remediation decision
+BSP-001,1.0,PAS-001,1.1,FROZEN,Product scopes and API boundary,Compatible,CDD-014 remediation decision
