@@ -26,6 +26,7 @@ from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.evidence import Evidence
 from app.infrastructure.persistence.models.experience import Experience
 from app.infrastructure.persistence.models.governance import Governance
+from app.infrastructure.persistence.models.governance_evaluation import GovernanceEvaluationORM
 from app.infrastructure.persistence.models.institutional_act import InstitutionalAct
 from app.infrastructure.persistence.models.institutional_action import (
     InstitutionalAction,
@@ -86,6 +87,7 @@ __all__ = [
     "Evidence",
     "Experience",
     "Governance",
+    "GovernanceEvaluationORM",
     "InstitutionalAct",
     "InstitutionalAction",
     "InstitutionalConcept",
