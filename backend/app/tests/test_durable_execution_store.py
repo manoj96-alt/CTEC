@@ -8,6 +8,7 @@ from app.infrastructure.persistence.base import Base
 from app.integration.contracts import AuthorityContext
 from app.runtime.contracts import InvocationRequest
 from app.runtime.execution_state import ExecutionState
+from app.runtime.persistence.contracts import ProtectionContext
 from app.runtime.persistence.models import (
     RuntimeArtifactReferenceORM,
     RuntimeHandoffORM,
@@ -18,8 +19,13 @@ from app.runtime.persistence.repository import SqlAlchemyExecutionStore
 
 
 class FakeHandoffProtector:
-    def protect(self, plaintext: bytes) -> bytes:
+    def protect(self, plaintext: bytes, context: ProtectionContext) -> bytes:
         return b"protected:" + plaintext
+
+    def recover(self, protected: bytes, context: ProtectionContext) -> bytes:
+        if not protected.startswith(b"protected:"):
+            raise ValueError("invalid protected test payload")
+        return protected.removeprefix(b"protected:")
 
 
 def store() -> SqlAlchemyExecutionStore:
@@ -83,7 +89,7 @@ def test_checkpoint_result_and_references_are_durable() -> None:
         admitted.execution_identifier,
         stage_name="ERM",
         stage_ordinal=0,
-        input_payload=b"input",
+        input_payload=b"payload",
         output_payload=b"output",
         artifact_references=(record_id,),
         completed_at=completed_at,

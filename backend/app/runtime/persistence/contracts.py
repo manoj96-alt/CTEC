@@ -9,10 +9,33 @@ RECOVERY_ROLE = "EXECUTION_RECOVERY_OPERATOR"
 RECOVERY_SCOPE = "execution:replay"
 
 
-class HandoffProtector(Protocol):
-    """Injected platform control; implementations must encrypt before persistence."""
+@dataclass(frozen=True, slots=True)
+class ProtectionContext:
+    tenant_id: str
+    logical_execution_id: UUID
+    attempt_id: UUID
+    stage_name: str
+    direction: str
+    contract_version: str
 
-    def protect(self, plaintext: bytes) -> bytes: ...
+
+class ProtectedPayloadMissingError(LookupError):
+    """A required protected payload is absent."""
+
+
+class ProtectedPayloadIntegrityError(ValueError):
+    """A protected payload failed authentication or binding validation."""
+
+
+class UnsupportedProtectionVersionError(ValueError):
+    """A protected payload uses an unavailable protection version or key."""
+
+
+class HandoffProtector(Protocol):
+    """Authenticated protection with context-bound, versioned recovery."""
+
+    def protect(self, plaintext: bytes, context: ProtectionContext) -> bytes: ...
+    def recover(self, protected: bytes, context: ProtectionContext) -> bytes: ...
 
 
 @dataclass(frozen=True, slots=True)
