@@ -9,5 +9,6 @@ Status: APPROVED FOR REMEDIATION
 - `backend/app/runtime/engine.py` — MODIFY; execute only the payload returned by atomic admission.
 - `backend/app/tests/test_runtime_invocation.py` — MODIFY.
 - `backend/app/tests/test_runtime_contracts.py` — MODIFY if the neutral builder contract requires direct validation.
+- `backend/app/tests/test_runtime_architecture.py` — MODIFY only to extend changed-file enforcement to the published remediation allowlists.
 
 The runtime remains opaque to supplier-risk meaning. It may invoke a trusted builder with the server admission timestamp but may not inspect or transform the payload.
