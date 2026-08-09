@@ -4,13 +4,17 @@ Version: 1.0
 
 Status: READY FOR IMPLEMENTATION
 
-Reviewed work order: CDD-012 Draft v1.0
+Reviewed work order: CDD-012 Draft v1.1
 
 Reviewed remote main: `699709cc87003572e13bf34096d4a2e9518fbb50`
 
 ## 1. Gate decision
 
 **READY FOR IMPLEMENTATION — APPROVED BY CDD-012 GOVERNANCE DECISION.**
+
+Authorization clarification: the legacy CDD-010 architecture regression test may be modified only
+to recognize the CDD-012 paths already enumerated by the work order. Its prohibitions on adapters,
+business semantics, product APIs, configuration, startup wiring, and unrelated files remain intact.
 
 The draft is bounded, application-neutral, and exhaustive, but Architecture Baseline v1.2 does not authorize durable integration persistence, resume-from-stage behavior, the required physical structures, or the security/retention policy.
 
