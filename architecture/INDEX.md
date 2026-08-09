@@ -196,3 +196,15 @@ The Architecture Release Manifest is the authoritative integrity register for it
 | v1.0 | HISTORICAL | [RELEASE-MANIFEST-v1.0.xlsx](released/v1.0/RELEASE-MANIFEST-v1.0.xlsx) | `2e0a466d897eb7de0addf521325502cd2b1ef20f4ba5e97dd4b740cd0f9e031e` |
 
 `released/v1.1/SHA256SUMS` is retained as a legacy partial checksum list and is not the integrity authority. The restored ECOM Physical Data Model v1.3 was independently verified against the project reference library and the frozen CDD-002 archive before registration.
+
+## Baseline v1.1 publication evidence
+
+| Evidence | Value |
+|---|---|
+| Governed release commit | `834582b754157a87a1924fa2b592ed9cbfcc3ee9` |
+| GitHub commit | [Architecture: finalize Baseline v1.1 governed release](https://github.com/manoj96-alt/CTEC/commit/834582b754157a87a1924fa2b592ed9cbfcc3ee9) |
+| Current Registry | [architecture/INDEX.md](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/INDEX.md) |
+| Consistency evidence | [ACR-001 v1.2](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/ARCHITECTURE-CONSISTENCY-REPORT-v1.2_FROZEN.md) |
+| Drift evidence | [ADR-001 v1.2](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/ARCHITECTURE-DRIFT-REPORT-v1.2_FROZEN.md) |
+| Readiness evidence | [RRR-001 v1.2](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/RELEASE-READINESS-REPORT-v1.2_FROZEN.md) |
+| Integrity manifest | [Release Manifest v1.1](https://github.com/manoj96-alt/CTEC/blob/834582b754157a87a1924fa2b592ed9cbfcc3ee9/architecture/released/v1.1/RELEASE-MANIFEST-v1.1.xlsx) |
