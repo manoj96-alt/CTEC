@@ -2,7 +2,7 @@
 
 Version: 1.0 DRAFT
 
-Status: APPROVED FOR IMPLEMENTATION
+Status: IMPLEMENTED / VERIFIED / FROZEN
 
 Reviewed baseline: remote main `9d2ab3042f22e69b9d41d01fd0905cbb7cd73ec7`
 

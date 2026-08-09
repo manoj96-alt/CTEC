@@ -1,11 +1,11 @@
 # Closure Gate 5 — CDD-014 Supplier Risk Business Workflow and User Experience Implementation Report
 
 Version: 1.0
-Status: IMPLEMENTED / VERIFIED — PUBLICATION CANDIDATE
+Status: IMPLEMENTED / VERIFIED / FROZEN
 
 ## Decision
 
-CDD-014 satisfies its bounded business-workflow, browser-security, contract, responsive-design, and accessibility acceptance criteria. Final governance status will transition to FROZEN only after the governed implementation and closure merges are verified on remote main.
+CDD-014 satisfies its bounded business-workflow, browser-security, contract, responsive-design, and accessibility acceptance criteria. Implementation PR #52 merged to remote main at `e4433b874b5104c8265e54b1e93f67b94fa23308` after all governed checks passed.
 
 ## Published prerequisites
 
@@ -49,4 +49,4 @@ Production identity-provider registration, runtime environment values, deploymen
 
 ## Recommendation
 
-**CDD-014 IMPLEMENTED / VERIFIED — READY FOR GOVERNED PUBLICATION AND FREEZE**
+**CDD-014 IMPLEMENTED / VERIFIED / FROZEN**
