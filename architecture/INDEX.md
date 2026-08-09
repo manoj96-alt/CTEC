@@ -6,12 +6,12 @@ This file is the sole authoritative registry for released CTEC architecture. Eng
 
 | Registry Version | Status | Current | Authority | Approval |
 |---:|---|---|---|---|
-| 1.1 | FROZEN | YES | AUTHORITATIVE | Registry Normalization Decision RND-001 |
+| 1.2 | FROZEN | YES | AUTHORITATIVE | Closure Gate 1 clarification release decision |
 
 ## Release policy
 
-- `architecture/released/v1.1/` is the current architecture baseline.
-- `architecture/released/v1.0/` is retained for historical traceability only.
+- `architecture/released/v1.2/` is the current architecture baseline.
+- `architecture/released/v1.0/` and `architecture/released/v1.1/` are retained for historical traceability only.
 - A document is authoritative only when it appears in the Authoritative artifacts table with lifecycle status `FROZEN` and authority `AUTHORITATIVE`.
 - Superseded documents must not be used for implementation.
 - A new or revised document becomes authoritative only through an approved registry update in the same commit that adds the released artifact.
@@ -29,50 +29,58 @@ This file is the sole authoritative registry for released CTEC architecture. Eng
 
 EAH-001 is the versioned constitutional architecture authority, not a silently mutable living handbook. Changes require an approved, versioned clarification or architecture release; an atomic registry update; and Release Manifest regeneration. When authorities conflict, the hierarchy defined by EAH-001 and CDS-001 governs. An unresolved same-level conflict is a stop condition.
 
-The official capability term is **Business Capability Specification (BCS)**. Business Capability Model (BCM) is deprecated. The [Architecture Glossary](released/v1.1/ARCHITECTURE-GLOSSARY-v1.1_FROZEN.md) governs terminology used by current architecture and engineering artifacts.
+The official capability term is **Business Capability Specification (BCS)**. Business Capability Model (BCM) is deprecated. The [Architecture Glossary](released/v1.2/ARCHITECTURE-GLOSSARY-v1.2_FROZEN.md) governs terminology used by current architecture and engineering artifacts.
 
-## Authoritative artifacts — Architecture Baseline v1.1
+## Authoritative artifacts — Architecture Baseline v1.2
 
 | Document | Version | Supersedes | Status | Current | Authority | Location |
 |---|---:|---|---|---|---|---|
-| Enterprise Constitution | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/The%20Constitutional%20Theory%20of%20Enterprise%20Cognition%20-%20Version%201.0.docx) |
-| EAH-001 | 1.4 | 1.3 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/EAH-001_ECOM_Architecture_Handbook_v1.4_FROZEN.docx) |
-| RFC-010 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/RFC-010_Canonical_Enterprise_Ontology_Boundary_v1.0_FROZEN.docx) |
-| RFC-011 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/RFC-011_Immutable_Record_Lifecycle_and_Currentness_v1.0_FROZEN.docx) |
-| RFC-012 | 1.0 | RFC-0001 through RFC-0009 as architecture authorities | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/RFC-012_Constitutional_Reconciliation_v1.0_FROZEN.docx) |
-| RFC-013 | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/RFC-013_Governance_Authority_and_Evaluation_Separation_v1.1_FROZEN.docx) |
-| CAM-001 | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/CAM-001_Canonical_Projection_Model_v1.1_FROZEN.docx) |
-| Architecture Glossary | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ARCHITECTURE-GLOSSARY-v1.1_FROZEN.md) |
-| Baseline Record | 1.3 | Baseline Record v1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/BASELINE-RECORD-v1.3_FROZEN.md) |
-| Architecture Consistency Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ARCHITECTURE-CONSISTENCY-REPORT-v1.2_FROZEN.md) |
-| Architecture Drift Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ARCHITECTURE-DRIFT-REPORT-v1.2_FROZEN.md) |
-| Release Readiness Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/RELEASE-READINESS-REPORT-v1.2_FROZEN.md) |
-| PMM-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/PMM-001_Persistence_Role_Mapping_v1.0_FROZEN.docx) |
-| CDS-001 | 1.3 | CDS-001 v1.2 and Authorized Artifacts Amendment | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/CDS-001_Codex_Development_Standard_v1.3_FROZEN.docx) |
-| CDD-003 Revision 2 | 2.0 | CDD-003 Foundation Reference Model | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/CDD-003-Revision-2-Complete-Canonical-Enterprise-Ontology.md) |
-| ECOM Physical Data Model | 1.3 | Earlier physical models | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ECOM_Physical_Data_Model_v1_3.sql) |
-| ERM-001 | 2.2 | 2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ERM-001_Enterprise_Entity_Resolution_Business_Capability_Specification_v2.2_FROZEN.docx) |
-| SRM-001 | 2.2 | 2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/SRM-001_Semantic_Resolution_Business_Capability_Specification_v2.2_FROZEN.docx) |
-| ASM-001 | 2.2 | 2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ASM-001_Assertion_Business_Capability_Specification_v2.2_FROZEN.docx) |
-| AEM-001 | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/AEM-001_Acceptance_Evidence_Business_Specification_v1.1_FROZEN.docx) |
-| KRM-001 | 1.4 | 1.3 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/KRM-001_Knowledge_Business_Capability_Specification_v1.4_FROZEN.docx) |
-| DRM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/DRM-001_Decision_Business_Capability_Specification_v1.2_FROZEN.docx) |
-| GEM-001 | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/GEM-001_Governance_Exception_Business_Specification_v1.1_FROZEN.docx) |
-| GRM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/GRM-001_Governance_Business_Capability_Specification_v1.2_FROZEN.docx) |
-| EIC-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/EIC-001_Cognitive_Engine_Invocation_Architecture_v1.2_FROZEN.docx) |
-| EOM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/EOM-001_Cognitive_Engine_Orchestration_Architecture_v1.2_FROZEN.docx) |
-| ESM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ESM-001_Cognitive_Engine_Execution_State_Architecture_v1.2_FROZEN.docx) |
-| PAD-001 | 1.4 | 1.3 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/PAD-001_Product_Access_Protocol_Specification_v1.4_FROZEN.docx) |
-| ARCH-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ARCH-001-Persistence-Bootstrap-and-Canonical-Mapping.md) |
-| ARCH-003 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ARCH-003-Persistence-Bootstrap-and-Metadata-Policy.md) |
-| ARCH-004 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/ARCH-004-Canonical-Bootstrap-Values.md) |
-| CDD Template | 2.2 | CDD Template v2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/CDD_TEMPLATE_v2.2_FROZEN.docx) |
-| CDD Authorization Gap Review | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/CDD-AUTHORIZATION-GAP-REVIEW-v1.1_FROZEN.md) |
-| Dependency Resolution Report | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/DEPENDENCY-RESOLUTION-REPORT-v1.0_FROZEN.md) |
-| Architecture Dependency Matrix | 1.1 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/DEPENDENCY-MATRIX-v1.1.csv) |
-| RND-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.1/RND-001_Architecture_Registry_Normalization_v1.0_FROZEN.md) |
+| Enterprise Constitution | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/The%20Constitutional%20Theory%20of%20Enterprise%20Cognition%20-%20Version%201.0.docx) |
+| EAH-001 | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/EAH-001_ECOM_Architecture_Handbook_v1.5_FROZEN.docx) |
+| RFC-010 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RFC-010_Canonical_Enterprise_Ontology_Boundary_v1.0_FROZEN.docx) |
+| RFC-011 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RFC-011_Immutable_Record_Lifecycle_and_Currentness_v1.0_FROZEN.docx) |
+| RFC-012 | 1.0 | RFC-0001 through RFC-0009 as architecture authorities | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RFC-012_Constitutional_Reconciliation_v1.0_FROZEN.docx) |
+| RFC-013 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RFC-013_Governance_Authority_and_Evaluation_Separation_v1.2_FROZEN.docx) |
+| RFC-014 | 1.1 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RFC-014-Cognitive-Capability-Integration-Handoff-and-Transaction-Policy-v1.1_FROZEN.md) |
+| CIM-001 | 1.1 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CIM-001-Cognitive-Integration-Contract-Model-v1.1_FROZEN.md) |
+| CVR-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CVR-001_Supplier_Risk_Canonical_Vocabulary_Clarification_v1.0_FROZEN.docx) |
+| ARCH-005 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCH-005-Bounded-Supplier-Risk-Vocabulary-Ownership-v1.0_FROZEN.md) |
+| PAD-EIC Compatibility Clarification | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/PAD-EIC-Legacy-Invocation-Compatibility-Clarification-v1.0_FROZEN.md) |
+| CDD-010 Control Metadata Clarification | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-010-Trusted-Runtime-Control-Metadata-Clarification-v1.0_FROZEN.md) |
+| CAM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CAM-001_Canonical_Projection_Model_v1.2_FROZEN.docx) |
+| Architecture Glossary | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-GLOSSARY-v1.2_FROZEN.md) |
+| Baseline Record | 1.4 | Baseline Record v1.3 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/BASELINE-RECORD-v1.4_FROZEN.md) |
+| Architecture Consistency Report | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-CONSISTENCY-REPORT-v1.3_FROZEN.md) |
+| Architecture Drift Report | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-DRIFT-REPORT-v1.3_FROZEN.md) |
+| Architecture Remediation Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-REMEDIATION-REPORT-v1.2_FROZEN.md) |
+| Release Readiness Report | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RELEASE-READINESS-REPORT-v1.3_FROZEN.md) |
+| PMM-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/PMM-001_Persistence_Role_Mapping_v1.0_FROZEN.docx) |
+| CDS-001 | 1.3 | CDS-001 v1.2 and Authorized Artifacts Amendment | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDS-001_Codex_Development_Standard_v1.3_FROZEN.docx) |
+| CDD-003 Revision 2 | 2.0 | CDD-003 Foundation Reference Model | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-003-Revision-2-Complete-Canonical-Enterprise-Ontology.md) |
+| ECOM Physical Data Model | 1.3 | Earlier physical models | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ECOM_Physical_Data_Model_v1_3.sql) |
+| ERM-001 | 2.2 | 2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ERM-001_Enterprise_Entity_Resolution_Business_Capability_Specification_v2.2_FROZEN.docx) |
+| SRM-001 | 2.2 | 2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/SRM-001_Semantic_Resolution_Business_Capability_Specification_v2.2_FROZEN.docx) |
+| ASM-001 | 2.3 | 2.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ASM-001_Assertion_Business_Capability_Specification_v2.3_FROZEN.docx) |
+| AEM-001 | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/AEM-001_Acceptance_Evidence_Business_Specification_v1.1_FROZEN.docx) |
+| KRM-001 | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/KRM-001_Knowledge_Business_Capability_Specification_v1.5_FROZEN.docx) |
+| DRM-001 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/DRM-001_Decision_Business_Capability_Specification_v1.3_FROZEN.docx) |
+| GEM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/GEM-001_Governance_Exception_Business_Specification_v1.2_FROZEN.docx) |
+| GRM-001 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/GRM-001_Governance_Business_Capability_Specification_v1.3_FROZEN.docx) |
+| EIC-001 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/EIC-001_Cognitive_Engine_Invocation_Architecture_v1.3_FROZEN.docx) |
+| EOM-001 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/EOM-001_Cognitive_Engine_Orchestration_Architecture_v1.3_FROZEN.docx) |
+| ESM-001 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ESM-001_Cognitive_Engine_Execution_State_Architecture_v1.3_FROZEN.docx) |
+| PAD-001 | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/PAD-001_Product_Access_Protocol_Specification_v1.5_FROZEN.docx) |
+| ARCH-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCH-001-Persistence-Bootstrap-and-Canonical-Mapping.md) |
+| ARCH-003 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCH-003-Persistence-Bootstrap-and-Metadata-Policy.md) |
+| ARCH-004 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCH-004-Canonical-Bootstrap-Values.md) |
+| CDD Template | 2.2 | CDD Template v2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD_TEMPLATE_v2.2_FROZEN.docx) |
+| CDD Authorization Gap Review | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-AUTHORIZATION-GAP-REVIEW-v1.1_FROZEN.md) |
+| Dependency Resolution Report | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/DEPENDENCY-RESOLUTION-REPORT-v1.1_FROZEN.md) |
+| Architecture Dependency Matrix | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/DEPENDENCY-MATRIX-v1.2.csv) |
+| RND-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RND-001_Architecture_Registry_Normalization_v1.0_FROZEN.md) |
+| RELEASE-README | v1.2 | v1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/README.md) |
 
-All artifacts in this table are current and authoritative within Baseline v1.1.
+All artifacts in this table are current and authoritative within Baseline v1.2.
 
 ## Development artifacts — non-binding
 
@@ -80,9 +88,9 @@ These artifacts remain in the release package for traceability. They are not aut
 
 | Document | Version | Supersedes | Status | Current | Authority | Location |
 |---|---:|---|---|---|---|---|
-| TAS-001 Part 1 | 1.0 | — | DEVELOPMENT | NO | NON-AUTHORITATIVE | [Document](released/v1.1/TAS-001_Part1_YC_Prototype_Technology_Architecture.docx) |
-| ECOM Logical Data Model | 1.3 | — | DEVELOPMENT | NO | NON-AUTHORITATIVE | [Document](released/v1.1/ECOM_Logical_Data_Model_v1_3.md) |
-| EAD-001 | 1.3 | — | DEVELOPMENT | NO | NON-AUTHORITATIVE | [Document](released/v1.1/EAD-001_Enterprise_Attribute_Dictionary_v1_3.xlsx) |
+| TAS-001 Part 1 | 1.0 | — | DEVELOPMENT | NO | NON-AUTHORITATIVE | [Document](released/v1.2/TAS-001_Part1_YC_Prototype_Technology_Architecture.docx) |
+| ECOM Logical Data Model | 1.3 | — | DEVELOPMENT | NO | NON-AUTHORITATIVE | [Document](released/v1.2/ECOM_Logical_Data_Model_v1_3.md) |
+| EAD-001 | 1.3 | — | DEVELOPMENT | NO | NON-AUTHORITATIVE | [Document](released/v1.2/EAD-001_Enterprise_Attribute_Dictionary_v1_3.xlsx) |
 
 ## Governed implementation work orders
 
@@ -171,6 +179,26 @@ All documents below are `SUPERSEDED` and retained only for audit history.
 | EAH-001 | 1.1 | EAH-001 v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.0/EAH-001_ECOM_Architecture_Handbook_v1.1.docx) |
 | Architecture Glossary | 1.0 | Architecture Glossary v1.1 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.0/ARCHITECTURE-GLOSSARY-v1.0_FROZEN.md) |
 | CDD Authorization Gap Review | 1.0 | CDD Authorization Gap Review v1.1 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.0/CDD-AUTHORIZATION-GAP-REVIEW-v1.0_FROZEN.md) |
+| ASM-001 | 2.2 | ASM-001 v2.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/ASM-001_Assertion_Business_Capability_Specification_v2.2_FROZEN.docx) |
+| DRM-001 | 1.2 | DRM-001 v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/DRM-001_Decision_Business_Capability_Specification_v1.2_FROZEN.docx) |
+| GRM-001 | 1.2 | GRM-001 v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/GRM-001_Governance_Business_Capability_Specification_v1.2_FROZEN.docx) |
+| EIC-001 | 1.2 | EIC-001 v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/EIC-001_Cognitive_Engine_Invocation_Architecture_v1.2_FROZEN.docx) |
+| EOM-001 | 1.2 | EOM-001 v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/EOM-001_Cognitive_Engine_Orchestration_Architecture_v1.2_FROZEN.docx) |
+| PAD-001 | 1.4 | PAD-001 v1.5 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/PAD-001_Product_Access_Protocol_Specification_v1.4_FROZEN.docx) |
+| EAH-001 | 1.4 | EAH-001 v1.5 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/EAH-001_ECOM_Architecture_Handbook_v1.4_FROZEN.docx) |
+| RFC-013 | 1.1 | RFC-013 v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/RFC-013_Governance_Authority_and_Evaluation_Separation_v1.1_FROZEN.docx) |
+| CAM-001 | 1.1 | CAM-001 v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/CAM-001_Canonical_Projection_Model_v1.1_FROZEN.docx) |
+| Architecture Glossary | 1.1 | Architecture Glossary v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/ARCHITECTURE-GLOSSARY-v1.1_FROZEN.md) |
+| KRM-001 | 1.4 | KRM-001 v1.5 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/KRM-001_Knowledge_Business_Capability_Specification_v1.4_FROZEN.docx) |
+| GEM-001 | 1.1 | GEM-001 v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/GEM-001_Governance_Exception_Business_Specification_v1.1_FROZEN.docx) |
+| ESM-001 | 1.2 | ESM-001 v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/ESM-001_Cognitive_Engine_Execution_State_Architecture_v1.2_FROZEN.docx) |
+| Baseline Record | 1.3 | Baseline Record v1.4 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/BASELINE-RECORD-v1.3_FROZEN.md) |
+| Architecture Consistency Report | 1.2 | Architecture Consistency Report v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/ARCHITECTURE-CONSISTENCY-REPORT-v1.2_FROZEN.md) |
+| Architecture Drift Report | 1.2 | Architecture Drift Report v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/ARCHITECTURE-DRIFT-REPORT-v1.2_FROZEN.md) |
+| Architecture Remediation Report | 1.1 | Architecture Remediation Report v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Report](../docs/architecture/Closure-Gate-1A-Minimum-Authority-Amendment-Review-Package.md) |
+| Release Readiness Report | 1.2 | Release Readiness Report v1.3 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/RELEASE-READINESS-REPORT-v1.2_FROZEN.md) |
+| Architecture Dependency Matrix | 1.1 | Architecture Dependency Matrix v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/DEPENDENCY-MATRIX-v1.1.csv) |
+| Dependency Resolution Report | 1.0 | Dependency Resolution Report v1.1 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.1/DEPENDENCY-RESOLUTION-REPORT-v1.0_FROZEN.md) |
 | Baseline Record | 1.1 | Baseline Record v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.0/BASELINE-RECORD-v1.1_FROZEN.md) |
 | Architecture Consistency Report | 1.1 | ACR-001 v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.0/ARCHITECTURE-CONSISTENCY-REPORT-v1.1_FROZEN.md) |
 | Architecture Drift Report | 1.1 | ADR-001 v1.2 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.0/ARCHITECTURE-DRIFT-REPORT-v1.1_FROZEN.md) |
@@ -183,10 +211,10 @@ The runtime authorities form one directional dependency chain. PAD does not rede
 
 | Order | Artifact | Current Version | Responsibility |
 |---:|---|---:|---|
-| 1 | PAD-001 | 1.4 | Product-facing protocol contracts and transport boundary |
-| 2 | EIC-001 | 1.2 | Exclusive Cognitive Engine invocation boundary |
-| 3 | EOM-001 | 1.2 | Post-admission orchestration of the approved capability chain |
-| 4 | ESM-001 | 1.2 | Execution-state lifecycle, transitions, and terminality |
+| 1 | PAD-001 | 1.5 | Product-facing protocol contracts and transport boundary |
+| 2 | EIC-001 | 1.3 | Exclusive Cognitive Engine invocation boundary |
+| 3 | EOM-001 | 1.3 | Post-admission orchestration of the approved capability chain |
+| 4 | ESM-001 | 1.3 | Execution-state lifecycle, transitions, and terminality |
 
 ## Architecture Release Manifests
 
@@ -194,7 +222,8 @@ The Architecture Release Manifest is the authoritative integrity register for it
 
 | Baseline | Status | Manifest | Manifest SHA-256 |
 |---|---|---|---|
-| v1.1 | CURRENT | [RELEASE-MANIFEST-v1.1.xlsx](released/v1.1/RELEASE-MANIFEST-v1.1.xlsx) | `121bf46e4eeb3849f2fdc00116fc8955dc482341afa0846451fd4d71f5a2f850` |
+| v1.2 | CURRENT | [RELEASE-MANIFEST-v1.2.xlsx](released/v1.2/RELEASE-MANIFEST-v1.2.xlsx) | `489cb3d8844562e3ffc8638afaa6a065862023bdfe64871245e09e92fa549b5a` |
+| v1.1 | HISTORICAL | [RELEASE-MANIFEST-v1.1.xlsx](released/v1.1/RELEASE-MANIFEST-v1.1.xlsx) | `121bf46e4eeb3849f2fdc00116fc8955dc482341afa0846451fd4d71f5a2f850` |
 | v1.0 | HISTORICAL | [RELEASE-MANIFEST-v1.0.xlsx](released/v1.0/RELEASE-MANIFEST-v1.0.xlsx) | `2e0a466d897eb7de0addf521325502cd2b1ef20f4ba5e97dd4b740cd0f9e031e` |
 
 `released/v1.1/SHA256SUMS` is retained as a legacy partial checksum list and is not the integrity authority. The restored ECOM Physical Data Model v1.3 was independently verified against the project reference library and the frozen CDD-002 archive before registration.

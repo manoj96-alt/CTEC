@@ -13,8 +13,8 @@ from xml.etree import ElementTree
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ROOT = REPOSITORY_ROOT / "architecture" / "released"
 ARCHITECTURE_REGISTRY = REPOSITORY_ROOT / "architecture" / "INDEX.md"
-DEPENDENCY_MATRIX = RELEASE_ROOT / "v1.1" / "DEPENDENCY-MATRIX-v1.1.csv"
-BASELINES = ("v1.0", "v1.1")
+DEPENDENCY_MATRIX = RELEASE_ROOT / "v1.2" / "DEPENDENCY-MATRIX-v1.2.csv"
+BASELINES = ("v1.0", "v1.1", "v1.2")
 HEADERS = (
     "Relative Path",
     "Document Identifier",
@@ -80,7 +80,7 @@ def _registry_release_entries() -> dict[str, str]:
                 )
             governance_rows += 1
         location_value = row.get("Location", "")
-        location = re.search(r"\]\((released/v(?:1\.0|1\.1)/[^)]+)\)", location_value)
+        location = re.search(r"\]\((released/v(?:1\.0|1\.1|1\.2)/[^)]+)\)", location_value)
         if location is None:
             continue
         name = row.get("Document") or row.get("Artifact") or row.get("Review Artifact")
@@ -107,7 +107,7 @@ def _registry_artifacts() -> tuple[dict[str, tuple[str, str, str]], dict[str, se
     current: dict[str, tuple[str, str, str]] = {}
     superseded: dict[str, set[str]] = {}
     for section, row in _registry_rows():
-        location = re.search(r"\]\((released/v(?:1\.0|1\.1)/[^)]+)\)", row.get("Location", ""))
+        location = re.search(r"\]\((released/v(?:1\.0|1\.1|1\.2)/[^)]+)\)", row.get("Location", ""))
         if location is None:
             continue
         name = row.get("Document") or row.get("Artifact") or row.get("Review Artifact") or ""
@@ -246,9 +246,13 @@ def _manifest_rows(manifest: Path) -> list[tuple[str, ...]]:
             if column >= len(values):
                 continue
             value = cell.find("x:v", XML_NAMESPACE)
-            values[column] = (
-                value.text if value is not None and value.text is not None else ""
-            )
+            if value is not None and value.text is not None:
+                values[column] = value.text
+            else:
+                inline = cell.find("x:is/x:t", XML_NAMESPACE)
+                values[column] = (
+                    inline.text if inline is not None and inline.text is not None else ""
+                )
         rows.append(tuple(values))
     return rows
 
