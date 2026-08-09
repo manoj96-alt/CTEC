@@ -1,7 +1,9 @@
 """Thread-safe, non-durable execution and idempotency state."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from threading import RLock
+from typing import Protocol
 from uuid import UUID, uuid4
 
 from app.runtime.contracts import ExecutionSnapshot, InvocationRequest
@@ -13,6 +15,32 @@ class AdmissionResult:
     execution_identifier: UUID | None
     is_new: bool
     is_conflict: bool
+
+
+class ExecutionStore(Protocol):
+    def admit(self, request: InvocationRequest, payload_fingerprint: bytes) -> AdmissionResult: ...
+    def get(self, execution_identifier: UUID) -> ExecutionSnapshot | None: ...
+    def advance(self, execution_identifier: UUID, target_state: ExecutionState) -> None: ...
+    def checkpoint(
+        self,
+        execution_identifier: UUID,
+        *,
+        stage_name: str,
+        stage_ordinal: int,
+        input_payload: bytes,
+        output_payload: bytes,
+        artifact_references: tuple[UUID, ...],
+        completed_at: datetime,
+    ) -> None: ...
+    def record_result(
+        self,
+        execution_identifier: UUID,
+        *,
+        result_code: str | None,
+        result_value: str | None,
+        actionable: bool,
+        completed_at: datetime,
+    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,3 +101,27 @@ class InMemoryExecutionStore:
                 state=target_state,
                 transition_history=current.transition_history + (next_transition,),
             )
+
+    def checkpoint(
+        self,
+        execution_identifier: UUID,
+        *,
+        stage_name: str,
+        stage_ordinal: int,
+        input_payload: bytes,
+        output_payload: bytes,
+        artifact_references: tuple[UUID, ...],
+        completed_at: datetime,
+    ) -> None:
+        """Process-local compatibility implementation; CDD-010 remains unchanged."""
+
+    def record_result(
+        self,
+        execution_identifier: UUID,
+        *,
+        result_code: str | None,
+        result_value: str | None,
+        actionable: bool,
+        completed_at: datetime,
+    ) -> None:
+        """Process-local results remain owned by the runtime overlay."""

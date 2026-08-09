@@ -62,6 +62,14 @@ from app.infrastructure.persistence.models.semantic_resolution import (
 )
 from app.infrastructure.persistence.models.source_object import SourceObject
 from app.infrastructure.persistence.models.source_system import SourceSystem
+from app.runtime.persistence.models import (
+    RuntimeArtifactReferenceORM,
+    RuntimeExecutionORM,
+    RuntimeHandoffORM,
+    RuntimeRecoveryAttemptORM,
+    RuntimeResultORM,
+    RuntimeStageORM,
+)
 
 __all__ = [
     "AccountableOwner",
@@ -103,6 +111,12 @@ __all__ = [
     "ReasonEvidence",
     "ReasonGraph",
     "RelationshipType",
+    "RuntimeArtifactReferenceORM",
+    "RuntimeExecutionORM",
+    "RuntimeHandoffORM",
+    "RuntimeRecoveryAttemptORM",
+    "RuntimeResultORM",
+    "RuntimeStageORM",
     "SemanticResolutionHistoryModel",
     "SemanticResolutionRecordModel",
     "SourceObject",

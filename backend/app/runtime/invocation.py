@@ -9,7 +9,7 @@ from app.runtime.contracts import (
     InvocationResponse,
     InvocationStatus,
 )
-from app.runtime.execution_store import InMemoryExecutionStore
+from app.runtime.execution_store import ExecutionStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +19,7 @@ class InvocationAdmission:
 
 
 class InvocationAdmissionService:
-    def __init__(self, store: InMemoryExecutionStore) -> None:
+    def __init__(self, store: ExecutionStore) -> None:
         self._store = store
 
     def admit(self, request: InvocationRequest) -> InvocationAdmission:

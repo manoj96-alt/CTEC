@@ -66,3 +66,18 @@ Protocol `1.0` remains the legacy opaque runtime contract. Protocol `2.0` requir
 conflicting metadata is rejected before capability execution. The integration produces a governed
 recommendation and record references only. It does not expose a REST API or execute sourcing,
 supplier, contractual, financial, or operational actions.
+
+## Durable execution and recovery
+
+CDD-012 adds an application-neutral SQLAlchemy execution store for the CDD-010/011 runtime. It
+persists atomic admissions, six ordered stage checkpoints, opaque protected handoffs, produced
+record references, terminal results, and separately authorized recovery attempts. Construct
+`CognitiveEngineRuntime` with an injected `SqlAlchemyExecutionStore`; the in-memory CDD-010 store
+remains available for process-local use.
+
+Recovery is integrity-first. It resumes only after the last verified committed checkpoint and is
+blocked for uncertain side effects. Every replay is a new immutable attempt under the original
+logical execution and requires tenant-matched `EXECUTION_RECOVERY_OPERATOR` authority with the
+`execution:replay` scope, an authorization reference, reason, correlation identifier, and UTC
+timestamp. Terminal records are retained for seven years; legal hold suspends deletion. This
+layer provides no API, UI, deployment wiring, or business-rule interpretation.

@@ -18,10 +18,28 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_runtime_execution_state.py",
     "backend/app/tests/test_runtime_invocation.py",
     "backend/app/tests/test_runtime_orchestration.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0008_durable_execution.py",
+    "backend/app/infrastructure/persistence/models/__init__.py",
+    "backend/app/runtime/persistence/__init__.py",
+    "backend/app/runtime/persistence/contracts.py",
+    "backend/app/runtime/persistence/models.py",
+    "backend/app/runtime/persistence/repository.py",
+    "backend/app/runtime/recovery.py",
+    "backend/app/tests/test_durable_execution_store.py",
+    "backend/app/tests/test_execution_concurrency.py",
+    "backend/app/tests/test_execution_persistence_architecture.py",
+    "backend/app/tests/test_execution_persistence_contracts.py",
+    "backend/app/tests/test_execution_persistence_integration.py",
+    "backend/app/tests/test_execution_recovery.py",
+    "backend/app/tests/test_execution_replay.py",
+    "backend/app/tests/test_decision_engine.py",
+    "backend/app/tests/test_governance_engine.py",
+    "backend/app/tests/test_knowledge_engine.py",
+    "backend/app/tests/test_persistence_integration.py",
 }
 
 
-def test_changed_files_match_cdd_010_exhaustive_allowlist() -> None:
+def test_changed_files_match_cdd_010_and_cdd_012_exhaustive_allowlists() -> None:
     tracked = subprocess.run(
         ["git", "diff", "--name-only", "HEAD"],
         cwd=REPOSITORY_ROOT,
@@ -69,7 +87,7 @@ def test_runtime_imports_only_standard_library_and_runtime_modules() -> None:
         ), f"{path.name} bypasses the runtime boundary: {imports}"
 
 
-def test_runtime_package_is_exactly_the_seven_authorized_files() -> None:
+def test_runtime_package_contains_only_authorized_top_level_files() -> None:
     assert {path.name for path in RUNTIME_ROOT.glob("*.py")} == {
         "__init__.py",
         "contracts.py",
@@ -78,4 +96,5 @@ def test_runtime_package_is_exactly_the_seven_authorized_files() -> None:
         "execution_store.py",
         "invocation.py",
         "orchestration.py",
+        "recovery.py",
     }
