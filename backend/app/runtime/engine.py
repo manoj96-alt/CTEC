@@ -67,9 +67,18 @@ class CognitiveEngineRuntime:
         if admission.starts_execution:
             if response.execution_identifier is None:
                 raise RuntimeError("A new admission must identify its execution")
+            if admission.admitted_payload is None or not isinstance(
+                admission.admitted_at, datetime
+            ):
+                raise RuntimeError("A new admission must return its committed payload and time")
+            admitted_request = replace(
+                request,
+                opaque_payload=admission.admitted_payload,
+                admitted_payload_builder=None,
+            )
             worker = Thread(
                 target=self._execute,
-                args=(request, response.execution_identifier),
+                args=(admitted_request, response.execution_identifier, admission.admitted_at),
                 daemon=True,
                 name=f"ctec-execution-{response.execution_identifier}",
             )
@@ -120,8 +129,9 @@ class CognitiveEngineRuntime:
             actionable=overlay.actionable,
         )
 
-    def _execute(self, request: InvocationRequest, execution_identifier: UUID) -> None:
-        admitted_at = datetime.now(UTC)
+    def _execute(
+        self, request: InvocationRequest, execution_identifier: UUID, admitted_at: datetime
+    ) -> None:
         step_input = CapabilityStepInput(
             protocol_version=request.protocol_version,
             correlation_identifier=request.correlation_identifier,

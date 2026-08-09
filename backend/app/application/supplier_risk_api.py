@@ -24,7 +24,7 @@ from app.api.supplier_risk.schemas import (
     SupplierRiskSubmission,
 )
 from app.api.supplier_risk.security import authority_context
-from app.integration.contracts import AuthorityContext, IntegrationEnvelope
+from app.integration.contracts import AuthorityContext
 from app.runtime.contracts import InvocationRequest, InvocationStatus
 from app.runtime.engine import CognitiveEngineRuntime
 from app.runtime.execution_state import ExecutionState
@@ -88,9 +88,18 @@ class SupplierRiskApiService:
     def submit(
         self, request: SupplierRiskSubmission, principal: TrustedPrincipal
     ) -> SubmissionResponse:
-        envelope = IntegrationEnvelope.from_bytes(
-            _envelope_bytes(request.supplier_risk.model_dump(mode="json"))
-        )
+        supplier_risk = request.supplier_risk.model_dump(mode="json")
+        client_payload = json.dumps(
+            request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode()
+
+        def admitted_payload(admitted_at: datetime) -> bytes:
+            admitted_request = json.loads(json.dumps(supplier_risk))
+            received_at = admitted_at.astimezone(UTC).isoformat()
+            for observation in admitted_request["observations"]:
+                observation["received_at"] = received_at
+            return _envelope_bytes(admitted_request)
+
         control = authority_context(
             principal,
             request_id=request.request_identifier,
@@ -102,9 +111,10 @@ class SupplierRiskApiService:
             request_identifier=request.request_identifier,
             session_identifier=request.session_identifier,
             request_classification="supplier-risk",
-            opaque_payload=envelope.to_bytes(),
+            opaque_payload=client_payload,
             authority_context=control,
             control_metadata_version="1.0",
+            admitted_payload_builder=admitted_payload,
         )
         result = self._runtime.invoke(invocation)
         if result.status is not InvocationStatus.ACCEPTED or result.execution_identifier is None:

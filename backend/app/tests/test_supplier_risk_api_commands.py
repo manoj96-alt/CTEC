@@ -65,11 +65,14 @@ def test_valid_submission_uses_existing_runtime_and_is_idempotent() -> None:
     app.dependency_overrides[api_service] = lambda: service
     app.dependency_overrides[container] = lambda: value
     request_id, correlation, session = uuid4(), uuid4(), uuid4()
+    supplier_risk = jsonable_encoder(asdict(build_request()))
+    for observation in supplier_risk["observations"]:
+        observation.pop("received_at")
     body = {
         "request_identifier": str(request_id),
         "correlation_identifier": str(correlation),
         "session_identifier": str(session),
-        "supplier_risk": jsonable_encoder(asdict(build_request())),
+        "supplier_risk": supplier_risk,
     }
     with TestClient(app) as client:
         first = client.post(

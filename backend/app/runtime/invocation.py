@@ -1,6 +1,7 @@
 """Invocation validation and process-local admission."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 
 from app.runtime.contracts import (
@@ -16,6 +17,8 @@ from app.runtime.execution_store import ExecutionStore
 class InvocationAdmission:
     response: InvocationResponse
     starts_execution: bool
+    admitted_payload: bytes | None = None
+    admitted_at: datetime | None = None
 
 
 class InvocationAdmissionService:
@@ -52,6 +55,8 @@ class InvocationAdmissionService:
                 execution_state=snapshot.state,
             ),
             starts_execution=admission.is_new,
+            admitted_payload=admission.admitted_payload,
+            admitted_at=admission.admitted_at,
         )
 
     @staticmethod

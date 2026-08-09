@@ -5,6 +5,8 @@ from threading import Event, Lock
 from time import monotonic, sleep
 from uuid import uuid4
 
+import pytest
+
 from app.integration.contracts import AuthorityContext
 from app.runtime.contracts import (
     IDEMPOTENCY_CONFLICT_REASON,
@@ -14,6 +16,7 @@ from app.runtime.contracts import (
 )
 from app.runtime.engine import CognitiveEngineRuntime
 from app.runtime.execution_state import ExecutionState
+from app.runtime.execution_store import InMemoryExecutionStore
 from app.runtime.orchestration import (
     CapabilityStepError,
     CapabilityStepInput,
@@ -133,6 +136,42 @@ def test_concurrent_identical_admission_creates_one_execution() -> None:
     assert all(response.status is InvocationStatus.ACCEPTED for response in responses)
     assert step.call_count == 1
     release.set()
+
+
+def test_trusted_admission_builder_runs_once_and_reuses_committed_payload() -> None:
+    admitted_at = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
+    calls: list[datetime] = []
+    step = CountingStep()
+    runtime = CognitiveEngineRuntime(
+        CapabilityStepPorts(*([step] * 6)),
+        InMemoryExecutionStore(clock=lambda: admitted_at),
+    )
+
+    def build_admitted_payload(timestamp: datetime) -> bytes:
+        calls.append(timestamp)
+        return f"admitted:{timestamp.isoformat()}".encode()
+
+    value = replace(
+        request(b'{"client":"payload"}'),
+        admitted_payload_builder=build_admitted_payload,
+    )
+
+    first = runtime.invoke(value)
+    second = runtime.invoke(value)
+
+    assert second.execution_identifier == first.execution_identifier
+    assert calls == [admitted_at]
+    assert first.execution_identifier is not None
+    wait_for_state(runtime, first.execution_identifier, ExecutionState.COMPLETED)
+
+
+def test_invalid_trusted_clock_prevents_partial_admission() -> None:
+    store = InMemoryExecutionStore(clock=lambda: datetime(2026, 1, 1))  # noqa: DTZ001
+    value = request()
+    with pytest.raises(ValueError, match="timezone-aware"):
+        store.admit(value, b"fingerprint")
+    with pytest.raises(ValueError, match="timezone-aware"):
+        store.admit(value, b"fingerprint")
 
 
 def test_active_and_terminal_replay_return_existing_execution_without_work() -> None:
