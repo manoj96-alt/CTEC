@@ -1,5 +1,6 @@
 # Generated model registry.
 from app.infrastructure.persistence.models.accountable_owner import AccountableOwner
+from app.infrastructure.persistence.models.api_security_audit import ApiSecurityAuditEventORM
 from app.infrastructure.persistence.models.assertion import Assertion
 from app.infrastructure.persistence.models.assertion_evidence import AssertionEvidence
 from app.infrastructure.persistence.models.assertion_record import (
@@ -73,6 +74,7 @@ from app.runtime.persistence.models import (
 
 __all__ = [
     "AccountableOwner",
+    "ApiSecurityAuditEventORM",
     "Assertion",
     "AssertionEvidence",
     "AssertionRecordEntityResolutionEvidenceModel",

@@ -31,3 +31,11 @@ def test_version_endpoint() -> None:
         response = client.get("/api/version")
     assert response.status_code == 200
     assert response.json() == {"name": "CTEC", "version": "0.1.0"}
+
+
+def test_supplier_risk_routes_are_registered_but_protected() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/v1/supplier-risk/executions/00000000-0000-0000-0000-000000000001"
+        )
+    assert response.status_code == 401
