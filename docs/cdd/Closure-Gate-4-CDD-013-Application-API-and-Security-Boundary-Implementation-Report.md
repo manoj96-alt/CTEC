@@ -1,15 +1,17 @@
 # Closure Gate 4 — CDD-013 Application API and Security Boundary Implementation Report
 
 Version: 1.0
-Status: IMPLEMENTATION CANDIDATE — VALIDATED LOCALLY
+Status: IMPLEMENTED / VERIFIED / FROZEN
 CDD-013 authority base: `ba59931de602e4cd66bb8edf8b2266b718b17073`
 Required replay-remediation merge: `9f2458b8a2c2e7c6f3403d52a2a4ccceb151fa08`
+Implementation commit: `8d2a8803fc6eac625344f13752b4c9af387ee92c`
+Implementation pull request: [#44](https://github.com/manoj96-alt/CTEC/pull/44)
+Implementation merge: `bc3dc8b1259df5521b7eb02766d2b752149ad0ad`
 
 ## Recommendation
 
-**CDD-013 IMPLEMENTED AND VERIFIED — READY FOR GOVERNED PUBLICATION.** Final FROZEN status is
-conditional only on protected-branch CI, merge, remote-tree verification, and governance metadata
-publication.
+**CDD-013 IMPLEMENTED / VERIFIED / FROZEN.** Protected-branch CI, governed merge, remote-tree
+verification, and implementation-evidence publication are complete.
 
 ## Incorporated prerequisite
 
@@ -62,7 +64,12 @@ recovery invocations, or directly invokes capability services.
 - Changed-file authorization test: passed.
 - `git diff --check`: passed.
 - Docker/PostgreSQL could not be started locally because the desktop Docker daemon was unavailable;
-  the governed GitHub backend job is the required PostgreSQL migration/integration publication gate.
+  the governed GitHub backend job supplied the required PostgreSQL migration/integration publication
+  gate and passed.
+- Protected-branch publication: all six required backend, frontend, and container checks passed on
+  PR #44.
+- Remote verification: `origin/main` resolved to implementation merge
+  `bc3dc8b1259df5521b7eb02766d2b752149ad0ad`, containing exactly the reviewed implementation.
 
 ## Scope exclusions preserved
 
@@ -75,3 +82,8 @@ implemented.
 Revert the CDD-013 implementation merge. If migration `0009` was applied, run its governed
 downgrade only after retaining or exporting audit evidence required by policy and legal hold.
 CDD-010/CDD-011/CDD-012 remain independently operational.
+
+## Final decision
+
+CDD-013 is **IMPLEMENTED / VERIFIED / FROZEN**. Its external boundary remains limited to the
+governed supplier-risk API; UI and production deployment remain separately governed future work.

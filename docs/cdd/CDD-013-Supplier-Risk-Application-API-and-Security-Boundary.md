@@ -1,8 +1,12 @@
 # CDD-013 — Supplier Risk Application API and Security Boundary
 
-Version: 1.0 DRAFT
+Version: 1.0
 
-Status: APPROVED FOR IMPLEMENTATION
+Status: IMPLEMENTED / VERIFIED / FROZEN
+
+Implementation authority: remote main `ba59931de602e4cd66bb8edf8b2266b718b17073`
+
+Implementation publication: PR #44; merge `bc3dc8b1259df5521b7eb02766d2b752149ad0ad`
 
 Reviewed baseline: remote main `96e5ec10a34b7fbed5b2868330f6e2bb2bc875a4`
 
