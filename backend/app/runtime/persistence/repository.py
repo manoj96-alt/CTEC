@@ -2,18 +2,26 @@
 
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from threading import RLock
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.integration.contracts import AuthorityContext
 from app.runtime.contracts import ExecutionSnapshot, InvocationRequest
 from app.runtime.execution_state import ExecutionState, initial_transition, transition
 from app.runtime.execution_store import AdmissionResult
-from app.runtime.persistence.contracts import HandoffProtector, ReplayAuthorization
+from app.runtime.persistence.contracts import (
+    HandoffProtector,
+    ProtectedPayloadIntegrityError,
+    ProtectedPayloadMissingError,
+    ProtectionContext,
+    ReplayAuthorization,
+)
 from app.runtime.persistence.models import (
     RuntimeArtifactReferenceORM,
     RuntimeExecutionORM,
@@ -22,6 +30,9 @@ from app.runtime.persistence.models import (
     RuntimeResultORM,
     RuntimeStageORM,
 )
+from app.runtime.recovery import STAGES, ValidatedRecoveryInvocation, validated_recovery_invocation
+
+_HANDOFF_CONTRACT = "CIM-001-v1.1"
 
 
 class SqlAlchemyExecutionStore:
@@ -32,6 +43,7 @@ class SqlAlchemyExecutionStore:
     ) -> None:
         self._sessions = session_factory
         self._handoff_protector = handoff_protector
+        self._replay_lock = RLock()
 
     def admit(self, request: InvocationRequest, payload_fingerprint: bytes) -> AdmissionResult:
         tenant = (
@@ -56,6 +68,7 @@ class SqlAlchemyExecutionStore:
                 )
                 return AdmissionResult(None if conflict else existing.execution_id, False, conflict)
             execution_id = uuid4()
+            admitted_at = datetime.now(UTC)
             session.add(
                 RuntimeExecutionORM(
                     execution_id=execution_id,
@@ -70,10 +83,32 @@ class SqlAlchemyExecutionStore:
                     payload_fingerprint=payload_fingerprint,
                     control_fingerprint=control,
                     state=ExecutionState.ACCEPTED.value,
-                    admitted_at=datetime.now(UTC),
+                    admitted_at=admitted_at,
                     revision=0,
                     legal_hold=False,
                     retention_until=None,
+                )
+            )
+            context = ProtectionContext(
+                tenant_id=tenant,
+                logical_execution_id=execution_id,
+                attempt_id=execution_id,
+                stage_name=STAGES[0],
+                direction="INPUT",
+                contract_version=_HANDOFF_CONTRACT,
+            )
+            session.add(
+                RuntimeHandoffORM(
+                    handoff_id=uuid4(),
+                    execution_id=execution_id,
+                    source_stage=None,
+                    target_stage=STAGES[0],
+                    contract_version=_HANDOFF_CONTRACT,
+                    protected_payload=self._handoff_protector.protect(
+                        request.opaque_payload, context
+                    ),
+                    content_hash=sha256(request.opaque_payload).digest(),
+                    created_at=admitted_at,
                 )
             )
             session.commit()
@@ -166,6 +201,9 @@ class SqlAlchemyExecutionStore:
             raise ValueError("Checkpoint timestamp must be timezone-aware")
         session = self._sessions()
         try:
+            execution = session.get(RuntimeExecutionORM, execution_identifier)
+            if execution is None:
+                raise KeyError(execution_identifier)
             existing = session.scalar(
                 select(RuntimeStageORM).where(
                     RuntimeStageORM.execution_id == execution_identifier,
@@ -176,25 +214,53 @@ class SqlAlchemyExecutionStore:
                 if existing.stage_name != stage_name or existing.status != "COMMITTED":
                     raise RuntimeError("Checkpoint conflict")
                 return
-            input_handoff = uuid4()
-            output_handoff = uuid4()
-            stage_id = uuid4()
-            for handoff_id, source, target, payload in (
-                (input_handoff, None if stage_ordinal == 0 else "PRIOR", stage_name, input_payload),
-                (output_handoff, stage_name, None, output_payload),
-            ):
-                session.add(
-                    RuntimeHandoffORM(
-                        handoff_id=handoff_id,
-                        execution_id=execution_identifier,
-                        source_stage=source,
-                        target_stage=target,
-                        contract_version="CIM-001-v1.1",
-                        protected_payload=self._handoff_protector.protect(payload),
-                        content_hash=sha256(payload).digest(),
-                        created_at=completed_at,
+            if stage_ordinal == 0:
+                input_row = session.scalar(
+                    select(RuntimeHandoffORM).where(
+                        RuntimeHandoffORM.execution_id == execution_identifier,
+                        RuntimeHandoffORM.source_stage.is_(None),
+                        RuntimeHandoffORM.target_stage == STAGES[0],
                     )
                 )
+            else:
+                prior_stage = session.scalar(
+                    select(RuntimeStageORM).where(
+                        RuntimeStageORM.execution_id == execution_identifier,
+                        RuntimeStageORM.stage_ordinal == stage_ordinal - 1,
+                    )
+                )
+                input_row = (
+                    session.get(RuntimeHandoffORM, prior_stage.output_handoff_id)
+                    if prior_stage is not None and prior_stage.output_handoff_id is not None
+                    else None
+                )
+            if input_row is None or input_row.content_hash != sha256(input_payload).digest():
+                raise RuntimeError("Checkpoint input does not match the governed handoff")
+            input_handoff = input_row.handoff_id
+            output_handoff = uuid4()
+            stage_id = uuid4()
+            protection_context = ProtectionContext(
+                tenant_id=execution.tenant_id,
+                logical_execution_id=execution.logical_execution_id,
+                attempt_id=execution_identifier,
+                stage_name=stage_name,
+                direction="OUTPUT",
+                contract_version=_HANDOFF_CONTRACT,
+            )
+            session.add(
+                RuntimeHandoffORM(
+                    handoff_id=output_handoff,
+                    execution_id=execution_identifier,
+                    source_stage=stage_name,
+                    target_stage=None,
+                    contract_version=_HANDOFF_CONTRACT,
+                    protected_payload=self._handoff_protector.protect(
+                        output_payload, protection_context
+                    ),
+                    content_hash=sha256(output_payload).digest(),
+                    created_at=completed_at,
+                )
+            )
             session.add(
                 RuntimeStageORM(
                     stage_id=stage_id,
@@ -229,6 +295,224 @@ class SqlAlchemyExecutionStore:
         finally:
             session.close()
 
+    def prepare_replay(
+        self,
+        original_execution_id: UUID,
+        authorization: ReplayAuthorization,
+        authority_context: AuthorityContext,
+    ) -> ValidatedRecoveryInvocation:
+        """Validate a checkpoint and atomically create or return its linked replay."""
+        with self._replay_lock:
+            session = self._sessions()
+            try:
+                original = session.get(RuntimeExecutionORM, original_execution_id)
+                if original is None:
+                    raise KeyError("Recovery execution is unknown")
+                if original.state not in {
+                    ExecutionState.COMPLETED.value,
+                    ExecutionState.FAILED.value,
+                }:
+                    raise RuntimeError("Only a terminal attempt can be replayed")
+                authorization.validate(original.tenant_id)
+                self._validate_replay_authority(authorization, authority_context)
+                self._lock_replay_identity(session, original_execution_id, authorization)
+
+                stages = tuple(
+                    session.scalars(
+                        select(RuntimeStageORM)
+                        .where(RuntimeStageORM.execution_id == original_execution_id)
+                        .order_by(RuntimeStageORM.stage_ordinal)
+                    )
+                )
+                resume_ordinal, checkpoint, handoff = self._select_recovery_handoff(
+                    session, original, stages
+                )
+                payload = self._recover_handoff(original, handoff, resume_ordinal)
+
+                existing = session.scalar(
+                    select(RuntimeRecoveryAttemptORM).where(
+                        RuntimeRecoveryAttemptORM.original_execution_id == original_execution_id,
+                        RuntimeRecoveryAttemptORM.replay_authorization_reference
+                        == authorization.authorization_reference,
+                        RuntimeRecoveryAttemptORM.correlation_id == authorization.correlation_id,
+                    )
+                )
+                if existing is not None:
+                    replay = session.get(RuntimeExecutionORM, existing.replay_execution_id)
+                    if replay is None:
+                        raise RuntimeError("Recovery linkage is incomplete")
+                    return self._recovery_invocation(
+                        replay, existing.recovery_id, authority_context, payload, resume_ordinal
+                    )
+
+                replay_execution_id = uuid4()
+                recovery_id = uuid4()
+                admitted_at = datetime.now(UTC)
+                session.add(
+                    RuntimeExecutionORM(
+                        execution_id=replay_execution_id,
+                        logical_execution_id=original.logical_execution_id,
+                        tenant_id=original.tenant_id,
+                        protocol_version=original.protocol_version,
+                        integration_contract_version=original.integration_contract_version,
+                        request_id=authority_context.request_id,
+                        correlation_id=authorization.correlation_id,
+                        session_id=original.session_id,
+                        request_classification=original.request_classification,
+                        payload_fingerprint=sha256(payload).digest(),
+                        control_fingerprint=sha256(repr(authority_context).encode()).digest(),
+                        state=ExecutionState.ACCEPTED.value,
+                        admitted_at=admitted_at,
+                        revision=0,
+                        legal_hold=False,
+                        retention_until=None,
+                    )
+                )
+                session.add(
+                    RuntimeRecoveryAttemptORM(
+                        recovery_id=recovery_id,
+                        logical_execution_id=original.logical_execution_id,
+                        original_execution_id=original_execution_id,
+                        replay_execution_id=replay_execution_id,
+                        checkpoint_stage_id=checkpoint,
+                        tenant_id=original.tenant_id,
+                        replay_principal_id=authorization.principal_id,
+                        original_authorization_reference="retained-original-authority",
+                        replay_authorization_reference=authorization.authorization_reference,
+                        replay_reason=authorization.reason,
+                        correlation_id=authorization.correlation_id,
+                        authorized_at=authorization.authorized_at,
+                    )
+                )
+                session.commit()
+                replay = session.get(RuntimeExecutionORM, replay_execution_id)
+                if replay is None:
+                    raise RuntimeError("Replay admission was not persisted")
+                return self._recovery_invocation(
+                    replay, recovery_id, authority_context, payload, resume_ordinal
+                )
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+    @staticmethod
+    def _validate_replay_authority(
+        authorization: ReplayAuthorization, authority_context: AuthorityContext
+    ) -> None:
+        if (
+            authority_context.principal_id != authorization.principal_id
+            or authority_context.organization_id != authorization.tenant_id
+            or authority_context.authorization_reference != authorization.authorization_reference
+            or authority_context.correlation_id != authorization.correlation_id
+        ):
+            raise PermissionError("Replay authority contexts conflict")
+        authority_context.validate_for(
+            request_id=authority_context.request_id,
+            correlation_id=authorization.correlation_id,
+            now=datetime.now(UTC),
+        )
+
+    @staticmethod
+    def _lock_replay_identity(
+        session: Session, original_execution_id: UUID, authorization: ReplayAuthorization
+    ) -> None:
+        if session.bind is not None and session.bind.dialect.name == "postgresql":
+            identity = (
+                f"{original_execution_id}:{authorization.authorization_reference}:"
+                f"{authorization.correlation_id}"
+            )
+            session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, 0))"),
+                {"identity": identity},
+            )
+
+    @staticmethod
+    def _select_recovery_handoff(
+        session: Session,
+        original: RuntimeExecutionORM,
+        stages: tuple[RuntimeStageORM, ...],
+    ) -> tuple[int, UUID | None, RuntimeHandoffORM]:
+        if not stages:
+            handoff = session.scalar(
+                select(RuntimeHandoffORM).where(
+                    RuntimeHandoffORM.execution_id == original.execution_id,
+                    RuntimeHandoffORM.source_stage.is_(None),
+                    RuntimeHandoffORM.target_stage == STAGES[0],
+                )
+            )
+            if handoff is None:
+                raise ProtectedPayloadMissingError("Original admitted payload is absent")
+            return 0, None, handoff
+        for ordinal, stage in enumerate(stages):
+            if (
+                ordinal >= len(STAGES)
+                or stage.stage_ordinal != ordinal
+                or stage.stage_name != STAGES[ordinal]
+                or stage.status != "COMMITTED"
+                or stage.completed_at is None
+                or stage.safe_failure_code is not None
+            ):
+                raise RuntimeError("Recovery checkpoint history is unsafe")
+        resume_ordinal = len(stages)
+        if resume_ordinal >= len(STAGES):
+            raise RuntimeError("The original execution has no downstream stage to replay")
+        checkpoint = stages[-1]
+        if checkpoint.output_handoff_id is None:
+            raise ProtectedPayloadMissingError("Recovery checkpoint payload is absent")
+        handoff = session.get(RuntimeHandoffORM, checkpoint.output_handoff_id)
+        if handoff is None or handoff.execution_id != original.execution_id:
+            raise ProtectedPayloadMissingError("Recovery checkpoint payload is absent")
+        return resume_ordinal, checkpoint.stage_id, handoff
+
+    def _recover_handoff(
+        self,
+        original: RuntimeExecutionORM,
+        handoff: RuntimeHandoffORM,
+        resume_ordinal: int,
+    ) -> bytes:
+        expected_stage = STAGES[0] if resume_ordinal == 0 else STAGES[resume_ordinal - 1]
+        expected_source = None if resume_ordinal == 0 else expected_stage
+        expected_direction = "INPUT" if resume_ordinal == 0 else "OUTPUT"
+        if handoff.contract_version != _HANDOFF_CONTRACT or handoff.source_stage != expected_source:
+            raise ProtectedPayloadIntegrityError("Recovery checkpoint contract is incompatible")
+        context = ProtectionContext(
+            tenant_id=original.tenant_id,
+            logical_execution_id=original.logical_execution_id,
+            attempt_id=original.execution_id,
+            stage_name=expected_stage,
+            direction=expected_direction,
+            contract_version=_HANDOFF_CONTRACT,
+        )
+        payload = self._handoff_protector.recover(handoff.protected_payload, context)
+        if sha256(payload).digest() != handoff.content_hash:
+            raise ProtectedPayloadIntegrityError("Recovery checkpoint content hash failed")
+        return payload
+
+    @staticmethod
+    def _recovery_invocation(
+        replay: RuntimeExecutionORM,
+        recovery_id: UUID,
+        authority_context: AuthorityContext,
+        payload: bytes,
+        resume_ordinal: int,
+    ) -> ValidatedRecoveryInvocation:
+        return validated_recovery_invocation(
+            execution_identifier=replay.execution_id,
+            logical_execution_identifier=replay.logical_execution_id,
+            protocol_version=replay.protocol_version,
+            correlation_identifier=replay.correlation_id,
+            request_identifier=replay.request_id,
+            session_identifier=replay.session_id,
+            request_classification=replay.request_classification,
+            opaque_payload=payload,
+            authority_context=authority_context,
+            admitted_at=replay.admitted_at,
+            resume_stage_ordinal=resume_ordinal,
+            recovery_identifier=recovery_id,
+        )
+
     def record_result(
         self,
         execution_identifier: UUID,
@@ -261,46 +545,6 @@ class SqlAlchemyExecutionStore:
                     )
                 )
             session.commit()
-        finally:
-            session.close()
-
-    def authorize_recovery(
-        self,
-        original_execution_id: UUID,
-        replay_execution_id: UUID,
-        authorization: ReplayAuthorization,
-        *,
-        checkpoint_stage_id: UUID | None = None,
-    ) -> UUID:
-        session = self._sessions()
-        try:
-            original = session.get(RuntimeExecutionORM, original_execution_id)
-            replay = session.get(RuntimeExecutionORM, replay_execution_id)
-            if original is None or replay is None:
-                raise KeyError("Recovery execution is unknown")
-            authorization.validate(original.tenant_id)
-            recovery_id = uuid4()
-            session.add(
-                RuntimeRecoveryAttemptORM(
-                    recovery_id=recovery_id,
-                    logical_execution_id=original.logical_execution_id,
-                    original_execution_id=original_execution_id,
-                    replay_execution_id=replay_execution_id,
-                    checkpoint_stage_id=checkpoint_stage_id,
-                    tenant_id=original.tenant_id,
-                    replay_principal_id=authorization.principal_id,
-                    original_authorization_reference="retained-original-authority",
-                    replay_authorization_reference=authorization.authorization_reference,
-                    replay_reason=authorization.reason,
-                    correlation_id=authorization.correlation_id,
-                    authorized_at=authorization.authorized_at,
-                )
-            )
-            session.commit()
-            return recovery_id
-        except Exception:
-            session.rollback()
-            raise
         finally:
             session.close()
 

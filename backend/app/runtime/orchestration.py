@@ -78,10 +78,20 @@ class RuntimeOrchestrator:
         self._checkpoints = checkpoints
 
     def execute(self, initial_input: CapabilityStepInput) -> CapabilityStepOutput:
+        return self.execute_from(initial_input, 0)
+
+    def execute_from(
+        self, initial_input: CapabilityStepInput, start_stage_ordinal: int
+    ) -> CapabilityStepOutput:
+        if start_stage_ordinal not in range(6):
+            raise ValueError("Resume stage ordinal must identify a governed capability")
         current_input = initial_input
         output: CapabilityStepOutput | None = None
         names = ("ERM", "SRM", "ASM", "KRM", "DRM", "GRM")
-        for ordinal, (name, port) in enumerate(zip(names, self._ports.ordered(), strict=True)):
+        sequence = tuple(zip(names, self._ports.ordered(), strict=True))
+        for ordinal, (name, port) in enumerate(
+            sequence[start_stage_ordinal:], start=start_stage_ordinal
+        ):
             output = port.execute(current_input)
             self._validate_metadata(current_input, output)
             if self._checkpoints is not None:
@@ -99,7 +109,7 @@ class RuntimeOrchestrator:
             current_input = replace(current_input, opaque_payload=output.opaque_payload)
 
         if output is None:
-            raise RuntimeError("The governed runtime sequence must contain six steps")
+            raise RuntimeError("The governed runtime sequence must contain a resumable step")
         return output
 
     @staticmethod

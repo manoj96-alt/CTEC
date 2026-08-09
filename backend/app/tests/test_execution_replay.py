@@ -1,10 +1,12 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.infrastructure.persistence.base import Base
+from app.integration.contracts import AuthorityContext
+from app.runtime.execution_state import ExecutionState
 from app.runtime.persistence.contracts import RECOVERY_ROLE, RECOVERY_SCOPE, ReplayAuthorization
 from app.runtime.persistence.repository import SqlAlchemyExecutionStore
 from app.tests.test_durable_execution_store import FakeHandoffProtector, request
@@ -32,8 +34,21 @@ def test_recovery_attempt_requires_authority_and_links_attempts() -> None:
         sessionmaker(engine, expire_on_commit=False), FakeHandoffProtector()
     )
     original = durable.admit(request(), b"original").execution_identifier
-    replay = durable.admit(request(), b"replay").execution_identifier
-    assert original is not None and replay is not None
+    assert original is not None
+    durable.advance(original, ExecutionState.EXECUTING)
+    durable.checkpoint(
+        original,
+        stage_name="ERM",
+        stage_ordinal=0,
+        input_payload=b"payload",
+        output_payload=b"resolved",
+        artifact_references=(),
+        completed_at=datetime.now(UTC),
+    )
+    durable.advance(original, ExecutionState.FAILED)
+    now = datetime.now(UTC)
+    correlation = uuid4()
+    request_id = uuid4()
     authorization = ReplayAuthorization(
         "operator",
         "tenant",
@@ -41,7 +56,23 @@ def test_recovery_attempt_requires_authority_and_links_attempts() -> None:
         (RECOVERY_SCOPE,),
         "authorization-2",
         "recover from verified checkpoint",
-        uuid4(),
-        datetime.now(UTC),
+        correlation,
+        now,
     )
-    assert durable.authorize_recovery(original, replay, authorization)
+    authority = AuthorityContext(
+        "operator",
+        "Service",
+        "tenant",
+        (RECOVERY_ROLE,),
+        (RECOVERY_SCOPE,),
+        "AUTHORIZED",
+        "authorization-2",
+        "gateway",
+        request_id,
+        correlation,
+        now - timedelta(seconds=1),
+        now + timedelta(hours=1),
+    )
+    replay = durable.prepare_replay(original, authorization, authority)
+    assert replay.execution_identifier != original
+    assert replay.logical_execution_identifier == original

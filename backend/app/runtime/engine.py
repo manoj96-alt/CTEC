@@ -22,6 +22,7 @@ from app.runtime.orchestration import (
     CapabilityStepPorts,
     RuntimeOrchestrator,
 )
+from app.runtime.recovery import ValidatedRecoveryInvocation
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +43,7 @@ class CognitiveEngineRuntime:
         self._result_lock = RLock()
         self._control_fingerprints: dict[tuple[str, UUID], bytes] = {}
         self._result_overlays: dict[UUID, _ResultOverlay] = {}
+        self._started_recoveries: set[UUID] = set()
 
     def invoke(self, request: InvocationRequest) -> InvocationResponse:
         validation = self._validate_control_metadata(request)
@@ -74,6 +76,32 @@ class CognitiveEngineRuntime:
             worker.start()
         return response
 
+    def resume(self, recovery: ValidatedRecoveryInvocation) -> InvocationResponse:
+        """Resume a server-validated attempt; ordinary callers cannot select a stage."""
+        if not recovery.validated:
+            raise PermissionError("Recovery invocation was not validated by the durable boundary")
+        with self._result_lock:
+            starts_execution = recovery.recovery_identifier not in self._started_recoveries
+            if starts_execution:
+                self._started_recoveries.add(recovery.recovery_identifier)
+        snapshot = self._store.get(recovery.execution_identifier)
+        if snapshot is None:
+            raise KeyError("Validated recovery execution is unavailable")
+        if starts_execution:
+            worker = Thread(
+                target=self._execute_recovery,
+                args=(recovery,),
+                daemon=True,
+                name=f"ctec-recovery-{recovery.execution_identifier}",
+            )
+            worker.start()
+        return InvocationResponse(
+            status=InvocationStatus.ACCEPTED,
+            execution_identifier=recovery.execution_identifier,
+            execution_reference=recovery.logical_execution_identifier,
+            execution_state=snapshot.state,
+        )
+
     def get_execution(self, execution_identifier: UUID) -> ExecutionSnapshot | None:
         snapshot = self._store.get(execution_identifier)
         if snapshot is None:
@@ -94,9 +122,6 @@ class CognitiveEngineRuntime:
 
     def _execute(self, request: InvocationRequest, execution_identifier: UUID) -> None:
         admitted_at = datetime.now(UTC)
-        with self._result_lock:
-            self._result_overlays[execution_identifier] = _ResultOverlay(admitted_at)
-        self._store.advance(execution_identifier, ExecutionState.EXECUTING)
         step_input = CapabilityStepInput(
             protocol_version=request.protocol_version,
             correlation_identifier=request.correlation_identifier,
@@ -107,8 +132,30 @@ class CognitiveEngineRuntime:
             authority_context=request.authority_context,
             admitted_at=admitted_at,
         )
+        self._execute_from(step_input, admitted_at, 0)
+
+    def _execute_recovery(self, recovery: ValidatedRecoveryInvocation) -> None:
+        step_input = CapabilityStepInput(
+            protocol_version=recovery.protocol_version,
+            correlation_identifier=recovery.correlation_identifier,
+            request_identifier=recovery.request_identifier,
+            session_identifier=recovery.session_identifier,
+            execution_identifier=recovery.execution_identifier,
+            opaque_payload=recovery.opaque_payload,
+            authority_context=recovery.authority_context,
+            admitted_at=recovery.admitted_at,
+        )
+        self._execute_from(step_input, recovery.admitted_at, recovery.resume_stage_ordinal)
+
+    def _execute_from(
+        self, step_input: CapabilityStepInput, admitted_at: datetime, start_stage_ordinal: int
+    ) -> None:
+        execution_identifier = step_input.execution_identifier
+        with self._result_lock:
+            self._result_overlays[execution_identifier] = _ResultOverlay(admitted_at)
+        self._store.advance(execution_identifier, ExecutionState.EXECUTING)
         try:
-            result = self._orchestrator.execute(step_input)
+            result = self._orchestrator.execute_from(step_input, start_stage_ordinal)
         # The runtime boundary must convert every unexpected adapter failure into
         # the governed technical-failure state without leaking implementation data.
         except (CapabilityStepError, Exception):  # noqa: BLE001

@@ -1,6 +1,6 @@
 # CDD-010/CDD-012 Replay Remediation Authorization
 
-Version: 1.0
+Version: 1.2
 Status: APPROVED FOR IMPLEMENTATION
 Base: `ba59931de602e4cd66bb8edf8b2266b718b17073`
 
@@ -15,6 +15,7 @@ Base: `ba59931de602e4cd66bb8edf8b2266b718b17073`
 ## Runtime recovery implementation and test allowlist
 
 - `backend/pyproject.toml`
+- `backend/requirements.txt`
 - `backend/app/runtime/engine.py`
 - `backend/app/runtime/orchestration.py`
 - `backend/app/runtime/persistence/contracts.py`
@@ -24,6 +25,7 @@ Base: `ba59931de602e4cd66bb8edf8b2266b718b17073`
 - `backend/app/tests/test_authenticated_handoff_recovery.py`
 - `backend/app/tests/test_resume_from_stage.py`
 - `backend/app/tests/test_atomic_replay_creation.py`
+- `backend/app/tests/test_durable_execution_store.py`
 - `backend/app/tests/test_execution_recovery.py`
 - `backend/app/tests/test_execution_replay.py`
 - `backend/app/tests/test_runtime_architecture.py`
@@ -41,3 +43,9 @@ not be reapplied until this remediation is merged to remote main.
 All unlisted files are READ-ONLY. Capability business rules, canonical ontology, UI, deployment,
 unrelated APIs, and additional persistence records are prohibited.
 
+Version 1.1 adds only the pre-existing durable-store regression test so its test protector can
+conform to the authenticated, context-bound `HandoffProtector` contract. It authorizes no new
+runtime behavior or production artifact.
+
+Version 1.2 adds only the repository's existing runtime dependency lock file so the newly approved
+authenticated-encryption dependency is reproducible in container and CI installations.
