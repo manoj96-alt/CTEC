@@ -1,13 +1,23 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import { RetryDialog } from "@/components/supplier-risk/retry-dialog";
 import { ReplayDialog } from "@/components/supplier-risk/replay-dialog";
+const { replayMock } = vi.hoisted(() => ({ replayMock: vi.fn() }));
 vi.mock("@/lib/supplier-risk/api-client", () => ({
   supplierRiskApi: {
     retry: vi.fn().mockResolvedValue({}),
-    replay: vi.fn().mockResolvedValue({}),
+    replay: replayMock,
   },
 }));
+const replayOption = (option_reference: string, stage_label = "ERM") => ({
+  option_reference,
+  source_attempt_identifier: "attempt",
+  stage_label,
+  checkpoint_at: "2026-01-01T00:00:00Z",
+  eligible: true,
+  reason_code: "REPLAY_ELIGIBLE",
+  revision: 2,
+});
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -15,6 +25,10 @@ beforeAll(() => {
   HTMLDialogElement.prototype.close = function () {
     this.removeAttribute("open");
   };
+});
+beforeEach(() => {
+  replayMock.mockReset();
+  replayMock.mockResolvedValue({});
 });
 test("retry is server eligibility controlled", () => {
   render(
@@ -56,7 +70,7 @@ test("eligible retry submits one revision-bound request", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Confirm retry" }));
   await waitFor(() => expect(accepted).toHaveBeenCalled());
 });
-test("replay displays only server-authorized options", () => {
+test("replay displays only server-authorized options", async () => {
   render(
     <ReplayDialog
       logicalId="logical"
@@ -75,6 +89,11 @@ test("replay displays only server-authorized options", () => {
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Privileged replay" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Server-authorized checkpoint")).toHaveValue(
+      "option",
+    ),
+  );
   expect(screen.getByLabelText("Server-authorized checkpoint")).toHaveValue(
     "option",
   );
@@ -103,8 +122,77 @@ test("confirmed replay submits only the server option", async () => {
   fireEvent.change(screen.getByLabelText("Reason"), {
     target: { value: "Authorized recovery" },
   });
+  const confirm = screen.getByRole("button", {
+    name: "Confirm privileged replay",
+  });
+  await waitFor(() => expect(confirm).not.toBeDisabled());
+  fireEvent.click(confirm);
+  await waitFor(() => expect(accepted).toHaveBeenCalled());
+  expect(replayMock).toHaveBeenCalledTimes(1);
+  expect(replayMock.mock.calls[0]?.[1]).toMatchObject({
+    replay_option_reference: "option",
+    expected_revision: 2,
+  });
+});
+
+test("submits the visibly selected alternative option", async () => {
+  render(
+    <ReplayDialog
+      logicalId="logical"
+      options={[replayOption("first"), replayOption("second", "GRM")]}
+      onAccepted={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Privileged replay" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Server-authorized checkpoint")).toHaveValue(
+      "first",
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("Server-authorized checkpoint"), {
+    target: { value: "second" },
+  });
+  fireEvent.change(screen.getByLabelText("Reason"), {
+    target: { value: "Authorized recovery" },
+  });
   fireEvent.click(
     screen.getByRole("button", { name: "Confirm privileged replay" }),
   );
-  await waitFor(() => expect(accepted).toHaveBeenCalled());
+  await waitFor(() => expect(replayMock).toHaveBeenCalledTimes(1));
+  expect(replayMock.mock.calls[0]?.[1]).toMatchObject({
+    replay_option_reference: "second",
+  });
+});
+
+test("pending confirmation emits only one replay request", async () => {
+  let resolveReplay!: (value: object) => void;
+  replayMock.mockReturnValue(
+    new Promise((resolve) => {
+      resolveReplay = resolve;
+    }),
+  );
+  render(
+    <ReplayDialog
+      logicalId="logical"
+      options={[replayOption("option")]}
+      onAccepted={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Privileged replay" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Server-authorized checkpoint")).toHaveValue(
+      "option",
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("Reason"), {
+    target: { value: "Authorized recovery" },
+  });
+  const confirm = screen.getByRole("button", {
+    name: "Confirm privileged replay",
+  });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  expect(replayMock).toHaveBeenCalledTimes(1);
+  resolveReplay({});
+  await waitFor(() => expect(confirm).not.toBeDisabled());
 });

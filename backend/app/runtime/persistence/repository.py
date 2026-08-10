@@ -630,6 +630,14 @@ class SqlAlchemyExecutionStore:
                     if prior_stage is not None and prior_stage.output_handoff_id is not None
                     else None
                 )
+                if input_row is None:
+                    input_row = session.scalar(
+                        select(RuntimeHandoffORM).where(
+                            RuntimeHandoffORM.execution_id == execution_identifier,
+                            RuntimeHandoffORM.source_stage == STAGES[stage_ordinal - 1],
+                            RuntimeHandoffORM.target_stage == stage_name,
+                        )
+                    )
             if input_row is None or input_row.content_hash != sha256(input_payload).digest():
                 raise RuntimeError("Checkpoint input does not match the governed handoff")
             input_handoff = input_row.handoff_id
@@ -780,6 +788,36 @@ class SqlAlchemyExecutionStore:
                         retention_until=None,
                     )
                 )
+                session.flush()
+                recovery_source = (
+                    None if resume_ordinal == 0 else STAGES[resume_ordinal - 1]
+                )
+                recovery_direction = "INPUT" if resume_ordinal == 0 else "OUTPUT"
+                recovery_context_stage = (
+                    STAGES[0] if resume_ordinal == 0 else STAGES[resume_ordinal - 1]
+                )
+                recovery_context = ProtectionContext(
+                    tenant_id=original.tenant_id,
+                    logical_execution_id=original.logical_execution_id,
+                    attempt_id=replay_execution_id,
+                    stage_name=recovery_context_stage,
+                    direction=recovery_direction,
+                    contract_version=_HANDOFF_CONTRACT,
+                )
+                session.add(
+                    RuntimeHandoffORM(
+                        handoff_id=uuid4(),
+                        execution_id=replay_execution_id,
+                        source_stage=recovery_source,
+                        target_stage=STAGES[resume_ordinal],
+                        contract_version=_HANDOFF_CONTRACT,
+                        protected_payload=self._handoff_protector.protect(
+                            payload, recovery_context
+                        ),
+                        content_hash=sha256(payload).digest(),
+                        created_at=admitted_at,
+                    )
+                )
                 session.add(
                     RuntimeRecoveryAttemptORM(
                         recovery_id=recovery_id,
@@ -872,7 +910,13 @@ class SqlAlchemyExecutionStore:
                 raise RuntimeError("Recovery checkpoint history is unsafe")
         resume_ordinal = len(stages)
         if resume_ordinal >= len(STAGES):
-            raise RuntimeError("The original execution has no downstream stage to replay")
+            checkpoint = stages[-1]
+            if checkpoint.input_handoff_id is None:
+                raise ProtectedPayloadMissingError("Recovery checkpoint payload is absent")
+            handoff = session.get(RuntimeHandoffORM, checkpoint.input_handoff_id)
+            if handoff is None or handoff.execution_id != original.execution_id:
+                raise ProtectedPayloadMissingError("Recovery checkpoint payload is absent")
+            return len(STAGES) - 1, checkpoint.stage_id, handoff
         checkpoint = stages[-1]
         if checkpoint.output_handoff_id is None:
             raise ProtectedPayloadMissingError("Recovery checkpoint payload is absent")
