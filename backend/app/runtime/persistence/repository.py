@@ -789,9 +789,7 @@ class SqlAlchemyExecutionStore:
                     )
                 )
                 session.flush()
-                recovery_source = (
-                    None if resume_ordinal == 0 else STAGES[resume_ordinal - 1]
-                )
+                recovery_source = None if resume_ordinal == 0 else STAGES[resume_ordinal - 1]
                 recovery_direction = "INPUT" if resume_ordinal == 0 else "OUTPUT"
                 recovery_context_stage = (
                     STAGES[0] if resume_ordinal == 0 else STAGES[resume_ordinal - 1]
