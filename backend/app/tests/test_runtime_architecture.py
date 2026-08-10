@@ -39,6 +39,7 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/requirements.txt",
     "docs/cdd/CDD-010-CDD-012-REPLAY-REMEDIATION-AUTHORIZATION.md",
     "docs/cdd/CDD-010-CDD-012-Replay-Execution-Contract-Clarification-and-Remediation-Report.md",
+    "docs/cdd/CDD-012-CDD-014-REPLAY-FRONTEND-DEFECT-AUTHORIZATION.md",
     "backend/app/tests/test_decision_engine.py",
     "backend/app/tests/test_governance_engine.py",
     "backend/app/tests/test_knowledge_engine.py",
@@ -77,6 +78,8 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_system_api.py",
     "docs/cdd/Closure-Gate-4-CDD-013-Application-API-and-Security-Boundary-Implementation-Report.md",
     "docs/cdd/CDD-013-IMPLEMENTATION-EVIDENCE.md",
+    "frontend/components/supplier-risk/replay-dialog.tsx",
+    "frontend/tests/supplier-risk-recovery.test.tsx",
 }
 
 
