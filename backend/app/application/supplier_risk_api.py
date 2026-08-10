@@ -29,6 +29,7 @@ from app.runtime.contracts import InvocationRequest, InvocationStatus
 from app.runtime.engine import CognitiveEngineRuntime
 from app.runtime.execution_state import ExecutionState
 from app.runtime.persistence.contracts import (
+    RECOVERY_SCOPE,
     AttemptProjection,
     ExecutionSummaryProjection,
     ReplayAuthorization,
@@ -383,7 +384,11 @@ class SupplierRiskApiService:
                 principal.principal_id,
                 principal.tenant_id,
                 principal.roles,
-                principal.scopes,
+                (
+                    (*principal.scopes, RECOVERY_SCOPE)
+                    if "supplier-risk:replay" in principal.scopes
+                    else principal.scopes
+                ),
                 context.authorization_reference,
                 request.reason,
                 request.correlation_identifier,
