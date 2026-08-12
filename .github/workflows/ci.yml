@@ -45,6 +45,8 @@ jobs:
       - run: npm run build
   containers:
     runs-on: ubuntu-latest
+    env:
+      CTEC_RUNTIME_HANDOFF_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
