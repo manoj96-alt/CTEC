@@ -26,6 +26,7 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/runtime/persistence/models.py",
     "backend/app/runtime/persistence/repository.py",
     "backend/app/runtime/recovery.py",
+    "backend/app/tests/test_atomic_admission_postgres_concurrency.py",
     "backend/app/tests/test_durable_execution_store.py",
     "backend/app/tests/test_execution_concurrency.py",
     "backend/app/tests/test_execution_persistence_architecture.py",
