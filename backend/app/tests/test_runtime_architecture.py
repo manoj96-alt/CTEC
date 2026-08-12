@@ -5,6 +5,18 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPOSITORY_ROOT / "backend" / "app" / "runtime"
 AUTHORIZED_CHANGED_PATHS = {
+    "backend/app/api/ontology/__init__.py",
+    "backend/app/api/ontology/router.py",
+    "backend/app/api/ontology/schemas.py",
+    "backend/app/domain/ontology/__init__.py",
+    "backend/app/domain/ontology/connector_catalog.py",
+    "backend/app/domain/ontology/quality_score.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0010_ontology_bindings.py",
+    "backend/app/infrastructure/persistence/models/ontology_relationship_binding.py",
+    "backend/app/infrastructure/persistence/ontology_seed.py",
+    "backend/app/tests/test_ontology_api.py",
+    "backend/app/tests/test_ontology_quality_score.py",
+    "backend/app/tests/test_ontology_seed.py",
     "README.md",
     "backend/app/runtime/__init__.py",
     "backend/app/runtime/contracts.py",

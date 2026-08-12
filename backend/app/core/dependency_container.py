@@ -1,6 +1,8 @@
 from base64 import urlsafe_b64decode
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from app.api.supplier_risk.audit import SecurityAuditService
 from app.api.supplier_risk.authentication import OidcJwtVerifier, TokenVerifier
 from app.api.supplier_risk.rate_limit import RateLimiter
@@ -38,6 +40,7 @@ class Container:
     supplier_risk_api: SupplierRiskApiService | None = None
     security_audit: SecurityAuditService | None = None
     rate_limiter: RateLimiter | None = None
+    ontology_sessions: "sessionmaker[Session] | None" = None
 
 
 def build_container() -> Container:
@@ -47,9 +50,11 @@ def build_container() -> Container:
         verifier = OidcJwtVerifier(settings)
     api_service = None
     audit = None
+    ontology_sessions = None
     if settings.database_url and settings.runtime_handoff_key:
         engine = create_database_engine(settings)
         sessions = create_session_factory(engine)
+        ontology_sessions = sessions
         persistence = SqlAlchemyCapabilityPersistence(sessions)
         dependencies = IntegrationDependencies(
             EntityResolutionEngine(
@@ -124,4 +129,5 @@ def build_container() -> Container:
         supplier_risk_api=api_service,
         security_audit=audit,
         rate_limiter=RateLimiter(settings.supplier_risk_rate_limit_per_minute),
+        ontology_sessions=ontology_sessions,
     )
