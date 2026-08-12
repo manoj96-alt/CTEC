@@ -1,0 +1,5 @@
+supplier_id,supplier_name,region_id,region_name,qualification_status,available_capacity_pct,activation_lead_time_days,unit_cost_index_pct
+SUP-001,Apex Components,REG-EA,East Asia Logistics Region,Active,100,0,100
+SUP-002,Nova Energy Systems,REG-NA,North America Logistics Region,Qualified,60,21,107
+SUP-003,Delta Circuit Supply,REG-EU,Europe Logistics Region,Qualified,50,30,110
+SUP-004,Orion Battery Works,REG-NA,North America Logistics Region,UnderReview,0,45,98

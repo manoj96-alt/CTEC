@@ -1,0 +1,4 @@
+product_id,product_name,material_id,facility_id
+PROD-01,Atlas Pro Laptop,MAT-100,FAC-01
+PROD-02,Atlas Air Laptop,MAT-101,FAC-01
+PROD-03,Summit Desktop,MAT-102,FAC-02

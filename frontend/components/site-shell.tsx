@@ -1,13 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-const links = [
-  "Home",
-  "Supplier Risk",
-  "Architecture",
-  "Dataset",
-  "Prototype",
-  "About",
+const navItems = [
+  { label: "Home", href: "/" },
+  { label: "Supplier Risk Workspace", href: "/supplier-risk" },
+  { label: "Architecture", href: "/architecture" },
+  { label: "Dataset", href: "/dataset" },
+  { label: "Prototype", href: "/prototype" },
+  { label: "About", href: "/about" },
 ];
 
 export function SiteShell({ children }: { children: ReactNode }) {
@@ -22,15 +22,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
             aria-label="Primary"
             className="flex flex-wrap gap-5 text-sm text-[var(--muted)]"
           >
-            {links.map((label) => (
-              <Link
-                key={label}
-                href={
-                  label === "Home"
-                    ? "/"
-                    : `/${label.toLowerCase().replace(" ", "-")}`
-                }
-              >
+            {navItems.map(({ label, href }) => (
+              <Link key={label} href={href}>
                 {label}
               </Link>
             ))}

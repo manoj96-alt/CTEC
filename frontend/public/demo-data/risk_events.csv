@@ -1,0 +1,3 @@
+risk_event_id,region_id,region_name,severity,description
+RE-001,REG-EA,East Asia Logistics Region,Severe,Severe regional logistics disruption affecting East Asia Logistics Region
+RE-002,REG-EU,Europe Logistics Region,Moderate,Port congestion affecting Europe Logistics Region
