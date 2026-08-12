@@ -1,5 +1,5 @@
 from sqlalchemy import Engine, delete
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.ontology_activation import OntologyActivationService
 from app.domain.ontology.resolver import resolve_supplier_risk_ontology
@@ -10,7 +10,7 @@ from app.infrastructure.persistence.models.ontology_relationship_binding import 
 from app.infrastructure.persistence.ontology_seed import OntologySeeder
 
 
-def _seed(migrated_engine: Engine) -> sessionmaker:
+def _seed(migrated_engine: Engine) -> sessionmaker[Session]:
     factory = sessionmaker(migrated_engine)
     with factory() as session:
         OntologySeeder(session).load()
@@ -18,7 +18,9 @@ def _seed(migrated_engine: Engine) -> sessionmaker:
     return factory
 
 
-def test_activation_resolves_backend_authoritative_ontology_identity(migrated_engine: Engine) -> None:
+def test_activation_resolves_backend_authoritative_ontology_identity(
+    migrated_engine: Engine,
+) -> None:
     factory = _seed(migrated_engine)
     service = OntologyActivationService(factory)
 
@@ -35,7 +37,9 @@ def test_activation_returns_none_when_no_session_factory_is_configured() -> None
     assert service.resolve() is None
 
 
-def test_activation_applicable_ids_reference_real_persisted_records(migrated_engine: Engine) -> None:
+def test_activation_applicable_ids_reference_real_persisted_records(
+    migrated_engine: Engine,
+) -> None:
     factory = _seed(migrated_engine)
     service = OntologyActivationService(factory)
 
@@ -80,7 +84,9 @@ def test_semantic_path_uses_only_persisted_relationships(migrated_engine: Engine
     )
 
 
-def test_semantic_path_omits_a_step_whose_relationship_is_not_persisted(migrated_engine: Engine) -> None:
+def test_semantic_path_omits_a_step_whose_relationship_is_not_persisted(
+    migrated_engine: Engine,
+) -> None:
     factory = _seed(migrated_engine)
     with factory() as session:
         ontology = resolve_supplier_risk_ontology(session)
@@ -88,7 +94,11 @@ def test_semantic_path_omits_a_step_whose_relationship_is_not_persisted(migrated
         session.execute(
             delete(OntologyRelationshipBinding).where(
                 OntologyRelationshipBinding.relationship_type_id
-                == next(r["relationship_type_id"] for r in ontology.relationships if r["name"] == "usedIn")
+                == next(
+                    r["relationship_type_id"]
+                    for r in ontology.relationships
+                    if r["name"] == "usedIn"
+                )
             )
         )
         session.commit()
@@ -104,7 +114,9 @@ def test_semantic_path_omits_a_step_whose_relationship_is_not_persisted(migrated
     assert names == ["supplies", "defines", "generatesRevenue"]
 
 
-def test_activation_quality_score_matches_the_ontology_services_own_score(migrated_engine: Engine) -> None:
+def test_activation_quality_score_matches_the_ontology_services_own_score(
+    migrated_engine: Engine,
+) -> None:
     factory = _seed(migrated_engine)
     service = OntologyActivationService(factory)
     activation = service.resolve()

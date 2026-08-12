@@ -1,15 +1,27 @@
 from datetime import UTC, datetime
-from uuid import uuid4
+from unittest.mock import Mock
+from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.application.ontology_activation import OntologyActivationService
 from app.application.supplier_risk_api import SupplierRiskApiService
 from app.infrastructure.persistence.base import Base
 from app.infrastructure.persistence.ontology_seed import OntologySeeder
-from app.runtime.persistence.contracts import ResultProjection
+from app.integration.contracts import AuthorityContext
+from app.runtime.engine import CognitiveEngineRuntime
+from app.runtime.persistence.contracts import (
+    AttemptProjection,
+    ExecutionSummaryProjection,
+    ReplayAuthorization,
+    ReplayOptionProjection,
+    ResultProjection,
+    RetryAuthorization,
+    StageProjection,
+)
+from app.runtime.recovery import ValidatedRecoveryInvocation
 
 
 class _StubStore:
@@ -21,17 +33,46 @@ class _StubStore:
     def __init__(self, projection: ResultProjection) -> None:
         self._projection = projection
 
-    def list_executions(self, tenant_id, *, offset, limit, state=None):
+    def list_executions(
+        self, tenant_id: str, *, offset: int, limit: int, state: str | None = None
+    ) -> tuple[ExecutionSummaryProjection, ...]:
         return ()
 
-    def list_attempts(self, logical_execution_id, tenant_id):
+    def list_attempts(
+        self, logical_execution_id: UUID, tenant_id: str
+    ) -> tuple[AttemptProjection, ...]:
         return ()
 
-    def list_stages(self, logical_execution_id, execution_id, tenant_id):
+    def list_stages(
+        self, logical_execution_id: UUID, execution_id: UUID, tenant_id: str
+    ) -> tuple[StageProjection, ...]:
         return ()
 
-    def get_result_for_logical(self, logical_execution_id, tenant_id):
+    def get_result_for_logical(
+        self, logical_execution_id: UUID, tenant_id: str
+    ) -> ResultProjection | None:
         return self._projection
+
+    def replay_options(
+        self, logical_execution_id: UUID, tenant_id: str
+    ) -> tuple[ReplayOptionProjection, ...]:
+        return ()
+
+    def prepare_retry(
+        self,
+        original_execution_id: UUID,
+        authorization: RetryAuthorization,
+        authority_context: AuthorityContext,
+    ) -> ValidatedRecoveryInvocation:
+        raise AssertionError("not exercised by this test")
+
+    def prepare_replay(
+        self,
+        original_execution_id: UUID,
+        authorization: ReplayAuthorization,
+        authority_context: AuthorityContext,
+    ) -> ValidatedRecoveryInvocation:
+        raise AssertionError("not exercised by this test")
 
 
 def _principal() -> TrustedPrincipal:
@@ -47,7 +88,7 @@ def _principal() -> TrustedPrincipal:
     )
 
 
-def _seeded_ontology_sessions() -> sessionmaker:
+def _seeded_ontology_sessions() -> sessionmaker[Session]:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine)
@@ -76,7 +117,7 @@ def test_result_populates_ontology_activation_fields_from_the_backend_resolution
     activation_service = OntologyActivationService(sessions)
     projection = _result_projection()
     service = SupplierRiskApiService(
-        runtime=None,  # not exercised by result()
+        runtime=Mock(spec=CognitiveEngineRuntime),  # not exercised by result()
         store=_StubStore(projection),
         ontology_activation=activation_service,
     )
@@ -104,7 +145,7 @@ def test_result_populates_ontology_activation_fields_from_the_backend_resolution
 def test_result_leaves_ontology_fields_empty_when_activation_is_not_configured() -> None:
     projection = _result_projection()
     service = SupplierRiskApiService(
-        runtime=None,
+        runtime=Mock(spec=CognitiveEngineRuntime),
         store=_StubStore(projection),
         ontology_activation=None,
     )

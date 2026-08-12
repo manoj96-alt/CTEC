@@ -44,7 +44,6 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/migrations/versions/0010_ontology_bindings.py",
     "backend/app/infrastructure/persistence/models/ontology_relationship_binding.py",
     "backend/app/infrastructure/persistence/ontology_seed.py",
-    "backend/app/tests/test_ontology_api.py",
     "backend/app/tests/test_ontology_quality_score.py",
     "backend/app/tests/test_ontology_seed.py",
     "README.md",

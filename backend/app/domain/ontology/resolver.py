@@ -6,13 +6,13 @@ representation, read from the same persisted tables both times.
 """
 
 from dataclasses import dataclass, field
+from typing import Any, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.ontology.quality_score import calculate_quality_score
 from app.infrastructure.persistence.models.entity_type import EntityType
-from app.infrastructure.persistence.models.institutional_concept import InstitutionalConcept
 from app.infrastructure.persistence.models.ontology_relationship_binding import (
     OntologyRelationshipBinding,
 )
@@ -34,6 +34,27 @@ ONTOLOGY_DESCRIPTION = (
 ACTIVATION_APPLICATIONS = ["Supplier Risk"]
 
 
+class ConceptRecord(TypedDict):
+    entity_type_id: str
+    name: str
+    definition: str
+    definition_source: str
+    lifecycle_state: str
+    governance_status: str
+    version_number: int
+    discovery_label: str
+
+
+class RelationshipRecord(TypedDict):
+    relationship_type_id: str
+    name: str
+    source_concept: str
+    target_concept: str
+    lifecycle_state: str
+    governance_status: str
+    discovery_label: str
+
+
 def _discovery_label(name: str) -> str:
     return (
         "curated"
@@ -49,8 +70,8 @@ class ResolvedOntology:
     description: str
     version: str
     status: str
-    concepts: list[dict] = field(default_factory=list)
-    relationships: list[dict] = field(default_factory=list)
+    concepts: list[ConceptRecord] = field(default_factory=list)
+    relationships: list[RelationshipRecord] = field(default_factory=list)
     activation_applications: list[str] = field(default_factory=list)
 
     def concept_id_by_name(self, name: str) -> str | None:
@@ -65,13 +86,13 @@ class ResolvedOntology:
                 return relationship["relationship_type_id"]
         return None
 
-    def relationship_by_name(self, name: str) -> dict | None:
+    def relationship_by_name(self, name: str) -> RelationshipRecord | None:
         for relationship in self.relationships:
             if relationship["name"] == name:
                 return relationship
         return None
 
-    def quality(self) -> dict:
+    def quality(self) -> dict[str, Any]:
         concept_names = {c["name"] for c in self.concepts}
         relationship_triples = {
             (r["name"], r["source_concept"], r["target_concept"]) for r in self.relationships
@@ -111,7 +132,7 @@ def resolve_supplier_risk_ontology(session: Session) -> ResolvedOntology:
     relationship_type_by_id = {row.relationship_type_id: row for row in relationship_types}
     bindings = session.execute(select(OntologyRelationshipBinding)).scalars().all()
 
-    concepts = [
+    concepts: list[ConceptRecord] = [
         {
             "entity_type_id": str(row.entity_type_id),
             "name": row.entity_type_name,
@@ -126,14 +147,16 @@ def resolve_supplier_risk_ontology(session: Session) -> ResolvedOntology:
         if row.entity_type_name in REQUIRED_CONCEPTS
     ]
 
-    relationships = []
+    relationships: list[RelationshipRecord] = []
     for binding in bindings:
         relationship_type = relationship_type_by_id.get(binding.relationship_type_id)
         source = entity_type_by_id.get(binding.source_entity_type_id)
         target = entity_type_by_id.get(binding.target_entity_type_id)
         if relationship_type is None or source is None or target is None:
             continue
-        if relationship_type.relationship_type_name not in {n for n, _, _ in REQUIRED_RELATIONSHIPS}:
+        if relationship_type.relationship_type_name not in {
+            n for n, _, _ in REQUIRED_RELATIONSHIPS
+        }:
             continue
         relationships.append(
             {
@@ -148,8 +171,13 @@ def resolve_supplier_risk_ontology(session: Session) -> ResolvedOntology:
         )
 
     concept_names = {c["name"] for c in concepts}
-    relationship_triples = {(r["name"], r["source_concept"], r["target_concept"]) for r in relationships}
-    complete = set(REQUIRED_CONCEPTS) <= concept_names and set(REQUIRED_RELATIONSHIPS) <= relationship_triples
+    relationship_triples = {
+        (r["name"], r["source_concept"], r["target_concept"]) for r in relationships
+    }
+    complete = (
+        set(REQUIRED_CONCEPTS) <= concept_names
+        and set(REQUIRED_RELATIONSHIPS) <= relationship_triples
+    )
     status = "Published" if complete else "Draft"
 
     return ResolvedOntology(

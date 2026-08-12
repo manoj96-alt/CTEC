@@ -18,9 +18,6 @@ from app.infrastructure.persistence.models.decision_objective import DecisionObj
 from app.infrastructure.persistence.models.decision_state import DecisionState
 from app.infrastructure.persistence.models.enterprise import Enterprise
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
-from app.infrastructure.persistence.models.ontology_relationship_binding import (
-    OntologyRelationshipBinding,
-)
 from app.infrastructure.persistence.models.enterprise_type import EnterpriseType
 from app.infrastructure.persistence.models.entity_resolution import (
     EnterpriseEntityResolutionHistoryModel,
@@ -49,6 +46,9 @@ from app.infrastructure.persistence.models.knowledge_evaluation import (
     KnowledgeEvaluationRecordModel,
 )
 from app.infrastructure.persistence.models.occasion import Occasion
+from app.infrastructure.persistence.models.ontology_relationship_binding import (
+    OntologyRelationshipBinding,
+)
 from app.infrastructure.persistence.models.outcome import Outcome
 from app.infrastructure.persistence.models.pattern_of_relevance import (
     PatternOfRelevance,
@@ -93,7 +93,6 @@ __all__ = [
     "DecisionState",
     "Enterprise",
     "EnterpriseEntity",
-    "OntologyRelationshipBinding",
     "EnterpriseEntityResolutionHistoryModel",
     "EnterpriseEntityResolutionRecordModel",
     "EnterpriseType",
@@ -110,6 +109,7 @@ __all__ = [
     "Knowledge",
     "KnowledgeEvaluationRecordModel",
     "Occasion",
+    "OntologyRelationshipBinding",
     "Outcome",
     "PatternOfRelevance",
     "Reason",

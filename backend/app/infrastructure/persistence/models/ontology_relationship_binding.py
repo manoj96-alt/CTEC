@@ -14,9 +14,7 @@ from app.infrastructure.persistence.base import BaseEntity
 class OntologyRelationshipBinding(BaseEntity):
     __tablename__ = "ontology_relationship_bindings"
 
-    __table_args__ = (
-        Index("idx_ontology_bindings_relationship_type_id", "relationship_type_id"),
-    )
+    __table_args__ = (Index("idx_ontology_bindings_relationship_type_id", "relationship_type_id"),)
 
     binding_id: Mapped[UUID] = mapped_column(
         Uuid(), nullable=False, primary_key=True, server_default=text("gen_random_uuid()")

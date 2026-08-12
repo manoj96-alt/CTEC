@@ -59,7 +59,8 @@ def test_ontology_seed_bindings_reference_correct_domain_and_range(migrated_engi
 
     with factory() as session:
         entity_types_by_id = {
-            row.entity_type_id: row.entity_type_name for row in session.scalars(select(EntityType)).all()
+            row.entity_type_id: row.entity_type_name
+            for row in session.scalars(select(EntityType)).all()
         }
         relationship_types_by_id = {
             row.relationship_type_id: row.relationship_type_name

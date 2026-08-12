@@ -94,7 +94,9 @@ def calculate_quality_score(
         for name, source, target in present_relationships
         if source in concept_names and target in concept_names
     }
-    mapping_completeness = len(mapped) / len(REQUIRED_RELATIONSHIPS) if REQUIRED_RELATIONSHIPS else 0.0
+    mapping_completeness = (
+        len(mapped) / len(REQUIRED_RELATIONSHIPS) if REQUIRED_RELATIONSHIPS else 0.0
+    )
     dimensions.append(
         DimensionScore(
             dimension="mapping_completeness",
@@ -110,7 +112,9 @@ def calculate_quality_score(
     # 5. Provenance completeness — every required concept and relationship
     #    must have a recorded governance status (a proxy for provenance in
     #    this MVP, since both share the same governed created_by/on fields).
-    concept_provenance = sum(1 for name in present_concepts if concept_governance_statuses.get(name))
+    concept_provenance = sum(
+        1 for name in present_concepts if concept_governance_statuses.get(name)
+    )
     relationship_provenance = sum(
         1 for name, _, _ in present_relationships if relationship_governance_statuses.get(name)
     )
@@ -137,7 +141,9 @@ def calculate_quality_score(
         for name, source, target in present_relationships
         if source in REQUIRED_CONCEPTS and target in REQUIRED_CONCEPTS
     )
-    endpoint_validity = valid_endpoints / len(REQUIRED_RELATIONSHIPS) if REQUIRED_RELATIONSHIPS else 0.0
+    endpoint_validity = (
+        valid_endpoints / len(REQUIRED_RELATIONSHIPS) if REQUIRED_RELATIONSHIPS else 0.0
+    )
     dimensions.append(
         DimensionScore(
             dimension="valid_relationship_endpoints",

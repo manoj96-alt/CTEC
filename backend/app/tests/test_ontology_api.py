@@ -1,6 +1,6 @@
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.infrastructure.persistence.ontology_seed import (
@@ -12,6 +12,7 @@ from app.main import create_app
 
 def _seed_ontology(migrated_engine: Engine) -> None:
     settings = get_settings()
+    assert settings.database_url is not None
     engine = create_engine(settings.database_url)
     factory = sessionmaker(engine)
     from app.infrastructure.persistence.ontology_seed import OntologySeeder
@@ -36,7 +37,9 @@ def test_ontology_summary_reflects_persisted_data(migrated_engine: Engine) -> No
     assert summary["quality"]["overall_score"] == 1.0
 
 
-def test_ontology_detail_exposes_concepts_and_relationships_from_persisted_data(migrated_engine: Engine) -> None:
+def test_ontology_detail_exposes_concepts_and_relationships_from_persisted_data(
+    migrated_engine: Engine,
+) -> None:
     _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies/supplier-risk")

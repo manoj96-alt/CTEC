@@ -58,7 +58,9 @@ def test_proposed_governance_status_fails_governance_completeness_only() -> None
         relationship_governance_statuses=relationship_statuses,
     )
 
-    governance = next(d for d in result.dimensions if d.dimension == "governance_status_completeness")
+    governance = next(
+        d for d in result.dimensions if d.dimension == "governance_status_completeness"
+    )
     assert governance.passed is False
     provenance = next(d for d in result.dimensions if d.dimension == "provenance_completeness")
     assert provenance.passed is True  # Proposed is still a recorded status

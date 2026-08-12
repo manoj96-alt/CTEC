@@ -15,7 +15,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "ontology_relationship_bindings",
-        sa.Column("binding_id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "binding_id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column(
             "relationship_type_id",
             sa.Uuid(),
@@ -59,5 +61,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("idx_ontology_bindings_relationship_type_id", table_name="ontology_relationship_bindings")
+    op.drop_index(
+        "idx_ontology_bindings_relationship_type_id", table_name="ontology_relationship_bindings"
+    )
     op.drop_table("ontology_relationship_bindings")

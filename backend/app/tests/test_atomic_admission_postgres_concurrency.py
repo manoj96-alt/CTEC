@@ -11,21 +11,24 @@ import hashlib
 import multiprocessing
 import sys
 import threading
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
 from threading import BrokenBarrierError
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, delete, event, func, select, text
+from sqlalchemy import Engine, create_engine, delete, event, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.integration.contracts import AuthorityContext
 from app.runtime.contracts import InvocationRequest
 from app.runtime.persistence.contracts import ProtectionContext
 from app.runtime.persistence.models import RuntimeExecutionORM, RuntimeHandoffORM
-from app.runtime.persistence.repository import SqlAlchemyExecutionStore, _HANDOFF_CONTRACT
+from app.runtime.persistence.repository import _HANDOFF_CONTRACT, SqlAlchemyExecutionStore
 from app.runtime.recovery import STAGES
 
 TENANT = "concurrency-test-tenant"
@@ -111,7 +114,9 @@ def _discover_constraint(database_url: str) -> ConstraintInfo:
     return ConstraintInfo(schema_name=schema_name, constraint_name=constraint_name)
 
 
-def _make_synchronizer(fired_flag: dict, lock: threading.Lock, barrier):
+def _make_synchronizer(
+    fired_flag: dict[str, bool], lock: threading.Lock, barrier: Any
+) -> Callable[[Session], None]:
     def _before_commit(session: Session) -> None:
         should_wait = False
         with lock:
@@ -129,8 +134,10 @@ def _make_synchronizer(fired_flag: dict, lock: threading.Lock, barrier):
     return _before_commit
 
 
-def _make_handle_error(violations: list):
-    def _handle_error(context) -> None:
+def _make_handle_error(
+    violations: list[dict[str, Any]],
+) -> Callable[[Any], None]:
+    def _handle_error(context: Any) -> None:
         original = context.original_exception
         sqlstate = getattr(original, "sqlstate", None) or getattr(
             getattr(original, "diag", None), "sqlstate", None
@@ -139,7 +146,9 @@ def _make_handle_error(violations: list):
             violations.append(
                 {
                     "sqlstate": sqlstate,
-                    "constraint_name": getattr(getattr(original, "diag", None), "constraint_name", None),
+                    "constraint_name": getattr(
+                        getattr(original, "diag", None), "constraint_name", None
+                    ),
                     "statement": str(context.statement) if context.statement is not None else "",
                 }
             )
@@ -171,15 +180,15 @@ def _worker_process_main(
     expires_at_iso: str,
     payload: bytes,
     fingerprint: bytes,
-    barrier,
-    child_conn,
+    barrier: Any,
+    child_conn: Connection,
 ) -> None:
     outcome = _placeholder_outcome()
     engine = None
     before_commit = None
     handle_error = None
     factory = None
-    violations: list = []
+    violations: list[dict[str, Any]] = []
     try:
         engine = create_engine(database_url)
         factory = sessionmaker(engine, expire_on_commit=False)
@@ -265,8 +274,8 @@ def _worker_process_main(
             pass
 
 
-def _terminate_process(process) -> dict[str, Any]:
-    outcome = {"contained": False, "method": None, "exitcode": None}
+def _terminate_process(process: BaseProcess) -> dict[str, Any]:
+    outcome: dict[str, Any] = {"contained": False, "method": None, "exitcode": None}
     process.join(timeout=10)
     if not process.is_alive():
         outcome.update(contained=True, method="graceful_join", exitcode=process.exitcode)
@@ -282,9 +291,9 @@ def _terminate_process(process) -> dict[str, Any]:
     return outcome
 
 
-def _receive_once(conn) -> dict[str, Any]:
+def _receive_once(conn: Connection) -> dict[str, Any]:
     try:
-        outcome = conn.recv()
+        outcome = cast(dict[str, Any], conn.recv())
         outcome["delivery"] = "delivered"
     except (EOFError, OSError) as exc:
         outcome = _placeholder_outcome()
@@ -300,13 +309,13 @@ def _no_delivery_outcome() -> dict[str, Any]:
 
 
 class _ConcurrencyHarness:
-    def __init__(self, database_url: str):
+    def __init__(self, database_url: str) -> None:
         self.database_url = database_url
         self.verify_engine = create_engine(database_url)
         self.verify_factory = sessionmaker(self.verify_engine, expire_on_commit=False)
         self.request_id = uuid4()
-        self._active_processes: list = []
-        self._active_connections: list = []
+        self._active_processes: list[BaseProcess] = []
+        self._active_connections: list[Connection] = []
         self._teardown_errors: list[BaseException] = []
         self._row_cleanup_done = False
 
@@ -318,7 +327,9 @@ class _ConcurrencyHarness:
             if process.is_alive():
                 result = _terminate_process(process)
                 if not result["contained"]:
-                    self._teardown_errors.append(RuntimeError(f"Final containment backstop failed: {result}"))
+                    self._teardown_errors.append(
+                        RuntimeError(f"Final containment backstop failed: {result}")
+                    )
 
     def _close_connections(self) -> None:
         for conn in self._active_connections:
@@ -331,7 +342,9 @@ class _ConcurrencyHarness:
         self._final_containment_backstop()
         if not self._all_workers_contained():
             self._teardown_errors.append(
-                RuntimeError("Row cleanup prohibited: a worker process remains alive after containment backstop.")
+                RuntimeError(
+                    "Row cleanup prohibited: a worker process remains alive after containment backstop."
+                )
             )
             return
         if self._row_cleanup_done:
@@ -404,7 +417,7 @@ class _ConcurrencyHarness:
 
 
 @pytest.fixture
-def concurrency_harness(migrated_engine):
+def concurrency_harness(migrated_engine: Engine) -> Generator[_ConcurrencyHarness, None, None]:
     database_url = migrated_engine.url.render_as_string(hide_password=False)
     harness = _ConcurrencyHarness(database_url)
     original_failure: BaseException | None = None
@@ -417,11 +430,17 @@ def concurrency_harness(migrated_engine):
         harness.teardown(original_failure)
 
 
-def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
+def _run_case(
+    harness: _ConcurrencyHarness,
+    req_a: InvocationRequest,
+    req_b: InvocationRequest,
+    fingerprint_a: bytes,
+    fingerprint_b: bytes,
+) -> dict[str, dict[str, Any]]:
     barrier = MP_CONTEXT.Barrier(2, timeout=5)
     parent_conn_a, child_conn_a = MP_CONTEXT.Pipe(duplex=False)
     parent_conn_b, child_conn_b = MP_CONTEXT.Pipe(duplex=False)
-    endpoints = {
+    endpoints: dict[str, Connection | None] = {
         "parent_conn_a": parent_conn_a,
         "child_conn_a": child_conn_a,
         "parent_conn_b": parent_conn_b,
@@ -429,7 +448,7 @@ def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
     }
     harness._active_connections = [parent_conn_a, parent_conn_b]
 
-    def _close_endpoint(name):
+    def _close_endpoint(name: str) -> None:
         conn = endpoints.get(name)
         if conn is not None:
             try:
@@ -438,7 +457,10 @@ def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
                 pass
             endpoints[name] = None
 
-    def _args_for(request_obj, fingerprint, child_conn):
+    def _args_for(
+        request_obj: InvocationRequest, fingerprint: bytes, child_conn: Connection
+    ) -> tuple[Any, ...]:
+        assert request_obj.authority_context is not None
         return (
             harness.database_url,
             TENANT,
@@ -453,12 +475,16 @@ def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
             child_conn,
         )
 
-    process_a = MP_CONTEXT.Process(target=_worker_process_main, args=_args_for(req_a, fingerprint_a, child_conn_a))
-    process_b = MP_CONTEXT.Process(target=_worker_process_main, args=_args_for(req_b, fingerprint_b, child_conn_b))
+    process_a = MP_CONTEXT.Process(
+        target=_worker_process_main, args=_args_for(req_a, fingerprint_a, child_conn_a)
+    )
+    process_b = MP_CONTEXT.Process(
+        target=_worker_process_main, args=_args_for(req_b, fingerprint_b, child_conn_b)
+    )
     harness._active_processes = [process_a, process_b]
-    started: list = []
-    outcome_a = None
-    outcome_b = None
+    started: list[BaseProcess] = []
+    outcome_a: dict[str, Any] | None = None
+    outcome_b: dict[str, Any] | None = None
 
     try:
         process_a.start()
@@ -488,8 +514,12 @@ def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
             outcome_a = _no_delivery_outcome()
         if outcome_b is None:
             outcome_b = _no_delivery_outcome()
-        outcome_a.update(process_exitcode=containment_a["exitcode"], containment_method=containment_a["method"])
-        outcome_b.update(process_exitcode=containment_b["exitcode"], containment_method=containment_b["method"])
+        outcome_a.update(
+            process_exitcode=containment_a["exitcode"], containment_method=containment_a["method"]
+        )
+        outcome_b.update(
+            process_exitcode=containment_b["exitcode"], containment_method=containment_b["method"]
+        )
 
         assert containment_a["contained"], f"worker A containment failed: {containment_a}"
         assert containment_b["contained"], f"worker B containment failed: {containment_b}"
@@ -499,7 +529,9 @@ def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
             if process.is_alive():
                 result = _terminate_process(process)
                 if not result["contained"]:
-                    collected.append(RuntimeError(f"process failed to terminate in finally backstop: {result}"))
+                    collected.append(
+                        RuntimeError(f"process failed to terminate in finally backstop: {result}")
+                    )
         for name in list(endpoints):
             try:
                 _close_endpoint(name)
@@ -509,23 +541,33 @@ def _run_case(harness, req_a, req_b, fingerprint_a, fingerprint_b):
             active = sys.exc_info()[1]
             if active is not None:
                 for err in collected:
-                    active.add_note(f"_run_case finally cleanup failure: {type(err).__name__}: {err}")
+                    active.add_note(
+                        f"_run_case finally cleanup failure: {type(err).__name__}: {err}"
+                    )
             else:
                 if len(collected) == 1:
                     raise collected[0]
-                raise ExceptionGroup("_run_case cleanup failures", collected)
+                raise BaseExceptionGroup("_run_case cleanup failures", collected)
 
     outcomes = {"a": outcome_a, "b": outcome_b}
     for key, outcome in outcomes.items():
-        assert not outcome.get("broken_barrier"), f"worker {key} observed a broken barrier: {outcome}"
+        assert not outcome.get(
+            "broken_barrier"
+        ), f"worker {key} observed a broken barrier: {outcome}"
         assert outcome.get("error") is None, f"worker {key} raised an error: {outcome['error']}"
-        assert not outcome.get("teardown_errors"), f"worker {key} had teardown failures: {outcome['teardown_errors']}"
-        assert outcome.get("delivery") == "delivered", f"worker {key} outcome was not delivered: {outcome}"
+        assert not outcome.get(
+            "teardown_errors"
+        ), f"worker {key} had teardown failures: {outcome['teardown_errors']}"
+        assert (
+            outcome.get("delivery") == "delivered"
+        ), f"worker {key} outcome was not delivered: {outcome}"
 
     return outcomes
 
 
-def test_identical_concurrent_admissions_reuse_the_single_stored_record(concurrency_harness):
+def test_identical_concurrent_admissions_reuse_the_single_stored_record(
+    concurrency_harness: _ConcurrencyHarness,
+) -> None:
     harness = concurrency_harness
     payload_a = payload_b = b"shared-complete-client-payload"
     fingerprint_a = fingerprint_b = hashlib.sha256(payload_a).digest()
@@ -570,7 +612,10 @@ def test_identical_concurrent_admissions_reuse_the_single_stored_record(concurre
         handoff_count = verify.execute(
             select(func.count())
             .select_from(RuntimeHandoffORM)
-            .join(RuntimeExecutionORM, RuntimeHandoffORM.execution_id == RuntimeExecutionORM.execution_id)
+            .join(
+                RuntimeExecutionORM,
+                RuntimeHandoffORM.execution_id == RuntimeExecutionORM.execution_id,
+            )
             .where(
                 RuntimeExecutionORM.tenant_id == TENANT,
                 RuntimeExecutionORM.protocol_version == PROTOCOL_VERSION,
@@ -579,7 +624,11 @@ def test_identical_concurrent_admissions_reuse_the_single_stored_record(concurre
         ).scalar_one()
         assert handoff_count == 1
 
-        handoff = verify.scalar(select(RuntimeHandoffORM).where(RuntimeHandoffORM.execution_id == execution.execution_id))
+        handoff = verify.scalar(
+            select(RuntimeHandoffORM).where(
+                RuntimeHandoffORM.execution_id == execution.execution_id
+            )
+        )
         assert handoff is not None
         assert isinstance(handoff.handoff_id, UUID)
         assert handoff.execution_id == execution.execution_id
@@ -617,7 +666,9 @@ def test_identical_concurrent_admissions_reuse_the_single_stored_record(concurre
     assert "runtime_executions" in observation["statement"]
 
 
-def test_conflicting_concurrent_admissions_reject_the_loser_atomically(concurrency_harness):
+def test_conflicting_concurrent_admissions_reject_the_loser_atomically(
+    concurrency_harness: _ConcurrencyHarness,
+) -> None:
     harness = concurrency_harness
     payload_a = b"payload-a-complete-client-payload"
     payload_b = b"payload-b-complete-client-payload"
@@ -630,7 +681,11 @@ def test_conflicting_concurrent_admissions_reject_the_loser_atomically(concurren
     req_a = _request(harness.request_id, authority, payload_a)
     req_b = _request(harness.request_id, authority, payload_b)
 
-    assert req_a.authority_context.organization_id == req_b.authority_context.organization_id == TENANT
+    assert req_a.authority_context is not None
+    assert req_b.authority_context is not None
+    assert (
+        req_a.authority_context.organization_id == req_b.authority_context.organization_id == TENANT
+    )
     assert req_a.protocol_version == req_b.protocol_version == PROTOCOL_VERSION
     assert req_a.request_identifier == req_b.request_identifier == harness.request_id
     assert payload_a != payload_b
@@ -684,7 +739,10 @@ def test_conflicting_concurrent_admissions_reject_the_loser_atomically(concurren
         handoff_count = verify.execute(
             select(func.count())
             .select_from(RuntimeHandoffORM)
-            .join(RuntimeExecutionORM, RuntimeHandoffORM.execution_id == RuntimeExecutionORM.execution_id)
+            .join(
+                RuntimeExecutionORM,
+                RuntimeHandoffORM.execution_id == RuntimeExecutionORM.execution_id,
+            )
             .where(
                 RuntimeExecutionORM.tenant_id == TENANT,
                 RuntimeExecutionORM.protocol_version == PROTOCOL_VERSION,
@@ -693,7 +751,11 @@ def test_conflicting_concurrent_admissions_reject_the_loser_atomically(concurren
         ).scalar_one()
         assert handoff_count == 1
 
-        handoff = verify.scalar(select(RuntimeHandoffORM).where(RuntimeHandoffORM.execution_id == execution.execution_id))
+        handoff = verify.scalar(
+            select(RuntimeHandoffORM).where(
+                RuntimeHandoffORM.execution_id == execution.execution_id
+            )
+        )
         assert handoff is not None
         assert isinstance(handoff.handoff_id, UUID)
         assert handoff.execution_id == execution.execution_id

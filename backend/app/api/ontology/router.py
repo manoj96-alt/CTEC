@@ -7,7 +7,7 @@ representation.
 """
 
 import json
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -15,13 +15,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.dependency_container import Container
 from app.domain.ontology.connector_catalog import CONNECTOR_CATALOG
-from app.domain.ontology.resolver import ONTOLOGY_ID, ONTOLOGY_VERSION, resolve_supplier_risk_ontology
+from app.domain.ontology.resolver import (
+    ONTOLOGY_ID,
+    ONTOLOGY_VERSION,
+    resolve_supplier_risk_ontology,
+)
 
 router = APIRouter(prefix="/api/v1/ontologies", tags=["ontologies"])
 
 
 def _container(request: Request) -> Container:
-    return request.app.state.container
+    return cast(Container, request.app.state.container)
 
 
 def _ontology_session_factory(
@@ -33,7 +37,7 @@ def _ontology_session_factory(
 
 
 @router.get("/connectors/catalog")
-def list_connectors() -> dict:
+def list_connectors() -> dict[str, Any]:
     return {
         "connectors": [
             {
@@ -55,7 +59,7 @@ def list_connectors() -> dict:
 @router.get("")
 def list_ontologies(
     session_factory: Annotated[sessionmaker[Session], Depends(_ontology_session_factory)],
-) -> dict:
+) -> dict[str, Any]:
     with session_factory() as session:
         ontology = resolve_supplier_risk_ontology(session)
     return {
@@ -79,7 +83,7 @@ def list_ontologies(
 def get_ontology(
     ontology_id: str,
     session_factory: Annotated[sessionmaker[Session], Depends(_ontology_session_factory)],
-) -> dict:
+) -> dict[str, Any]:
     if ontology_id != ONTOLOGY_ID:
         raise HTTPException(404, detail={"code": "ONTOLOGY_NOT_FOUND"})
     with session_factory() as session:
@@ -105,7 +109,7 @@ def get_ontology_version(
     ontology_id: str,
     version: str,
     session_factory: Annotated[sessionmaker[Session], Depends(_ontology_session_factory)],
-) -> dict:
+) -> dict[str, Any]:
     if ontology_id != ONTOLOGY_ID or version != ONTOLOGY_VERSION:
         raise HTTPException(404, detail={"code": "ONTOLOGY_VERSION_NOT_FOUND"})
     return get_ontology(ontology_id, session_factory)

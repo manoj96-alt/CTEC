@@ -1,3 +1,5 @@
+# ruff: noqa: F403, F405
+
 # Generated repository registry.
 from app.infrastructure.persistence.models import *
 from app.infrastructure.persistence.repositories.accountable_owner_repository import (
