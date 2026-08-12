@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.supplier_risk.audit import SecurityAuditService
 from app.api.supplier_risk.authentication import OidcJwtVerifier, TokenVerifier
 from app.api.supplier_risk.rate_limit import RateLimiter
+from app.application.ontology_activation import OntologyActivationService
 from app.application.supplier_risk_api import SupplierRiskApiService
 from app.core.config import Settings, get_settings
 from app.domain.assertion_engine import AssertionEngine, AssertionPolicy
@@ -121,7 +122,9 @@ def build_container() -> Container:
         runtime = CognitiveEngineRuntime(
             supplier_risk_capability_ports(dependencies, SupplierRiskPolicy()), durable
         )
-        api_service = SupplierRiskApiService(runtime, durable)
+        api_service = SupplierRiskApiService(
+            runtime, durable, ontology_activation=OntologyActivationService(sessions)
+        )
         audit = SecurityAuditService(ApiSecurityAuditRepository(sessions))
     return Container(
         settings=settings,

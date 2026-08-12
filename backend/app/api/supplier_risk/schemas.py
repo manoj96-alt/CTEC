@@ -181,6 +181,13 @@ class GovernedResultResponse(BaseModel):
     policy_rule: str | None = None
     decision_reference: UUID | None = None
     contract_version: Literal["PAS-001-v1.1"] = "PAS-001-v1.1"
+    ontology_id: str | None = None
+    ontology_version: str | None = None
+    ontology_status: str | None = None
+    applicable_concept_ids: list[str] = Field(default_factory=list)
+    applicable_relationship_ids: list[str] = Field(default_factory=list)
+    ontology_quality_score: float | None = None
+    semantic_path: str | None = None
 
 
 class ExecutionSummaryResponse(BaseModel):

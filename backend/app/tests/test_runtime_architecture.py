@@ -5,6 +5,14 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPOSITORY_ROOT / "backend" / "app" / "runtime"
 AUTHORIZED_CHANGED_PATHS = {
+    "frontend/components/supplier-risk/recommendation-panel.tsx",
+    "frontend/lib/supplier-risk/contracts.ts",
+    "frontend/tests/supplier-risk-recommendation.test.tsx",
+    "backend/app/application/ontology_activation.py",
+    "backend/app/domain/ontology/resolver.py",
+    "backend/app/domain/ontology/semantic_path.py",
+    "backend/app/tests/test_ontology_activation.py",
+    "backend/app/tests/test_supplier_risk_ontology_activation_wiring.py",
     "backend/app/tests/test_ontology_api.py",
     "frontend/components/site-shell.tsx",
     "frontend/app/ontology-studio/page.tsx",

@@ -6,6 +6,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.api.supplier_risk.authentication import TrustedPrincipal
+from app.application.ontology_activation import OntologyActivationService
 from app.api.supplier_risk.schemas import (
     AttemptListResponse,
     AttemptResponse,
@@ -82,9 +83,11 @@ class SupplierRiskApiService:
         self,
         runtime: CognitiveEngineRuntime,
         store: ExecutionApiStore | None = None,
+        ontology_activation: "OntologyActivationService | None" = None,
     ) -> None:
         self._runtime = runtime
         self._store = store
+        self._ontology_activation = ontology_activation
 
     def submit(
         self, request: SupplierRiskSubmission, principal: TrustedPrincipal
@@ -254,6 +257,7 @@ class SupplierRiskApiService:
         value = self._store.get_result_for_logical(logical_execution_id, principal.tenant_id)
         if value is None:
             return None
+        activation = self._ontology_activation.resolve() if self._ontology_activation else None
         return GovernedResultResponse(
             execution_identifier=value.execution_id,
             governance_standing=value.result_code,
@@ -271,6 +275,13 @@ class SupplierRiskApiService:
             policy_version=value.policy_version,
             policy_rule=value.policy_rule,
             decision_reference=value.decision_reference,
+            ontology_id=activation.ontology_id if activation else None,
+            ontology_version=activation.ontology_version if activation else None,
+            ontology_status=activation.ontology_status if activation else None,
+            applicable_concept_ids=activation.applicable_concept_ids if activation else [],
+            applicable_relationship_ids=activation.applicable_relationship_ids if activation else [],
+            ontology_quality_score=activation.quality_overall_score if activation else None,
+            semantic_path=activation.semantic_path_text if activation else None,
         )
 
     def retry_eligibility(

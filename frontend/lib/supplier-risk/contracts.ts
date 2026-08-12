@@ -68,6 +68,13 @@ export interface GovernedResult {
   policy_rule: string | null;
   decision_reference: string | null;
   contract_version: "PAS-001-v1.1";
+  ontology_id: string | null;
+  ontology_version: string | null;
+  ontology_status: string | null;
+  applicable_concept_ids: string[];
+  applicable_relationship_ids: string[];
+  ontology_quality_score: number | null;
+  semantic_path: string | null;
 }
 export interface RetryEligibility {
   eligible: boolean;

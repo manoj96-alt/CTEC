@@ -252,6 +252,28 @@ test("activation card links to the real Supplier Risk application, not a demo ro
   ).toBeInTheDocument();
 });
 
+test("external consumption examples for Palantir, Databricks, Snowflake, and MCP are all labelled Integration pattern, never a live integration claim", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(ontologyFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() => expect(screen.getByText("Palantir")).toBeInTheDocument());
+  for (const platform of [
+    "Palantir",
+    "Databricks",
+    "Snowflake",
+    "MCP / AI agents",
+  ]) {
+    expect(screen.getByText(platform)).toBeInTheDocument();
+  }
+  expect(screen.getAllByText("Integration pattern")).toHaveLength(4);
+  expect(screen.queryByText(/live partnership/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/live integration/i)).not.toBeInTheDocument();
+});
+
 test("shows a bounded error state with Retry when the ontology API is unavailable, never a fabricated fallback", async () => {
   vi.stubGlobal(
     "fetch",
