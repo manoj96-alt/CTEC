@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
@@ -10,7 +10,7 @@ from app.infrastructure.persistence.ontology_seed import (
 from app.main import create_app
 
 
-def _seed_ontology() -> None:
+def _seed_ontology(migrated_engine: Engine) -> None:
     settings = get_settings()
     engine = create_engine(settings.database_url)
     factory = sessionmaker(engine)
@@ -21,8 +21,8 @@ def _seed_ontology() -> None:
         session.commit()
 
 
-def test_ontology_summary_reflects_persisted_data() -> None:
-    _seed_ontology()
+def test_ontology_summary_reflects_persisted_data(migrated_engine: Engine) -> None:
+    _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies")
     assert response.status_code == 200
@@ -36,8 +36,8 @@ def test_ontology_summary_reflects_persisted_data() -> None:
     assert summary["quality"]["overall_score"] == 1.0
 
 
-def test_ontology_detail_exposes_concepts_and_relationships_from_persisted_data() -> None:
-    _seed_ontology()
+def test_ontology_detail_exposes_concepts_and_relationships_from_persisted_data(migrated_engine: Engine) -> None:
+    _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies/supplier-risk")
     assert response.status_code == 200
@@ -53,23 +53,23 @@ def test_ontology_detail_exposes_concepts_and_relationships_from_persisted_data(
     assert supplier["governance_status"] == "Approved"
 
 
-def test_ontology_version_endpoint_matches_detail() -> None:
-    _seed_ontology()
+def test_ontology_version_endpoint_matches_detail(migrated_engine: Engine) -> None:
+    _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies/supplier-risk/versions/1.0")
     assert response.status_code == 200
     assert response.json()["version"] == "1.0"
 
 
-def test_ontology_version_endpoint_404s_for_unknown_version() -> None:
-    _seed_ontology()
+def test_ontology_version_endpoint_404s_for_unknown_version(migrated_engine: Engine) -> None:
+    _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies/supplier-risk/versions/9.9")
     assert response.status_code == 404
 
 
-def test_ontology_export_json_ld_is_well_formed() -> None:
-    _seed_ontology()
+def test_ontology_export_json_ld_is_well_formed(migrated_engine: Engine) -> None:
+    _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies/supplier-risk/export?format=json-ld")
     assert response.status_code == 200
@@ -83,8 +83,8 @@ def test_ontology_export_json_ld_is_well_formed() -> None:
     assert len(relationship_nodes) >= len(REQUIRED_RELATIONSHIPS)
 
 
-def test_ontology_export_rejects_unsupported_format() -> None:
-    _seed_ontology()
+def test_ontology_export_rejects_unsupported_format(migrated_engine: Engine) -> None:
+    _seed_ontology(migrated_engine)
     with TestClient(create_app()) as client:
         response = client.get("/api/v1/ontologies/supplier-risk/export?format=owl")
     assert response.status_code == 400

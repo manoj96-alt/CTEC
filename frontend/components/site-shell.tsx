@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 const navItems = [
   { label: "Home", href: "/" },
+  { label: "Ontology Studio", href: "/ontology-studio" },
   { label: "Supplier Risk Workspace", href: "/supplier-risk" },
   { label: "Architecture", href: "/architecture" },
   { label: "Dataset", href: "/dataset" },
