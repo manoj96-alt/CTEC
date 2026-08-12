@@ -1,8 +1,13 @@
+from typing import cast
+
+import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core.config import get_settings
+from app.core import dependency_container
+from app.core.config import Settings, get_settings
 from app.infrastructure.persistence.ontology_seed import (
     REQUIRED_CONCEPTS,
     REQUIRED_RELATIONSHIPS,
@@ -35,6 +40,30 @@ def test_ontology_summary_reflects_persisted_data(migrated_engine: Engine) -> No
     assert summary["relationship_count"] == len(REQUIRED_RELATIONSHIPS)
     assert summary["status"] == "Published"
     assert summary["quality"]["overall_score"] == 1.0
+
+
+def test_ontology_remains_available_without_runtime_handoff_key(
+    migrated_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_ontology(migrated_engine)
+    settings = Settings(
+        database_url=str(migrated_engine.url),
+        runtime_handoff_key="",
+    )
+    monkeypatch.setattr(dependency_container, "get_settings", lambda: settings)
+
+    with TestClient(create_app()) as client:
+        container = cast(FastAPI, client.app).state.container
+        response = client.get("/api/v1/ontologies")
+
+    assert container.ontology_sessions is not None
+    assert container.security_audit is not None
+    assert container.supplier_risk_api is None
+    assert response.status_code == 200
+    ontology = response.json()["ontologies"][0]
+    assert ontology["ontology_id"] == "supplier-risk"
+    assert ontology["concept_count"] == len(REQUIRED_CONCEPTS)
+    assert ontology["relationship_count"] == len(REQUIRED_RELATIONSHIPS)
 
 
 def test_ontology_detail_exposes_concepts_and_relationships_from_persisted_data(

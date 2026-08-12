@@ -52,80 +52,81 @@ def build_container() -> Container:
     api_service = None
     audit = None
     ontology_sessions = None
-    if settings.database_url and settings.runtime_handoff_key:
+    if settings.database_url:
         engine = create_database_engine(settings)
         sessions = create_session_factory(engine)
         ontology_sessions = sessions
-        persistence = SqlAlchemyCapabilityPersistence(sessions)
-        dependencies = IntegrationDependencies(
-            EntityResolutionEngine(
-                ResolutionPolicy(
-                    settings.resolution_policy_version,
-                    settings.resolution_resolved_threshold,
-                    settings.resolution_possible_threshold,
-                    settings.resolution_high_confidence_threshold,
-                    settings.resolution_medium_confidence_threshold,
-                )
-            ),
-            SemanticResolutionEngine(
-                SemanticResolutionPolicy(
-                    settings.semantic_policy_version,
-                    settings.semantic_resolved_threshold,
-                    settings.semantic_possible_threshold,
-                    settings.semantic_high_confidence_threshold,
-                    settings.semantic_medium_confidence_threshold,
-                )
-            ),
-            AssertionEngine(
-                AssertionPolicy(
-                    settings.assertion_policy_version,
-                    settings.assertion_established_threshold,
-                    settings.assertion_candidate_threshold,
-                    settings.assertion_high_confidence_threshold,
-                    settings.assertion_medium_confidence_threshold,
-                )
-            ),
-            KnowledgeEngine(
-                KnowledgePolicy(
-                    settings.knowledge_policy_version,
-                    frozenset(settings.knowledge_authorized_acceptance_authorities),
-                    settings.knowledge_high_confidence_threshold,
-                    settings.knowledge_medium_confidence_threshold,
-                )
-            ),
-            DecisionEvaluationService(),
-            DecisionConfidenceClassificationService(
-                high_threshold=settings.decision_high_confidence_threshold,
-                medium_threshold=settings.decision_medium_confidence_threshold,
-            ),
-            GovernanceEvaluationService(),
-            GovernanceConfidenceClassificationService(
-                high_threshold=settings.governance_high_confidence_threshold,
-                medium_threshold=settings.governance_medium_confidence_threshold,
-            ),
-            persistence,
-            __import__("functools").partial(
-                __import__("datetime").datetime.now, __import__("datetime").UTC
-            ),
-        )
-        try:
-            handoff_key = urlsafe_b64decode(settings.runtime_handoff_key)
-        except ValueError as exc:
-            raise ValueError("Runtime handoff key must be URL-safe base64") from exc
-        durable = SqlAlchemyExecutionStore(
-            sessions,
-            AuthenticatedHandoffProtector(
-                {settings.runtime_handoff_key_id: handoff_key},
-                settings.runtime_handoff_key_id,
-            ),
-        )
-        runtime = CognitiveEngineRuntime(
-            supplier_risk_capability_ports(dependencies, SupplierRiskPolicy()), durable
-        )
-        api_service = SupplierRiskApiService(
-            runtime, durable, ontology_activation=OntologyActivationService(sessions)
-        )
         audit = SecurityAuditService(ApiSecurityAuditRepository(sessions))
+        if settings.runtime_handoff_key:
+            persistence = SqlAlchemyCapabilityPersistence(sessions)
+            dependencies = IntegrationDependencies(
+                EntityResolutionEngine(
+                    ResolutionPolicy(
+                        settings.resolution_policy_version,
+                        settings.resolution_resolved_threshold,
+                        settings.resolution_possible_threshold,
+                        settings.resolution_high_confidence_threshold,
+                        settings.resolution_medium_confidence_threshold,
+                    )
+                ),
+                SemanticResolutionEngine(
+                    SemanticResolutionPolicy(
+                        settings.semantic_policy_version,
+                        settings.semantic_resolved_threshold,
+                        settings.semantic_possible_threshold,
+                        settings.semantic_high_confidence_threshold,
+                        settings.semantic_medium_confidence_threshold,
+                    )
+                ),
+                AssertionEngine(
+                    AssertionPolicy(
+                        settings.assertion_policy_version,
+                        settings.assertion_established_threshold,
+                        settings.assertion_candidate_threshold,
+                        settings.assertion_high_confidence_threshold,
+                        settings.assertion_medium_confidence_threshold,
+                    )
+                ),
+                KnowledgeEngine(
+                    KnowledgePolicy(
+                        settings.knowledge_policy_version,
+                        frozenset(settings.knowledge_authorized_acceptance_authorities),
+                        settings.knowledge_high_confidence_threshold,
+                        settings.knowledge_medium_confidence_threshold,
+                    )
+                ),
+                DecisionEvaluationService(),
+                DecisionConfidenceClassificationService(
+                    high_threshold=settings.decision_high_confidence_threshold,
+                    medium_threshold=settings.decision_medium_confidence_threshold,
+                ),
+                GovernanceEvaluationService(),
+                GovernanceConfidenceClassificationService(
+                    high_threshold=settings.governance_high_confidence_threshold,
+                    medium_threshold=settings.governance_medium_confidence_threshold,
+                ),
+                persistence,
+                __import__("functools").partial(
+                    __import__("datetime").datetime.now, __import__("datetime").UTC
+                ),
+            )
+            try:
+                handoff_key = urlsafe_b64decode(settings.runtime_handoff_key)
+            except ValueError as exc:
+                raise ValueError("Runtime handoff key must be URL-safe base64") from exc
+            durable = SqlAlchemyExecutionStore(
+                sessions,
+                AuthenticatedHandoffProtector(
+                    {settings.runtime_handoff_key_id: handoff_key},
+                    settings.runtime_handoff_key_id,
+                ),
+            )
+            runtime = CognitiveEngineRuntime(
+                supplier_risk_capability_ports(dependencies, SupplierRiskPolicy()), durable
+            )
+            api_service = SupplierRiskApiService(
+                runtime, durable, ontology_activation=OntologyActivationService(sessions)
+            )
     return Container(
         settings=settings,
         token_verifier=verifier,

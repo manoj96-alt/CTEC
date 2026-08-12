@@ -5,6 +5,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPOSITORY_ROOT / "backend" / "app" / "runtime"
 AUTHORIZED_CHANGED_PATHS = {
+    ".gitignore",
     "backend/Dockerfile",
     "docker-compose.yml",
     "frontend/Dockerfile",
