@@ -2,16 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { StudioClient } from "@/app/ontology-studio/_components/studio-client";
 
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-
 beforeEach(() => {
   process.env.NEXT_PUBLIC_CTEC_API_ORIGIN = "http://localhost:8000";
-  // jsdom does not implement ResizeObserver, which reactflow requires at mount.
-  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 });
 
 const ontologyFixture = {
