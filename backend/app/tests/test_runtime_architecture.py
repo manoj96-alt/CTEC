@@ -5,6 +5,15 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPOSITORY_ROOT / "backend" / "app" / "runtime"
 AUTHORIZED_CHANGED_PATHS = {
+    "backend/Dockerfile",
+    "docker-compose.yml",
+    "frontend/Dockerfile",
+    ".dockerignore",
+    "DEMO_RUNBOOK.md",
+    "DOCKER_SMOKE_TEST.md",
+    "backend/.dockerignore",
+    "backend/docker-entrypoint.sh",
+    "frontend/.dockerignore",
     "frontend/components/supplier-risk/recommendation-panel.tsx",
     "frontend/lib/supplier-risk/contracts.ts",
     "frontend/tests/supplier-risk-recommendation.test.tsx",
