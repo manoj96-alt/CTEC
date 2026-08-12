@@ -1,0 +1,4 @@
+agreement_id,material_id,supplier_id,sourcing_pct,terms
+SA-100,MAT-100,SUP-001,100,Single-source; no alternate qualified at signing
+SA-101,MAT-101,SUP-003,100,Single-source
+SA-102,MAT-102,SUP-004,80,Dual-source with Orion primary

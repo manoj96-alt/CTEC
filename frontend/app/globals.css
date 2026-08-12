@@ -134,6 +134,34 @@ textarea:focus-visible {
   font-weight: 400;
   margin-top: 0.25rem;
 }
+/* Dataset-local only. Unlike .table-wrap, this never stacks at narrow
+   widths — Dataset's schema/sample tables need every header visible next
+   to its value, so horizontal scroll is preserved instead of the
+   thead-hidden/td-as-block transformation .table-wrap applies at 760px.
+   Purely additive: no existing markup references this class, so no shared
+   table is affected. */
+.dataset-table-wrap {
+  overflow-x: auto;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+.dataset-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.dataset-table-wrap caption {
+  text-align: left;
+  font-weight: 800;
+  padding: 1rem;
+}
+.dataset-table-wrap th,
+.dataset-table-wrap td {
+  text-align: left;
+  padding: 1rem;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
 .timeline,
 .record-list,
 .reference-list {

@@ -18,9 +18,16 @@ describe("SiteShell", () => {
       "href",
       "/",
     );
+    expect(
+      screen.getByRole("link", { name: "Supplier Risk Workspace" }),
+    ).toHaveAttribute("href", "/supplier-risk");
     expect(screen.getByRole("link", { name: "Architecture" })).toHaveAttribute(
       "href",
       "/architecture",
+    );
+    expect(screen.getByRole("link", { name: "Prototype" })).toHaveAttribute(
+      "href",
+      "/prototype",
     );
     expect(screen.getByText("Page content")).toBeInTheDocument();
     expect(

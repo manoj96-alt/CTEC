@@ -1,0 +1,4 @@
+material_id,material_name,supplier_id,unit_cost_usd
+MAT-100,Battery Cell BX-100,SUP-001,42.50
+MAT-101,Display Panel DP-7,SUP-003,88.10
+MAT-102,Chassis Frame CF-3,SUP-004,15.75

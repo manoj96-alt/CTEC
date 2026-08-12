@@ -45,6 +45,10 @@ test("renders empty optional references without inventing content", () => {
     screen.getAllByText("No permitted references were returned."),
   ).toHaveLength(3);
 });
+test("renders the actionable state when the recommendation is actionable", () => {
+  render(<RecommendationPanel result={{ ...result, actionable: true }} />);
+  expect(screen.getByText(/Actionable/)).toBeInTheDocument();
+});
 test("separates execution and business status", () => {
   render(
     <StatusSummary execution="Completed" outcome="REJECTED" stage="GRM" />,
