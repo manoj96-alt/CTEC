@@ -47,7 +47,7 @@ def test_ontology_remains_available_without_runtime_handoff_key(
 ) -> None:
     _seed_ontology(migrated_engine)
     settings = Settings(
-        database_url=str(migrated_engine.url),
+        database_url=migrated_engine.url.render_as_string(hide_password=False),
         runtime_handoff_key="",
     )
     monkeypatch.setattr(dependency_container, "get_settings", lambda: settings)
