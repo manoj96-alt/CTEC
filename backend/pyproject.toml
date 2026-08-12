@@ -48,6 +48,10 @@ known_first_party = ["app"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint.per-file-ignores]
+"app/infrastructure/persistence/metadata.py" = ["F403"]
+"app/infrastructure/persistence/repositories/__init__.py" = ["F403", "F405"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 

@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.config.router import router as config_router
 from app.api.health.router import router as health_router
+from app.api.ontology.router import router as ontology_router
 from app.api.supplier_risk.router import router as supplier_risk_router
 from app.api.version.router import router as version_router
 from app.core.constants import API_PREFIX, APP_NAME, APP_VERSION, REQUEST_ID_HEADER
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router, prefix=API_PREFIX)
     app.include_router(version_router, prefix=API_PREFIX)
     app.include_router(supplier_risk_router)
+    app.include_router(ontology_router)
     return app
 
 

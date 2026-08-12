@@ -12,6 +12,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
   backend:
     build: ./backend
     environment:
@@ -19,6 +20,19 @@ services:
       CTEC_LOG_LEVEL: ${CTEC_LOG_LEVEL:-INFO}
       CTEC_CORS_ORIGINS: ${CTEC_CORS_ORIGINS:-["http://localhost:3000"]}
       CTEC_DATABASE_URL: ${CTEC_DATABASE_URL:-postgresql+psycopg://ctec:ctec@postgres:5432/ctec}
+      # Required for Supplier Risk submission (not required for the
+      # read-only Ontology Studio, which has no auth dependency). See
+      # README/runbook: these have no safe baked-in default because they
+      # point at a real OIDC issuer for your environment.
+      CTEC_OIDC_ISSUER: ${CTEC_OIDC_ISSUER:-}
+      CTEC_OIDC_AUDIENCE: ${CTEC_OIDC_AUDIENCE:-}
+      CTEC_OIDC_JWKS_URL: ${CTEC_OIDC_JWKS_URL:-}
+      # Required for the ontology and supplier-risk persistence layer to
+      # activate at all. Generate your own — never share or commit a real
+      # value. There is intentionally no baked-in default: a fixed key
+      # checked into a compose file defeats its purpose.
+      # python3 -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+      CTEC_RUNTIME_HANDOFF_KEY: ${CTEC_RUNTIME_HANDOFF_KEY:?Set CTEC_RUNTIME_HANDOFF_KEY in your .env — see docker-compose.yml comments for how to generate one}
     ports: ["8000:8000"]
     depends_on:
       postgres:
@@ -28,11 +42,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
+
   frontend:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_CTEC_API_ORIGIN: ${NEXT_PUBLIC_CTEC_API_ORIGIN:-http://localhost:8000}
+        NEXT_PUBLIC_OIDC_AUTHORITY: ${NEXT_PUBLIC_OIDC_AUTHORITY:-}
+        NEXT_PUBLIC_OIDC_CLIENT_ID: ${NEXT_PUBLIC_OIDC_CLIENT_ID:-}
+        NEXT_PUBLIC_OIDC_REDIRECT_URI: ${NEXT_PUBLIC_OIDC_REDIRECT_URI:-}
+        NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI: ${NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI:-}
     ports: ["3000:3000"]
     depends_on:
       backend:
@@ -42,5 +62,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
+
 volumes:
   postgres_data:

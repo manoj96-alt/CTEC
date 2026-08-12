@@ -20,6 +20,14 @@ const result = {
   policy_rule: "rule",
   decision_reference: "decision",
   contract_version: "PAS-001-v1.1" as const,
+  ontology_id: "supplier-risk",
+  ontology_version: "1.0",
+  ontology_status: "Published",
+  applicable_concept_ids: ["concept-1"],
+  applicable_relationship_ids: ["rel-1"],
+  ontology_quality_score: 0.86,
+  semantic_path:
+    "Supplier → supplies → Material → usedIn → BOM → defines → Product → generatesRevenue → Revenue Exposure",
 };
 test("renders recommendation without hiding unverified conditions", () => {
   render(<RecommendationPanel result={result} />);
@@ -55,4 +63,29 @@ test("separates execution and business status", () => {
   );
   expect(screen.getByText("Completed")).toBeInTheDocument();
   expect(screen.getByText("rejected")).toBeInTheDocument();
+});
+test("shows the backend-resolved ontology attribution and semantic path", () => {
+  render(<RecommendationPanel result={result} />);
+  expect(screen.getByText(/Powered by supplier-risk v1.0/)).toBeInTheDocument();
+  expect(screen.getByText(/Published/)).toBeInTheDocument();
+  expect(screen.getByText(/Quality 86%/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Supplier → supplies → Material/),
+  ).toBeInTheDocument();
+});
+test("shows no ontology attribution when the backend did not resolve one, never fabricating a version", () => {
+  render(
+    <RecommendationPanel
+      result={{
+        ...result,
+        ontology_id: null,
+        ontology_version: null,
+        ontology_status: null,
+        ontology_quality_score: null,
+        semantic_path: null,
+      }}
+    />,
+  );
+  expect(screen.queryByText(/Powered by/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Semantic path/)).not.toBeInTheDocument();
 });

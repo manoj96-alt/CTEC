@@ -14,6 +14,23 @@ export function RecommendationPanel({ result }: { result: GovernedResult }) {
       {result.safe_business_explanation && (
         <p>{result.safe_business_explanation}</p>
       )}
+      {result.ontology_id && result.ontology_version && (
+        <p className="eyebrow" style={{ marginTop: "0.5rem" }}>
+          Powered by {result.ontology_id} v{result.ontology_version}
+          {result.ontology_status ? ` · ${result.ontology_status}` : ""}
+          {result.ontology_quality_score !== null
+            ? ` · Quality ${(result.ontology_quality_score * 100).toFixed(0)}%`
+            : ""}
+        </p>
+      )}
+      {result.semantic_path && (
+        <div className="conditions">
+          <h3>Semantic path</h3>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+            {result.semantic_path}
+          </p>
+        </div>
+      )}
       {result.conditions.length > 0 && (
         <div className="conditions">
           <h3>Conditions</h3>

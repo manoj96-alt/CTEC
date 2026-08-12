@@ -46,6 +46,9 @@ from app.infrastructure.persistence.models.knowledge_evaluation import (
     KnowledgeEvaluationRecordModel,
 )
 from app.infrastructure.persistence.models.occasion import Occasion
+from app.infrastructure.persistence.models.ontology_relationship_binding import (
+    OntologyRelationshipBinding,
+)
 from app.infrastructure.persistence.models.outcome import Outcome
 from app.infrastructure.persistence.models.pattern_of_relevance import (
     PatternOfRelevance,
@@ -106,6 +109,7 @@ __all__ = [
     "Knowledge",
     "KnowledgeEvaluationRecordModel",
     "Occasion",
+    "OntologyRelationshipBinding",
     "Outcome",
     "PatternOfRelevance",
     "Reason",

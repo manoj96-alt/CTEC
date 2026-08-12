@@ -4,11 +4,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from threading import RLock
-from typing import Any, cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text, update
-from sqlalchemy.engine import CursorResult
+from sqlalchemy.engine import CursorResult, Result
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -557,21 +557,19 @@ class SqlAlchemyExecutionStore:
                 if target_state in {ExecutionState.COMPLETED, ExecutionState.FAILED}
                 else None
             )
-            result = cast(
-                CursorResult[Any],
-                session.execute(
-                    update(RuntimeExecutionORM)
-                    .where(
-                        RuntimeExecutionORM.execution_id == execution_identifier,
-                        RuntimeExecutionORM.revision == expected,
-                    )
-                    .values(
-                        state=target_state.value,
-                        terminal_at=terminal,
-                        revision=expected + 1,
-                    )
-                ),
+            result: Result[Any] = session.execute(
+                update(RuntimeExecutionORM)
+                .where(
+                    RuntimeExecutionORM.execution_id == execution_identifier,
+                    RuntimeExecutionORM.revision == expected,
+                )
+                .values(
+                    state=target_state.value,
+                    terminal_at=terminal,
+                    revision=expected + 1,
+                )
             )
+            assert isinstance(result, CursorResult)
             if result.rowcount != 1:
                 raise RuntimeError("Optimistic concurrency conflict")
             session.commit()

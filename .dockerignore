@@ -1,0 +1,13 @@
+.git/
+.github/
+*.bundle
+*.patch
+*.tar.gz
+node_modules/
+frontend/node_modules/
+frontend/.next/
+backend/__pycache__/
+backend/.pytest_cache/
+.env
+.env.*
+!.env.example
