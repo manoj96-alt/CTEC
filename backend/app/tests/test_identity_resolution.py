@@ -21,11 +21,13 @@ def test_exact_candidate_resolves_with_explanation_and_policy_traceability() -> 
     )
 
     record = engine.resolve(
+        tenant_id="tenant-a",
         supporting_source_object_ids=(source_id,),
         candidates=candidates,
         produced_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
+    assert record.tenant_id == "tenant-a"
     assert record.enterprise_entity_id == entity_id
     assert record.outcome is ResolutionOutcome.RESOLVED
     assert record.business_confidence is BusinessConfidence.HIGH
@@ -40,6 +42,7 @@ def test_possible_resolution_is_preserved_as_valid_understanding() -> None:
     )
     candidates = engine.discover_candidates(("Acme Holding",), ((entity_id, "Acme Holdings"),))
     record = engine.resolve(
+        tenant_id="tenant-a",
         supporting_source_object_ids=(uuid4(),),
         candidates=candidates,
         produced_at=datetime.now(UTC),
@@ -50,6 +53,7 @@ def test_possible_resolution_is_preserved_as_valid_understanding() -> None:
 def test_unresolved_can_have_low_business_confidence() -> None:
     engine = EntityResolutionEngine(ResolutionPolicy(version="policy-3"))
     record = engine.resolve(
+        tenant_id="tenant-a",
         supporting_source_object_ids=(uuid4(),),
         candidates=(),
         produced_at=datetime.now(UTC),
@@ -63,12 +67,14 @@ def test_human_override_creates_new_immutable_record() -> None:
     engine = EntityResolutionEngine(ResolutionPolicy(version="policy-4"))
     source_ids = (uuid4(), uuid4())
     first = engine.resolve(
+        tenant_id="tenant-a",
         supporting_source_object_ids=source_ids,
         candidates=(),
         produced_at=datetime.now(UTC),
     )
     override_entity_id = uuid4()
     overridden = engine.resolve(
+        tenant_id="tenant-a",
         supporting_source_object_ids=source_ids,
         candidates=(),
         produced_at=datetime.now(UTC),

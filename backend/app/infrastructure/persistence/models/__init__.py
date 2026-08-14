@@ -60,6 +60,7 @@ from app.infrastructure.persistence.models.reason_decision_objective import (
 from app.infrastructure.persistence.models.reason_evidence import ReasonEvidence
 from app.infrastructure.persistence.models.reason_graph import ReasonGraph
 from app.infrastructure.persistence.models.relationship_type import RelationshipType
+from app.infrastructure.persistence.models.resolution_policy import ResolutionPolicyModel
 from app.infrastructure.persistence.models.semantic_resolution import (
     SemanticResolutionHistoryModel,
     SemanticResolutionRecordModel,
@@ -117,6 +118,7 @@ __all__ = [
     "ReasonEvidence",
     "ReasonGraph",
     "RelationshipType",
+    "ResolutionPolicyModel",
     "RuntimeArtifactReferenceORM",
     "RuntimeExecutionORM",
     "RuntimeHandoffORM",

@@ -27,3 +27,10 @@ BOOTSTRAP_ENTERPRISE_NAME = "ECOM Platform"
 BOOTSTRAP_BUSINESS_DOMAIN_NAME = "Platform Operations"
 BOOTSTRAP_GOVERNANCE_STATUS = "Approved"
 BOOTSTRAP_SEED_NAMESPACE = UUID("00000000-0000-0000-0000-000000000008")
+
+# A demo/reference tenant label used only to stamp seeded and demo data
+# (EDT-001 provenance, Entity Resolution demo cases). This is not a governed
+# tenant identity issued by any identity provider; real tenant_id values are
+# always sourced from the authenticated OIDC tenant claim at the trusted
+# boundary (see app.api.supplier_risk.authentication.TrustedPrincipal).
+BOOTSTRAP_DEMO_TENANT_ID = "ctec-demo-tenant"

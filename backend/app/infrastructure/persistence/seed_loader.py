@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.bootstrap import (
+    BOOTSTRAP_DEMO_TENANT_ID,
     BOOTSTRAP_GOVERNANCE_STATUS,
     BOOTSTRAP_SEED_NAMESPACE,
     BOOTSTRAP_STATUS,
@@ -67,6 +68,7 @@ class SeedLoader:
                     self._session.add(
                         SourceObject(
                             source_object_id=identifier,
+                            tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
                             source_object_name=f"{SEED_VERSION}:{csv_name}:{digest}",
                             lifecycle_state=BOOTSTRAP_STATUS,
                             effective_from=SEED_TIMESTAMP,
@@ -135,6 +137,7 @@ class SeedLoader:
     def _source_system(identifier: UUID, name: str) -> SourceSystem:
         return SourceSystem(
             source_system_id=identifier,
+            tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
             source_system_name=name,
             lifecycle_state=BOOTSTRAP_STATUS,
             effective_from=SEED_TIMESTAMP,

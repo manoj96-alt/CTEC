@@ -72,6 +72,7 @@ class EntityResolutionEngine:
     def resolve(
         self,
         *,
+        tenant_id: str,
         supporting_source_object_ids: tuple[UUID, ...],
         candidates: tuple[ResolutionCandidate, ...],
         produced_at: datetime,
@@ -109,6 +110,7 @@ class EntityResolutionEngine:
         narrative = f"{outcome.value} using policy {self.policy.version}: {'; '.join(reasons)}."
         return EnterpriseEntityResolutionRecord(
             record_id=uuid4(),
+            tenant_id=tenant_id,
             enterprise_entity_id=entity_id,
             supporting_source_object_ids=supporting_source_object_ids,
             outcome=outcome,
