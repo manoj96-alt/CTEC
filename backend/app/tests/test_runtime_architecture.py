@@ -134,7 +134,6 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/entity_resolution_store.py",
     "backend/app/infrastructure/persistence/seed_loader.py",
     "backend/app/infrastructure/persistence/migrations/versions/0011_entity_resolution_tenant_and_evidence.py",
-    "backend/app/infrastructure/persistence/models/__init__.py",
     "backend/app/infrastructure/persistence/models/enterprise_entity.py",
     "backend/app/infrastructure/persistence/models/entity_resolution.py",
     "backend/app/infrastructure/persistence/models/resolution_policy.py",

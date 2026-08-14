@@ -172,9 +172,8 @@ def test_tenant_a_cannot_resolve_against_tenant_b_enterprise_entity(
         override_entity_id=tenant_b_entity_id,
     )
 
-    with pytest.raises(IntegrityError):
-        with Session(migrated_engine) as session, session.begin():
-            EntityResolutionStore(session).append(record)
+    with pytest.raises(IntegrityError), Session(migrated_engine) as session, session.begin():
+        EntityResolutionStore(session).append(record)
 
 
 def test_tenant_a_cannot_reference_tenant_b_source_system(migrated_engine: Engine) -> None:
@@ -182,21 +181,20 @@ def test_tenant_a_cannot_reference_tenant_b_source_system(migrated_engine: Engin
     with Session(migrated_engine) as session, session.begin():
         tenant_b_system_id = _seed_source_system(session, tenant_id=tenant_b, name=f"sys-{uuid4()}")
 
-    with pytest.raises(IntegrityError):
-        with Session(migrated_engine) as session, session.begin():
-            session.add(
-                SourceObject(
-                    source_object_id=uuid4(),
-                    tenant_id=tenant_a,
-                    source_object_name=f"obj-{uuid4()}",
-                    lifecycle_state="Active",
-                    effective_from=NOW,
-                    governance_status="Approved",
-                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
-                    created_on=NOW,
-                    source_system_id=tenant_b_system_id,
-                )
+    with pytest.raises(IntegrityError), Session(migrated_engine) as session, session.begin():
+        session.add(
+            SourceObject(
+                source_object_id=uuid4(),
+                tenant_id=tenant_a,
+                source_object_name=f"obj-{uuid4()}",
+                lifecycle_state="Active",
+                effective_from=NOW,
+                governance_status="Approved",
+                created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                created_on=NOW,
+                source_system_id=tenant_b_system_id,
             )
+        )
 
 
 def test_tenant_a_cannot_reference_tenant_b_policy(migrated_engine: Engine) -> None:
@@ -217,9 +215,8 @@ def test_tenant_a_cannot_reference_tenant_b_policy(migrated_engine: Engine) -> N
     )
     record = replace(base, policy_id=tenant_b_policy_id)
 
-    with pytest.raises(IntegrityError):
-        with Session(migrated_engine) as session, session.begin():
-            EntityResolutionStore(session).append(record)
+    with pytest.raises(IntegrityError), Session(migrated_engine) as session, session.begin():
+        EntityResolutionStore(session).append(record)
 
 
 def test_missing_trusted_tenant_context_fails_closed() -> None:
