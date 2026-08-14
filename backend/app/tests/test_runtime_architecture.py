@@ -162,6 +162,19 @@ AUTHORIZED_CHANGED_PATHS = {
     "tools/generate_release_manifest.py",
     "tools/generate_v1_8_release_manifest.py",
     "tools/test_generate_release_manifest.py",
+    # Increment 3A Gate B: multi-attribute Entity Resolution evidence and
+    # policy domain logic (no Steward API/frontend). Reuses Gate A's
+    # persisted evidence/policy contract; no migration required.
+    "backend/app/domain/identity_resolution/__init__.py",
+    "backend/app/domain/identity_resolution/evidence.py",
+    "backend/app/domain/identity_resolution/policy.py",
+    "backend/app/infrastructure/persistence/resolution_policy_store.py",
+    "backend/app/tests/test_identity_resolution_evidence.py",
+    "backend/app/tests/test_identity_resolution_evidence_engine.py",
+    "backend/app/tests/test_identity_resolution_gate_b_runtime_compatibility.py",
+    "backend/app/tests/test_identity_resolution_normalization.py",
+    "backend/app/tests/test_identity_resolution_policy.py",
+    "backend/app/tests/test_resolution_policy_store.py",
 }
 
 

@@ -71,7 +71,10 @@ def derive_acronym(value: str) -> str:
 
 
 def normalize_acronym(value: str) -> str:
-    return _NON_ALNUM.sub("", value.upper())
+    # Strip non-alphanumerics before upper-casing: _NON_ALNUM only matches
+    # lowercase letters as "safe", so upper-casing first would strip every
+    # letter in the value.
+    return _NON_ALNUM.sub("", value.casefold()).upper()
 
 
 def normalize_domain(value: str) -> str:
@@ -101,7 +104,8 @@ def normalize_address(value: str) -> str:
 
 
 def normalize_postal_code(value: str) -> str:
-    return _NON_ALNUM.sub("", value.upper())
+    # Same fix as normalize_acronym: strip before upper-casing.
+    return _NON_ALNUM.sub("", value.casefold()).upper()
 
 
 def fingerprint(value: str) -> str:
