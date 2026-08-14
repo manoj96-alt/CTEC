@@ -6,9 +6,11 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -33,6 +35,20 @@ class SourceObject(BaseEntity):
         Index("idx_source_objects_version_number", "version_number"),
         Index("idx_source_objects_previous_version_id", "previous_version_id"),
         Index("idx_source_objects_source_system_id", "source_system_id"),
+        Index("idx_source_objects_tenant_id", "tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "source_object_name",
+            name="uq_source_objects_tenant_name",
+        ),
+        # Tenant-qualified composite FK: a source object can only reference a
+        # source system owned by the same tenant. Replaces the single-column
+        # FK on source_system_id (see migration 0011).
+        ForeignKeyConstraint(
+            ["tenant_id", "source_system_id"],
+            ["source_systems.tenant_id", "source_systems.source_system_id"],
+            name="fk_source_objects_tenant_source_system",
+        ),
     )
 
     source_object_id: Mapped[UUID] = mapped_column(
@@ -41,7 +57,12 @@ class SourceObject(BaseEntity):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    source_object_name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    # Not part of the ECOM Physical Data Model v1.3-v1.5 release; added to
+    # establish tenant ownership for the identity-resolution substrate (see
+    # migration 0011_entity_resolution_tenant_and_evidence). Not a
+    # business-governed field.
+    tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_object_name: Mapped[str] = mapped_column(String(200), nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(
         Enum("Draft", "Active", "Suspended", "Archived", name="lifecyclestate_t"),
         nullable=False,
@@ -79,8 +100,4 @@ class SourceObject(BaseEntity):
         ),
         nullable=True,
     )
-    source_system_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey("source_systems.source_system_id", name="fk_source_objects_source_system_id"),
-        nullable=False,
-    )
+    source_system_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)

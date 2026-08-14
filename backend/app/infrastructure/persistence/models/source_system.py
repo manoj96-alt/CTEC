@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -32,6 +33,14 @@ class SourceSystem(BaseEntity):
         Index("idx_source_systems_modified_on", "modified_on"),
         Index("idx_source_systems_version_number", "version_number"),
         Index("idx_source_systems_previous_version_id", "previous_version_id"),
+        Index("idx_source_systems_tenant_id", "tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "source_system_name",
+            name="uq_source_systems_tenant_name",
+        ),
+        # Composite-unique FK target for source_objects(tenant_id, source_system_id).
+        UniqueConstraint("tenant_id", "source_system_id", name="uq_source_systems_tenant_pk"),
     )
 
     source_system_id: Mapped[UUID] = mapped_column(
@@ -40,7 +49,12 @@ class SourceSystem(BaseEntity):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    source_system_name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    # Not part of the ECOM Physical Data Model v1.3-v1.5 release; added to
+    # establish tenant ownership for the identity-resolution substrate (see
+    # migration 0011_entity_resolution_tenant_and_evidence). Not a
+    # business-governed field.
+    tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_system_name: Mapped[str] = mapped_column(String(200), nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(
         Enum("Draft", "Active", "Suspended", "Archived", name="lifecyclestate_t"),
         nullable=False,

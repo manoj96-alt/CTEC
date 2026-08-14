@@ -1,0 +1,7 @@
+Dependent Identifier,Dependent Version,Dependency Identifier,Dependency Version,Dependency Status,Relationship,Semantic Compatibility,Approval Reference
+CDD-010,1.5,EIC-001,1.3,FROZEN,Runtime invocation authority,Compatible,Trusted admission remediation
+CDD-010,1.5,CDD-012,1.3,FROZEN,Durable admission authority,Compatible,Trusted admission remediation
+PAS-001,1.2,CDD-010,1.5,FROZEN,Trusted admission contract,Compatible,Trusted admission remediation
+PAS-001,1.2,IDP-001,1.0,FROZEN,Authentication boundary,Compatible,Trusted admission remediation
+PAS-001,1.2,RFC-014,1.3,FROZEN,Timestamp and provenance authority,Compatible,Trusted admission remediation
+ECOM Physical Data Model,1.6,RFC-015,1.0,FROZEN,Tenant ownership authorization,Compatible,Product Owner authorization Increment 3A-0

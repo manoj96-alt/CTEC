@@ -3,7 +3,7 @@ from dataclasses import replace
 from app.domain.identity_resolution import ResolutionOutcome
 from app.integration.contracts import DiagnosticCode, IntegrationEnvelope
 from app.integration.dependencies import IntegrationDependencies
-from app.runtime.orchestration import CapabilityStepInput, CapabilityStepOutput
+from app.runtime.orchestration import CapabilityStepError, CapabilityStepInput, CapabilityStepOutput
 
 
 class EntityResolutionAdapter:
@@ -12,12 +12,26 @@ class EntityResolutionAdapter:
 
     def execute(self, step_input: CapabilityStepInput) -> CapabilityStepOutput:
         started = self._dependencies.clock()
+        # Fail closed: an entity-resolution record can never be persisted
+        # without a trusted tenant. The runtime already rejects admission
+        # when AuthorityContext is missing (see engine.py's control-metadata
+        # check), but this adapter does not rely on that alone.
+        organization_id = (
+            step_input.authority_context.organization_id
+            if step_input.authority_context is not None
+            else None
+        )
+        if not organization_id:
+            raise CapabilityStepError(
+                "Entity resolution requires a trusted AuthorityContext with organization_id"
+            )
         envelope = IntegrationEnvelope.from_bytes(step_input.opaque_payload)
         request = envelope.request
         candidates = self._dependencies.entity_resolution.discover_candidates(
             request.supplier_names, request.enterprise_candidates
         )
         record = self._dependencies.entity_resolution.resolve(
+            tenant_id=organization_id,
             supporting_source_object_ids=request.source_object_ids,
             candidates=candidates,
             produced_at=self._dependencies.clock(),

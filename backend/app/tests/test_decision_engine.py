@@ -295,5 +295,5 @@ def test_decision_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'decision_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0010_ontology_bindings"
+    assert revision == "0011_erm_tenant_and_evidence"
     assert trigger_count == 1
