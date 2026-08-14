@@ -4,12 +4,20 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from uuid import UUID, uuid4
 
+from app.domain.identity_resolution.evidence import (
+    ResolutionDecision,
+    SourceRepresentation,
+    build_evidence_profile,
+    decide,
+)
 from app.domain.identity_resolution.model import (
     BusinessConfidence,
     EnterpriseEntityResolutionRecord,
     ResolutionCandidate,
     ResolutionOutcome,
 )
+from app.domain.identity_resolution.policy import ResolutionPolicyDefinition
+from app.domain.shared.exceptions import ValidationException
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,4 +127,110 @@ class EntityResolutionEngine:
             narrative_explanation=narrative,
             produced_at=produced_at,
             policy_version=self.policy.version,
+        )
+
+
+class EvidenceResolutionEngine:
+    """Multi-attribute, policy-governed resolution. Additive to
+    EntityResolutionEngine (the automated name-only runtime path above,
+    unchanged): this engine is the one the future Steward API will call. It
+    shares the same domain vocabulary (ResolutionOutcome,
+    BusinessConfidence, EnterpriseEntityResolutionRecord, EvidenceProfile)
+    rather than inventing a parallel one.
+    """
+
+    def __init__(self, policy: ResolutionPolicyDefinition, *, policy_id: UUID) -> None:
+        self.policy = policy
+        self.policy_id = policy_id
+
+    def evaluate(
+        self,
+        *,
+        representations: tuple[SourceRepresentation, ...],
+        candidate_name: str,
+        candidate_country: str | None = None,
+        candidate_parent_entity_name: str | None = None,
+    ) -> ResolutionDecision:
+        profile = build_evidence_profile(
+            representations=representations,
+            candidate_name=candidate_name,
+            candidate_country=candidate_country,
+            candidate_parent_entity_name=candidate_parent_entity_name,
+            policy=self.policy,
+        )
+        return decide(profile, self.policy)
+
+    def resolve(
+        self,
+        *,
+        tenant_id: str,
+        supporting_source_object_ids: tuple[UUID, ...],
+        representations: tuple[SourceRepresentation, ...],
+        candidate_name: str,
+        candidate_enterprise_entity_id: UUID | None,
+        produced_at: datetime,
+        candidate_country: str | None = None,
+        candidate_parent_entity_name: str | None = None,
+        override_entity_id: UUID | None = None,
+        override_actor_id: str | None = None,
+        override_rationale: str | None = None,
+    ) -> EnterpriseEntityResolutionRecord:
+        if override_entity_id is not None:
+            profile = build_evidence_profile(
+                representations=representations,
+                candidate_name=candidate_name,
+                candidate_country=candidate_country,
+                candidate_parent_entity_name=candidate_parent_entity_name,
+                policy=self.policy,
+            )
+            return EnterpriseEntityResolutionRecord(
+                record_id=uuid4(),
+                tenant_id=tenant_id,
+                enterprise_entity_id=override_entity_id,
+                supporting_source_object_ids=supporting_source_object_ids,
+                outcome=ResolutionOutcome.RESOLVED,
+                business_confidence=BusinessConfidence.HIGH,
+                structured_reasons=("Authorized human override",),
+                narrative_explanation=(
+                    f"Resolved using policy {self.policy.policy_version}: authorized human override."
+                ),
+                produced_at=produced_at,
+                policy_version=self.policy.policy_version,
+                evidence_profile=profile,
+                policy_id=self.policy_id,
+                actor_id=override_actor_id,
+                decision_rationale=override_rationale,
+            )
+
+        decision = self.evaluate(
+            representations=representations,
+            candidate_name=candidate_name,
+            candidate_country=candidate_country,
+            candidate_parent_entity_name=candidate_parent_entity_name,
+        )
+        entity_free_outcomes = (ResolutionOutcome.UNRESOLVED, ResolutionOutcome.BLOCKED_CONFLICT)
+        if decision.outcome not in entity_free_outcomes and candidate_enterprise_entity_id is None:
+            raise ValidationException(
+                f"outcome {decision.outcome.value} requires a candidate enterprise entity reference"
+            )
+        entity_id = (
+            None if decision.outcome in entity_free_outcomes else candidate_enterprise_entity_id
+        )
+        narrative = (
+            f"{decision.outcome.value} using policy {self.policy.policy_version} "
+            f"(score={decision.score:.2f}): {'; '.join(decision.structured_reasons)}."
+        )
+        return EnterpriseEntityResolutionRecord(
+            record_id=uuid4(),
+            tenant_id=tenant_id,
+            enterprise_entity_id=entity_id,
+            supporting_source_object_ids=supporting_source_object_ids,
+            outcome=decision.outcome,
+            business_confidence=decision.business_confidence,
+            structured_reasons=decision.structured_reasons,
+            narrative_explanation=narrative,
+            produced_at=produced_at,
+            policy_version=self.policy.policy_version,
+            evidence_profile=decision.evidence_profile,
+            policy_id=self.policy_id,
         )
