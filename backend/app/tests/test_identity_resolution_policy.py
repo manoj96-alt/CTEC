@@ -15,18 +15,21 @@ from app.domain.shared.exceptions import ValidationException
 
 
 def _minimal_kwargs(**overrides: Any) -> dict[str, Any]:
-    defaults: dict[str, Any] = dict(
-        policy_name="Test Policy",
-        policy_version="v1.0",
-        resolved_threshold=0.9,
-        possible_threshold=0.5,
-        high_confidence_threshold=0.9,
-        medium_confidence_threshold=0.5,
-        min_corroborating_attributes=1,
-        participating_evidence_types=(EvidenceType.LEGAL_NAME_MATCH, EvidenceType.DOMAIN_VERIFIED),
-        mandatory_auto_resolution_evidence=(),
-        evidence_weights={EvidenceType.LEGAL_NAME_MATCH: 0.1, EvidenceType.DOMAIN_VERIFIED: 0.3},
-    )
+    defaults: dict[str, Any] = {
+        "policy_name": "Test Policy",
+        "policy_version": "v1.0",
+        "resolved_threshold": 0.9,
+        "possible_threshold": 0.5,
+        "high_confidence_threshold": 0.9,
+        "medium_confidence_threshold": 0.5,
+        "min_corroborating_attributes": 1,
+        "participating_evidence_types": (
+            EvidenceType.LEGAL_NAME_MATCH,
+            EvidenceType.DOMAIN_VERIFIED,
+        ),
+        "mandatory_auto_resolution_evidence": (),
+        "evidence_weights": {EvidenceType.LEGAL_NAME_MATCH: 0.1, EvidenceType.DOMAIN_VERIFIED: 0.3},
+    }
     defaults.update(overrides)
     return defaults
 

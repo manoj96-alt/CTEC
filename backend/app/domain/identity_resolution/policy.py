@@ -165,7 +165,7 @@ class ResolutionPolicyDefinition:
         }
 
     @staticmethod
-    def from_definition_dict(raw: dict[str, Any]) -> "ResolutionPolicyDefinition":
+    def from_definition_dict(raw: dict[str, Any]) -> ResolutionPolicyDefinition:
         if not isinstance(raw, dict):
             raise ValidationException("Policy definition must be a JSON object")
         unknown_keys = set(raw) - _REQUIRED_KEYS

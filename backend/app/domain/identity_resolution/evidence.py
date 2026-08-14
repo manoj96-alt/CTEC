@@ -204,9 +204,10 @@ def build_evidence_profile(
         raise ValidationException("At least one source representation is required")
 
     participating = set(policy.participating_evidence_types)
-    weight: Callable[[EvidenceType], float] = lambda t: policy.evidence_weights.get(  # noqa: E731
-        t, 0.0
-    )
+
+    def weight(evidence_type: EvidenceType) -> float:
+        return policy.evidence_weights.get(evidence_type, 0.0)
+
     items: list[EvidenceItem] = []
 
     def include(evidence_type: EvidenceType, builder: Callable[[], EvidenceItem]) -> None:
