@@ -97,11 +97,8 @@ def test_missing_source_object_fails_explicitly_not_silently_at_the_service_laye
     _source_representations() seam with no seeded data at all."""
     engine = _isolated_engine()
     tenant_id = f"tenant-{uuid4()}"
-    with Session(engine) as session:
-        with pytest.raises(IncompleteSourceProvenanceError):
-            EntityResolutionStewardApiService._source_representations(
-                session, tenant_id, (uuid4(),)
-            )
+    with Session(engine) as session, pytest.raises(IncompleteSourceProvenanceError):
+        EntityResolutionStewardApiService._source_representations(session, tenant_id, (uuid4(),))
 
 
 def test_present_source_object_and_system_resolve_without_error() -> None:

@@ -19,7 +19,8 @@ const ACTION_DESCRIPTION: Record<StewardDecisionAction, string> = {
     "Resolves the case to the proposed candidate. Refused by the server if the evidence still contains an unresolved veto conflict.",
   reject_match:
     "Rejects the proposed candidate while keeping the case available for further review.",
-  mark_unresolved: "Defers the case for later review, clearing any proposed candidate.",
+  mark_unresolved:
+    "Defers the case for later review, clearing any proposed candidate.",
   block_conflict:
     "Marks the case as a blocked conflict. Refused by the server unless the persisted evidence contains an applicable veto.",
 };
@@ -104,8 +105,8 @@ export function DecisionDialog({
             <p style={{ fontWeight: 700 }}>This case has been updated</p>
             <p>
               Another steward (or the automated engine) has already recorded a
-              decision on this case since it was loaded. Reload the case to
-              see the latest evidence before deciding.
+              decision on this case since it was loaded. Reload the case to see
+              the latest evidence before deciding.
             </p>
             <div className="dialog-actions">
               <button

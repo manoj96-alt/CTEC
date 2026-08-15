@@ -5,7 +5,10 @@ import {
   EntityResolutionApiError,
   entityResolutionApi,
 } from "@/lib/entity-resolution/api-client";
-import type { PolicySummary, PreviewResult } from "@/lib/entity-resolution/contracts";
+import type {
+  PolicySummary,
+  PreviewResult,
+} from "@/lib/entity-resolution/contracts";
 
 type PreviewState =
   | { status: "idle" }
@@ -43,7 +46,10 @@ export function PolicyPreviewPanel({
     if (!selectedPolicyId) return;
     setPreviewState({ status: "loading" });
     try {
-      const result = await entityResolutionApi.preview(understandingKey, selectedPolicyId);
+      const result = await entityResolutionApi.preview(
+        understandingKey,
+        selectedPolicyId,
+      );
       setPreviewState({ status: "ready", result });
     } catch (error) {
       const message =
@@ -59,8 +65,8 @@ export function PolicyPreviewPanel({
       <h3>Policy</h3>
       <p style={{ color: "var(--muted)" }}>
         Choose a policy and preview its simulated outcome before deciding —
-        previewing never changes anything. Deciding applies the policy
-        selected here.
+        previewing never changes anything. Deciding applies the policy selected
+        here.
       </p>
       <div className="form-grid">
         <label>
@@ -87,7 +93,9 @@ export function PolicyPreviewPanel({
           disabled={previewState.status === "loading" || !selectedPolicyId}
           onClick={() => void runPreview()}
         >
-          {previewState.status === "loading" ? "Simulating…" : "Preview outcome"}
+          {previewState.status === "loading"
+            ? "Simulating…"
+            : "Preview outcome"}
         </button>
       </div>
       {previewState.status === "error" && (

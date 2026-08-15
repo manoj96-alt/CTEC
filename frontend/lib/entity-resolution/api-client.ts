@@ -85,7 +85,11 @@ export const entityResolutionApi = {
       { method: "POST" },
       signal,
     ),
-  decide: (understandingKey: string, body: DecisionRequestBody, signal?: AbortSignal) =>
+  decide: (
+    understandingKey: string,
+    body: DecisionRequestBody,
+    signal?: AbortSignal,
+  ) =>
     request<DecisionResult>(
       `/cases/${encodeURIComponent(understandingKey)}/decisions`,
       {

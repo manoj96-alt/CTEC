@@ -100,7 +100,9 @@ export function CaseDetailPanel({
     const controller = new AbortController();
     entityResolutionApi
       .policies(controller.signal)
-      .then((result) => setPoliciesState({ status: "ready", items: result.items }))
+      .then((result) =>
+        setPoliciesState({ status: "ready", items: result.items }),
+      )
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === "AbortError") return;
         setPoliciesState({ status: "error" });
@@ -139,8 +141,7 @@ export function CaseDetailPanel({
         <div role="alert">
           <p style={{ fontWeight: 700 }}>Case not found</p>
           <p style={{ color: "var(--muted)" }}>
-            This case is no longer available, or does not belong to your
-            tenant.
+            This case is no longer available, or does not belong to your tenant.
           </p>
         </div>
       )}
@@ -227,15 +228,19 @@ export function CaseDetailPanel({
             <div className="conditions" style={{ marginTop: "1rem" }}>
               <h3>Prior understanding</h3>
               <p style={{ color: "var(--muted)" }}>
-                {detailState.detail.prior_decision_count} prior record(s).
-                Most recent:{" "}
-                {detailState.detail.previous_decision.outcome} (
+                {detailState.detail.prior_decision_count} prior record(s). Most
+                recent: {detailState.detail.previous_decision.outcome} (
                 {detailState.detail.previous_decision.business_confidence}) by{" "}
                 {detailState.detail.previous_decision.actor_id ??
                   "the automated engine"}{" "}
-                on {formatDate(detailState.detail.previous_decision.produced_at)}
+                on{" "}
+                {formatDate(detailState.detail.previous_decision.produced_at)}
                 {detailState.detail.previous_decision.decision_rationale && (
-                  <> — “{detailState.detail.previous_decision.decision_rationale}”</>
+                  <>
+                    {" "}
+                    — “{detailState.detail.previous_decision.decision_rationale}
+                    ”
+                  </>
                 )}
               </p>
             </div>

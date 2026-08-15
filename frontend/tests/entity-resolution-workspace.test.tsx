@@ -1,17 +1,29 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { EntityResolutionWorkspace } from "@/app/ontology-studio/entity-resolution/_components/entity-resolution-workspace";
 import { EntityResolutionApiError } from "@/lib/entity-resolution/api-client";
 
-const { queueMock, caseDetailMock, policiesMock, previewMock, decideMock, signInMock } =
-  vi.hoisted(() => ({
-    queueMock: vi.fn(),
-    caseDetailMock: vi.fn(),
-    policiesMock: vi.fn(),
-    previewMock: vi.fn(),
-    decideMock: vi.fn(),
-    signInMock: vi.fn(),
-  }));
+const {
+  queueMock,
+  caseDetailMock,
+  policiesMock,
+  previewMock,
+  decideMock,
+  signInMock,
+} = vi.hoisted(() => ({
+  queueMock: vi.fn(),
+  caseDetailMock: vi.fn(),
+  policiesMock: vi.fn(),
+  previewMock: vi.fn(),
+  decideMock: vi.fn(),
+  signInMock: vi.fn(),
+}));
 
 vi.mock("@/lib/entity-resolution/api-client", async () => {
   const actual = await vi.importActual<
@@ -68,7 +80,9 @@ const caseDetail = {
   record_id: "record-1",
   outcome: "Possible Resolution",
   business_confidence: "Medium",
-  structured_reasons: ["Corroborating non-name attributes: 3 (policy requires 3)"],
+  structured_reasons: [
+    "Corroborating non-name attributes: 3 (policy requires 3)",
+  ],
   narrative_explanation:
     "Possible Resolution using policy Supplier Resolution — Conservative v1.0 (score=0.75).",
   produced_at: "2026-01-01T00:00:00Z",
@@ -151,7 +165,11 @@ const policyList = {
   ],
 };
 
-function apiError(code: string, message = "Request could not be completed", status = 400) {
+function apiError(
+  code: string,
+  message = "Request could not be completed",
+  status = 400,
+) {
   return new EntityResolutionApiError(
     { code, message, correlation_id: "corr-1", retryable: false },
     status,
@@ -161,11 +179,15 @@ function apiError(code: string, message = "Request could not be completed", stat
 test("shows a loading state before the queue arrives", () => {
   queueMock.mockReturnValue(new Promise(() => {}));
   render(<EntityResolutionWorkspace />);
-  expect(screen.getByRole("status")).toHaveTextContent(/Loading the resolution case queue/);
+  expect(screen.getByRole("status")).toHaveTextContent(
+    /Loading the resolution case queue/,
+  );
 });
 
 test("shows an unauthorized state with a sign-in action when no token is present", async () => {
-  queueMock.mockRejectedValue(apiError("AUTH_REQUIRED", "Sign in is required", 401));
+  queueMock.mockRejectedValue(
+    apiError("AUTH_REQUIRED", "Sign in is required", 401),
+  );
   render(<EntityResolutionWorkspace />);
   await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
   expect(screen.getByText("Sign in required")).toBeInTheDocument();
@@ -174,10 +196,14 @@ test("shows an unauthorized state with a sign-in action when no token is present
 });
 
 test("shows a bounded error state with Retry when the service is unavailable, never fabricated data", async () => {
-  queueMock.mockRejectedValue(apiError("HTTP_503", "Request could not be completed", 503));
+  queueMock.mockRejectedValue(
+    apiError("HTTP_503", "Request could not be completed", 503),
+  );
   render(<EntityResolutionWorkspace />);
   await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-  expect(screen.getByText(/Entity Resolution service unavailable/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Entity Resolution service unavailable/),
+  ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   expect(screen.queryByText("TSMC")).not.toBeInTheDocument();
 });
@@ -196,11 +222,15 @@ test("renders the queue and, on selection, the case detail with evidence and sou
   policiesMock.mockResolvedValue(policyList);
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
 
   await waitFor(() =>
-    expect(screen.getByText(/Possible Resolution using policy/)).toBeInTheDocument(),
+    expect(
+      screen.getByText(/Possible Resolution using policy/),
+    ).toBeInTheDocument(),
   );
   expect(screen.getByText("Demo CRM: TSMC")).toBeInTheDocument();
   expect(screen.getByText("Demo Registry: TSMC")).toBeInTheDocument();
@@ -222,18 +252,28 @@ test("policy preview shows the simulated outcome without applying anything", asy
     business_confidence: "High",
     score: 0.91,
     would_change_outcome: true,
-    structured_reasons: ["Corroborating non-name attributes: 4 (policy requires 2)"],
+    structured_reasons: [
+      "Corroborating non-name attributes: 4 (policy requires 2)",
+    ],
   });
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
-  await waitFor(() => expect(screen.getByText("Preview outcome")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Preview outcome")).toBeInTheDocument(),
+  );
 
-  fireEvent.change(screen.getByLabelText("Policy"), { target: { value: "policy-2" } });
+  fireEvent.change(screen.getByLabelText("Policy"), {
+    target: { value: "policy-2" },
+  });
   fireEvent.click(screen.getByText("Preview outcome"));
 
-  await waitFor(() => expect(screen.getByText("Would change outcome?")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Would change outcome?")).toBeInTheDocument(),
+  );
   expect(screen.getByText("Yes")).toBeInTheDocument();
   expect(previewMock).toHaveBeenCalledWith("case-key-1", "policy-2");
   expect(decideMock).not.toHaveBeenCalled();
@@ -245,9 +285,13 @@ test("a decision requires a rationale before it can be submitted", async () => {
   policiesMock.mockResolvedValue(policyList);
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
-  await waitFor(() => expect(screen.getByText("Record a decision")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Record a decision")).toBeInTheDocument(),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Mark unresolved" }));
   const dialog = screen.getByRole("dialog", { name: "Mark unresolved" });
@@ -280,16 +324,24 @@ test("a successful decision submits the based_on_record_id and selected policy, 
   });
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
-  await waitFor(() => expect(screen.getByText("Record a decision")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Record a decision")).toBeInTheDocument(),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Mark unresolved" }));
   const decideDialog = screen.getByRole("dialog", { name: "Mark unresolved" });
   fireEvent.change(within(decideDialog).getByLabelText("Rationale"), {
     target: { value: "Deferring for further investigation." },
   });
-  fireEvent.click(within(decideDialog).getByRole("button", { name: "Confirm: Mark unresolved" }));
+  fireEvent.click(
+    within(decideDialog).getByRole("button", {
+      name: "Confirm: Mark unresolved",
+    }),
+  );
 
   await waitFor(() => expect(decideMock).toHaveBeenCalledTimes(1));
   expect(decideMock).toHaveBeenCalledWith("case-key-1", {
@@ -305,27 +357,43 @@ test("a stale decision (409) shows a reload prompt instead of a silent failure",
   queueMock.mockResolvedValue({ items: [caseSummary] });
   caseDetailMock.mockResolvedValue(caseDetail);
   policiesMock.mockResolvedValue(policyList);
-  decideMock.mockRejectedValue(apiError("STALE_RESOLUTION_CASE", "Request could not be completed", 409));
+  decideMock.mockRejectedValue(
+    apiError("STALE_RESOLUTION_CASE", "Request could not be completed", 409),
+  );
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
-  await waitFor(() => expect(screen.getByText("Record a decision")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Record a decision")).toBeInTheDocument(),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Mark unresolved" }));
   const staleDialog = screen.getByRole("dialog", { name: "Mark unresolved" });
   fireEvent.change(within(staleDialog).getByLabelText("Rationale"), {
     target: { value: "Deferring for further investigation." },
   });
-  fireEvent.click(within(staleDialog).getByRole("button", { name: "Confirm: Mark unresolved" }));
+  fireEvent.click(
+    within(staleDialog).getByRole("button", {
+      name: "Confirm: Mark unresolved",
+    }),
+  );
 
   await waitFor(() =>
-    expect(within(staleDialog).getByText("This case has been updated")).toBeInTheDocument(),
+    expect(
+      within(staleDialog).getByText("This case has been updated"),
+    ).toBeInTheDocument(),
   );
-  expect(within(staleDialog).getByRole("button", { name: "Reload case" })).toBeInTheDocument();
+  expect(
+    within(staleDialog).getByRole("button", { name: "Reload case" }),
+  ).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Reload case" }));
-  await waitFor(() => expect(caseDetailMock.mock.calls.length).toBeGreaterThan(1));
+  await waitFor(() =>
+    expect(caseDetailMock.mock.calls.length).toBeGreaterThan(1),
+  );
 });
 
 test("a case with no evidence profile is shown honestly, not fabricated", async () => {
@@ -334,24 +402,36 @@ test("a case with no evidence profile is shown honestly, not fabricated", async 
   policiesMock.mockResolvedValue(policyList);
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
 
   await waitFor(() =>
-    expect(screen.getByText("No evidence profile is available")).toBeInTheDocument(),
+    expect(
+      screen.getByText("No evidence profile is available"),
+    ).toBeInTheDocument(),
   );
 });
 
 test("a case not found on cross-tenant access shows a bounded not-found state", async () => {
   queueMock.mockResolvedValue({ items: [caseSummary] });
   caseDetailMock.mockRejectedValue(
-    apiError("RESOLUTION_CASE_NOT_FOUND", "Request could not be completed", 404),
+    apiError(
+      "RESOLUTION_CASE_NOT_FOUND",
+      "Request could not be completed",
+      404,
+    ),
   );
   policiesMock.mockResolvedValue(policyList);
   render(<EntityResolutionWorkspace />);
 
-  await waitFor(() => expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getAllByText("TSMC")[0]).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getAllByText("TSMC")[0]);
 
-  await waitFor(() => expect(screen.getByText("Case not found")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Case not found")).toBeInTheDocument(),
+  );
 });

@@ -4,20 +4,15 @@
 // frontend never re-derives evidence, scores, or outcomes on its own.
 
 export type ResolutionOutcome =
-  | "Resolved"
-  | "Possible Resolution"
-  | "Unresolved"
-  | "Blocked Conflict";
+  "Resolved" | "Possible Resolution" | "Unresolved" | "Blocked Conflict";
 
 export type BusinessConfidence = "High" | "Medium" | "Low";
 
-export type EvidenceClassification = "Positive" | "Negative" | "Missing" | "Veto";
+export type EvidenceClassification =
+  "Positive" | "Negative" | "Missing" | "Veto";
 
 export type StewardDecisionAction =
-  | "confirm_match"
-  | "reject_match"
-  | "mark_unresolved"
-  | "block_conflict";
+  "confirm_match" | "reject_match" | "mark_unresolved" | "block_conflict";
 
 export interface EvidenceItem {
   evidence_type: string;

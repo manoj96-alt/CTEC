@@ -130,7 +130,9 @@ def test_two_concurrent_decisions_on_the_same_based_on_record_id_exactly_one_suc
             results[label] = "success"
         except StaleResolutionCaseError:
             results[label] = "stale"
-        except Exception as exc:  # pragma: no cover - failure surfaced via assertion below
+        # Thread target: must not let an exception vanish silently -- record it
+        # for the assertion below instead of letting the thread die quietly.
+        except Exception as exc:  # noqa: BLE001
             results[label] = f"error: {exc!r}"
 
     thread_a = threading.Thread(target=attempt, args=("a",))

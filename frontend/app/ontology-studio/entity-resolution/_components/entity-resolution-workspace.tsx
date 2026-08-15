@@ -130,8 +130,8 @@ export function EntityResolutionWorkspace() {
           <span className="eyebrow">Ontology Studio</span>
           <h1>Entity Resolution Steward</h1>
           <p>
-            Review multi-attribute evidence, preview policy outcomes, and
-            record steward decisions for supplier resolution cases.
+            Review multi-attribute evidence, preview policy outcomes, and record
+            steward decisions for supplier resolution cases.
           </p>
         </div>
       </div>

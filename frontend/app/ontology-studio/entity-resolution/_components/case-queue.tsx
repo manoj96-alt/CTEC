@@ -1,6 +1,9 @@
 "use client";
 
-import type { CaseSummary, ResolutionOutcome } from "@/lib/entity-resolution/contracts";
+import type {
+  CaseSummary,
+  ResolutionOutcome,
+} from "@/lib/entity-resolution/contracts";
 
 export type OutcomeFilter = "all" | ResolutionOutcome;
 
@@ -34,7 +37,12 @@ export function CaseQueue({
       <div
         role="tablist"
         aria-label="Filter by outcome"
-        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}
+        style={{
+          display: "flex",
+          gap: "0.5rem",
+          flexWrap: "wrap",
+          marginBottom: "1rem",
+        }}
       >
         {FILTERS.map((filter) => (
           <button
@@ -78,7 +86,8 @@ export function CaseQueue({
                 onClick={() => onSelect(item.understanding_key)}
               >
                 <strong>
-                  {item.candidate_enterprise_entity_name ?? "No candidate attached"}
+                  {item.candidate_enterprise_entity_name ??
+                    "No candidate attached"}
                 </strong>
                 <span>{item.outcome}</span>
                 <small style={{ color: "var(--muted)" }}>
