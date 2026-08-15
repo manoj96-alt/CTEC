@@ -175,6 +175,40 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_identity_resolution_normalization.py",
     "backend/app/tests/test_identity_resolution_policy.py",
     "backend/app/tests/test_resolution_policy_store.py",
+    # Increment 3A Gate C: Entity Resolution Steward API (application
+    # service, decision semantics, preview, router). Reuses Supplier Risk's
+    # authentication/authorization/rate-limiting/audit infrastructure; no
+    # migration required.
+    "backend/app/api/entity_resolution/__init__.py",
+    "backend/app/api/entity_resolution/dependencies.py",
+    "backend/app/api/entity_resolution/router.py",
+    "backend/app/api/entity_resolution/schemas.py",
+    "backend/app/api/supplier_risk/audit.py",
+    "backend/app/application/entity_resolution_steward_api.py",
+    "backend/app/core/dependency_container.py",
+    "backend/app/infrastructure/persistence/entity_resolution_store.py",
+    "backend/app/main.py",
+    "backend/app/tests/test_entity_resolution_steward_decision.py",
+    "backend/app/tests/test_entity_resolution_steward_router.py",
+    "backend/app/tests/test_entity_resolution_steward_api_postgres.py",
+    "backend/app/tests/test_entity_resolution_steward_concurrency_postgres.py",
+    "backend/app/tests/test_entity_resolution_steward_provenance_guard.py",
+    "backend/app/tests/test_entity_resolution_steward_full_stack_postgres.py",
+    "backend/app/infrastructure/persistence/demo_entity_resolution_seeder.py",
+    "backend/app/tests/test_demo_entity_resolution_seeder.py",
+    "backend/app/tests/test_demo_entity_resolution_seeder_postgres.py",
+    "frontend/lib/auth/config.ts",
+    "frontend/lib/entity-resolution/api-client.ts",
+    "frontend/lib/entity-resolution/contracts.ts",
+    "frontend/app/ontology-studio/entity-resolution/page.tsx",
+    "frontend/app/ontology-studio/entity-resolution/_components/case-detail-panel.tsx",
+    "frontend/app/ontology-studio/entity-resolution/_components/case-queue.tsx",
+    "frontend/app/ontology-studio/entity-resolution/_components/decision-dialog.tsx",
+    "frontend/app/ontology-studio/entity-resolution/_components/entity-resolution-workspace.tsx",
+    "frontend/app/ontology-studio/entity-resolution/_components/evidence-list.tsx",
+    "frontend/app/ontology-studio/entity-resolution/_components/policy-preview-panel.tsx",
+    "frontend/app/ontology-studio/_components/entity-resolution-link-card.tsx",
+    "frontend/tests/entity-resolution-workspace.test.tsx",
 }
 
 

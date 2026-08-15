@@ -15,6 +15,7 @@ import { OntologyGraph } from "./ontology-graph";
 import { QualityPanel } from "./quality-panel";
 import { ApiExportPanel } from "./api-export-panel";
 import { ActivationCard } from "./activation-card";
+import { EntityResolutionLinkCard } from "./entity-resolution-link-card";
 
 type LoadState =
   | { status: "loading" }
@@ -110,6 +111,7 @@ export function StudioClient() {
         ontology={ontology}
         connectorCount={connectorCount(connectors)}
       />
+      <EntityResolutionLinkCard />
       <ConnectorCatalogPanel connectors={connectors} />
       <OntologyGraph
         concepts={ontology.concepts}

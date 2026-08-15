@@ -13,6 +13,7 @@ from app.domain.identity_resolution.model import (
     EvidenceType,
     ResolutionCandidate,
     ResolutionOutcome,
+    StewardDecisionAction,
 )
 from app.domain.identity_resolution.policy import (
     ResolutionPolicyDefinition,
@@ -23,6 +24,7 @@ from app.domain.identity_resolution.policy import (
 from app.domain.identity_resolution.service import (
     EntityResolutionEngine,
     EvidenceResolutionEngine,
+    OverrideNotPermittedError,
     ResolutionPolicy,
 )
 
@@ -35,12 +37,14 @@ __all__ = [
     "EvidenceProfile",
     "EvidenceResolutionEngine",
     "EvidenceType",
+    "OverrideNotPermittedError",
     "ResolutionCandidate",
     "ResolutionDecision",
     "ResolutionOutcome",
     "ResolutionPolicy",
     "ResolutionPolicyDefinition",
     "SourceRepresentation",
+    "StewardDecisionAction",
     "balanced_preset",
     "build_evidence_profile",
     "conservative_preset",

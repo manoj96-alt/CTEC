@@ -15,7 +15,8 @@ export function browserAuthConfig(): BrowserAuthConfig {
       process.env.NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI ?? "",
     apiOrigin: process.env.NEXT_PUBLIC_CTEC_API_ORIGIN ?? "",
     scope:
-      process.env.NEXT_PUBLIC_OIDC_SCOPE ?? "openid profile supplier-risk:read",
+      process.env.NEXT_PUBLIC_OIDC_SCOPE ??
+      "openid profile supplier-risk:read entity-resolution:read entity-resolution:decide",
   };
   if (
     Object.entries(values).some(([key, value]) => key !== "scope" && !value)

@@ -1,5 +1,8 @@
 # CTEC Local Demo Runbook
 
+See [`docs/entity-resolution-steward.md`](docs/entity-resolution-steward.md) for
+the Entity Resolution Steward API, OIDC scopes, and demo seeder.
+
 ## Prerequisites
 
 Copy `.env.example` to `.env` and set at minimum:
@@ -56,6 +59,7 @@ docker compose down -v
 |---|---|
 | Frontend | http://localhost:3000 |
 | Ontology Studio | http://localhost:3000/ontology-studio |
+| Entity Resolution Steward | http://localhost:3000/ontology-studio/entity-resolution |
 | Supplier Risk | http://localhost:3000/supplier-risk |
 | Backend API | http://localhost:8000 |
 | API docs (FastAPI) | http://localhost:8000/docs |
