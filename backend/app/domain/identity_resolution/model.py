@@ -26,6 +26,19 @@ class BusinessConfidence(StrEnum):
     LOW = "Low"
 
 
+class StewardDecisionAction(StrEnum):
+    """The fixed, exhaustive set of human steward actions on a resolution
+    case (Increment 3A Gate C). Not a general workflow/state-machine
+    vocabulary -- exactly the four actions the product supports, each with
+    fixed outcome semantics enforced by
+    EvidenceResolutionEngine.decide_steward_action()."""
+
+    CONFIRM_MATCH = "confirm_match"
+    REJECT_MATCH = "reject_match"
+    MARK_UNRESOLVED = "mark_unresolved"
+    BLOCK_CONFLICT = "block_conflict"
+
+
 @dataclass(frozen=True, slots=True)
 class ResolutionCandidate:
     enterprise_entity_id: UUID
@@ -166,6 +179,34 @@ class EvidenceProfile:
             ]
         }
 
+    @staticmethod
+    def from_record(data: dict[str, object]) -> "EvidenceProfile":
+        """Inverse of as_record(): reconstructs the domain object from the
+        exact JSON shape persisted on
+        EnterpriseEntityResolutionRecordModel.evidence_profile. Used by
+        Gate C to re-decide against an already-computed profile without
+        ever re-deriving it from raw source representations (which are
+        never persisted)."""
+        raw_items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(raw_items, list):
+            raise ValidationException("Evidence profile record must be a dict with an items list")
+        try:
+            items = tuple(
+                EvidenceItem(
+                    evidence_type=EvidenceType(raw["evidence_type"]),
+                    compared_attributes=tuple(raw["compared_attributes"]),
+                    normalized_values=tuple(raw["normalized_values"]),
+                    classification=EvidenceClassification(raw["classification"]),
+                    contribution=float(raw["contribution"]),
+                    explanation=raw["explanation"],
+                    provenance=raw["provenance"],
+                )
+                for raw in raw_items
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise ValidationException(f"Malformed evidence profile record: {error}") from error
+        return EvidenceProfile(items=items)
+
 
 @dataclass(frozen=True, slots=True)
 class EnterpriseEntityResolutionRecord:
@@ -196,7 +237,15 @@ class EnterpriseEntityResolutionRecord:
             raise ValidationException(
                 "Unresolved and Blocked Conflict records cannot reference an Enterprise Entity"
             )
-        if self.outcome not in entity_free_outcomes and self.enterprise_entity_id is None:
+        # Only RESOLVED strictly requires an Enterprise Entity reference.
+        # POSSIBLE may carry one (the automatic engine always ties a
+        # POSSIBLE candidate to a specific entity -- see
+        # EvidenceResolutionEngine.resolve()'s own, stricter requirement for
+        # that path) or may not (a steward's reject_match decision -- Gate
+        # C -- clears the candidate while the case remains POSSIBLE: there
+        # is no ranked "next candidate" in the multi-attribute evidence
+        # model to fall back to).
+        if self.outcome is ResolutionOutcome.RESOLVED and self.enterprise_entity_id is None:
             raise ValidationException("Resolved outcomes require an Enterprise Entity reference")
         if not self.structured_reasons or not self.narrative_explanation.strip():
             raise ValidationException("Structured reasons and narrative explanation are required")

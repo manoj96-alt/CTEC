@@ -24,11 +24,12 @@ class SecurityAuditService:
         principal: TrustedPrincipal | None = None,
         execution_id: UUID | None = None,
         authorization_reference: str | None = None,
+        endpoint_classification: str = "SUPPLIER_RISK_API_V1",
     ) -> UUID:
         return self._repository.append(
             ApiSecurityAuditEvent(
                 operation=operation,
-                endpoint_classification="SUPPLIER_RISK_API_V1",
+                endpoint_classification=endpoint_classification,
                 event_category=category,
                 outcome=outcome,
                 diagnostic_code=code,

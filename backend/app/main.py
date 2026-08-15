@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.config.router import router as config_router
+from app.api.entity_resolution.router import router as entity_resolution_router
 from app.api.health.router import router as health_router
 from app.api.ontology.router import router as ontology_router
 from app.api.supplier_risk.router import router as supplier_risk_router
@@ -43,9 +44,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Paths using the flat, stable {"code", "message", "correlation_id",
+    # "retryable"} error contract instead of FastAPI's default nested
+    # {"detail": ...} body. Additive only: every other existing path
+    # (ontology, config, version, health) keeps the default shape
+    # byte-for-byte.
+    _STABLE_ERROR_CONTRACT_PATHS = ("/api/v1/supplier-risk", "/api/v1/entity-resolution")
+
     @app.exception_handler(HTTPException)
     async def supplier_risk_http_error(request: Request, exc: HTTPException) -> JSONResponse:
-        if not request.url.path.startswith("/api/v1/supplier-risk"):
+        if not request.url.path.startswith(_STABLE_ERROR_CONTRACT_PATHS):
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         detail: dict[str, object] = exc.detail if isinstance(exc.detail, dict) else {}
         code = str(detail.get("code", "REQUEST_REJECTED"))
@@ -63,7 +71,7 @@ def create_app() -> FastAPI:
     async def supplier_risk_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        if not request.url.path.startswith("/api/v1/supplier-risk"):
+        if not request.url.path.startswith(_STABLE_ERROR_CONTRACT_PATHS):
             return JSONResponse(status_code=422, content={"detail": exc.errors()})
         return JSONResponse(
             status_code=422,
@@ -109,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(version_router, prefix=API_PREFIX)
     app.include_router(supplier_risk_router)
     app.include_router(ontology_router)
+    app.include_router(entity_resolution_router)
     return app
 
 

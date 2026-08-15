@@ -25,6 +25,19 @@ class CrossTenantReferenceError(Exception):
     """
 
 
+class ResolutionCaseNotFoundError(Exception):
+    """Raised when a decision targets an understanding_key with no case
+    owned by the acting tenant (unknown, foreign-tenant, or tampered-with
+    key -- the caller never learns which)."""
+
+
+class StaleResolutionCaseError(Exception):
+    """Raised when a decision's based_on_record_id no longer matches the
+    case's current record: another steward (or the automated engine)
+    already appended a successor record since the caller last read this
+    case. The caller must reload and decide again."""
+
+
 class EntityResolutionStore:
     """Append immutable records and maintain currentness outside record state."""
 
@@ -54,9 +67,11 @@ class EntityResolutionStore:
                 f"tenant {record.tenant_id!r}: {sorted(str(v) for v in missing)}"
             )
 
-    def append(self, record: EnterpriseEntityResolutionRecord) -> None:
-        self._assert_source_objects_owned_by_tenant(record)
-        model = EnterpriseEntityResolutionRecordModel(
+    @staticmethod
+    def _to_model(
+        record: EnterpriseEntityResolutionRecord,
+    ) -> EnterpriseEntityResolutionRecordModel:
+        return EnterpriseEntityResolutionRecordModel(
             record_id=record.record_id,
             tenant_id=record.tenant_id,
             enterprise_entity_id=record.enterprise_entity_id,
@@ -76,7 +91,10 @@ class EntityResolutionStore:
             actor_id=record.actor_id,
             decision_rationale=record.decision_rationale,
         )
-        self.session.add(model)
+
+    def append(self, record: EnterpriseEntityResolutionRecord) -> None:
+        self._assert_source_objects_owned_by_tenant(record)
+        self.session.add(self._to_model(record))
         key = self.understanding_key(record.supporting_source_object_ids)
         record_history = self.session.get(EnterpriseEntityResolutionHistoryModel, key)
         if record_history is None:
@@ -102,7 +120,61 @@ class EntityResolutionStore:
             record_history.current_record_identifier = record.record_id
             record_history.updated_at = record.produced_at
 
-    def list_current_records(self, tenant_id: str) -> list[EnterpriseEntityResolutionRecordModel]:
+    def append_decision(
+        self,
+        record: EnterpriseEntityResolutionRecord,
+        *,
+        understanding_key: str,
+        based_on_record_id: UUID,
+    ) -> None:
+        """Concurrency-safe append for a steward decision: locks the case's
+        history row for the duration of the transaction, verifies
+        based_on_record_id still matches the current record, and only then
+        appends the new immutable successor record and re-points history.
+
+        The row lock (SELECT ... FOR UPDATE) is what makes the
+        based_on_record_id comparison race-free: two stewards deciding the
+        same case concurrently cannot both pass the comparison, because the
+        second transaction blocks on the lock until the first commits (or
+        rolls back), then re-reads the now-updated current_record_identifier
+        and correctly loses the comparison.
+        """
+        self._assert_source_objects_owned_by_tenant(record)
+        history = self.session.get(
+            EnterpriseEntityResolutionHistoryModel,
+            understanding_key,
+            with_for_update=True,
+        )
+        if history is None or history.tenant_id != record.tenant_id:
+            raise ResolutionCaseNotFoundError(
+                f"No case {understanding_key!r} is owned by tenant {record.tenant_id!r}"
+            )
+        if history.current_record_identifier != based_on_record_id:
+            raise StaleResolutionCaseError(
+                f"Case {understanding_key!r} has moved on from record {based_on_record_id}; "
+                f"current record is {history.current_record_identifier}"
+            )
+        self.session.add(self._to_model(record))
+        # Force the new record's INSERT to hit the database before the
+        # history row's UPDATE, which references it via a foreign key
+        # (fk_eer_history_tenant_active_record). The two mapped classes
+        # have no ORM relationship() between them, so SQLAlchemy's
+        # automatic flush-ordering cannot be relied on here.
+        self.session.flush()
+        history.historical_record_references = [
+            *history.historical_record_references,
+            str(history.current_record_identifier),
+        ]
+        history.current_record_identifier = record.record_id
+        history.updated_at = record.produced_at
+
+    def list_current_records(
+        self,
+        tenant_id: str,
+        *,
+        outcomes: tuple[str, ...] | None = None,
+        require_evidence_profile: bool = False,
+    ) -> list[EnterpriseEntityResolutionRecordModel]:
         """Tenant-scoped read of the current record for every case. Filters
         both the history projection and the record itself by tenant_id, so a
         cross-tenant collision at either layer cannot surface a result."""
@@ -113,12 +185,17 @@ class EntityResolutionStore:
         ).all()
         if not current_ids:
             return []
+        conditions = [
+            EnterpriseEntityResolutionRecordModel.tenant_id == tenant_id,
+            EnterpriseEntityResolutionRecordModel.record_id.in_(current_ids),
+        ]
+        if outcomes:
+            conditions.append(EnterpriseEntityResolutionRecordModel.outcome.in_(outcomes))
+        if require_evidence_profile:
+            conditions.append(EnterpriseEntityResolutionRecordModel.evidence_profile.is_not(None))
         return list(
             self.session.scalars(
-                select(EnterpriseEntityResolutionRecordModel).where(
-                    EnterpriseEntityResolutionRecordModel.tenant_id == tenant_id,
-                    EnterpriseEntityResolutionRecordModel.record_id.in_(current_ids),
-                )
+                select(EnterpriseEntityResolutionRecordModel).where(*conditions)
             ).all()
         )
 
@@ -133,6 +210,28 @@ class EntityResolutionStore:
         record = self.session.get(
             EnterpriseEntityResolutionRecordModel, history.current_record_identifier
         )
+        if record is None or record.tenant_id != tenant_id:
+            return None
+        return record
+
+    def get_history(
+        self, tenant_id: str, understanding_key: str
+    ) -> EnterpriseEntityResolutionHistoryModel | None:
+        """Tenant-scoped access to the case's history projection (the prior-
+        understanding record-id chain), for display alongside the current
+        record -- never another tenant's row."""
+        history = self.session.get(EnterpriseEntityResolutionHistoryModel, understanding_key)
+        if history is None or history.tenant_id != tenant_id:
+            return None
+        return history
+
+    def get_record_by_id(
+        self, tenant_id: str, record_id: UUID
+    ) -> EnterpriseEntityResolutionRecordModel | None:
+        """Tenant-scoped lookup of any (current or historical) record by id,
+        for rendering a prior understanding without exposing another
+        tenant's row."""
+        record = self.session.get(EnterpriseEntityResolutionRecordModel, record_id)
         if record is None or record.tenant_id != tenant_id:
             return None
         return record

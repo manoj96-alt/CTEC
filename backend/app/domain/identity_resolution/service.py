@@ -13,11 +13,21 @@ from app.domain.identity_resolution.evidence import (
 from app.domain.identity_resolution.model import (
     BusinessConfidence,
     EnterpriseEntityResolutionRecord,
+    EvidenceProfile,
     ResolutionCandidate,
     ResolutionOutcome,
+    StewardDecisionAction,
 )
 from app.domain.identity_resolution.policy import ResolutionPolicyDefinition
 from app.domain.shared.exceptions import ValidationException
+
+
+class OverrideNotPermittedError(ValidationException):
+    """Raised when a human override would contradict a non-configurable Gate
+    B safety invariant (currently: an unresolved veto conflict). A steward
+    can select a candidate only where domain rules permit it; this error is
+    the enforcement point that makes BLOCKED_CONFLICT -> RESOLVED
+    structurally impossible, regardless of caller intent."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +193,16 @@ class EvidenceResolutionEngine:
                 candidate_parent_entity_name=candidate_parent_entity_name,
                 policy=self.policy,
             )
+            # Non-configurable safety invariant: a human override can never
+            # turn a veto conflict (BLOCKED_CONFLICT) into RESOLVED. Evaluate
+            # the same evidence the automatic engine would see before
+            # honoring the override.
+            natural_decision = decide(profile, self.policy)
+            if natural_decision.outcome is ResolutionOutcome.BLOCKED_CONFLICT:
+                raise OverrideNotPermittedError(
+                    "Cannot override to Resolved: evidence contains an unresolved veto "
+                    f"conflict ({'; '.join(natural_decision.triggered_veto_rules)})"
+                )
             return EnterpriseEntityResolutionRecord(
                 record_id=uuid4(),
                 tenant_id=tenant_id,
@@ -233,4 +253,102 @@ class EvidenceResolutionEngine:
             policy_version=self.policy.policy_version,
             evidence_profile=decision.evidence_profile,
             policy_id=self.policy_id,
+        )
+
+    def decide_steward_action(
+        self,
+        *,
+        tenant_id: str,
+        supporting_source_object_ids: tuple[UUID, ...],
+        evidence_profile: EvidenceProfile,
+        current_enterprise_entity_id: UUID | None,
+        action: StewardDecisionAction,
+        actor_id: str,
+        decision_rationale: str,
+        produced_at: datetime,
+    ) -> EnterpriseEntityResolutionRecord:
+        """Apply one fixed steward decision to an already-persisted,
+        already-computed EvidenceProfile (never raw source representations
+        -- those are never persisted; see evidence.py's module docstring).
+        decide() is a pure function of (evidence_profile, policy), so the
+        veto/score facts it returns here are identical to what the
+        automatic engine already established. This is the single place
+        confirm/reject/unresolved/block-conflict outcome semantics are
+        decided; the API layer must never construct an
+        EnterpriseEntityResolutionRecord's outcome itself.
+        """
+        if not actor_id.strip():
+            raise ValidationException("A steward decision requires a non-blank actor id")
+        if not decision_rationale.strip():
+            raise ValidationException("A steward decision requires a non-blank rationale")
+
+        decision = decide(evidence_profile, self.policy)
+
+        if action is StewardDecisionAction.CONFIRM_MATCH:
+            if decision.outcome is ResolutionOutcome.BLOCKED_CONFLICT:
+                raise OverrideNotPermittedError(
+                    "Cannot confirm a match while evidence contains an unresolved veto "
+                    f"conflict ({'; '.join(decision.triggered_veto_rules)})"
+                )
+            if current_enterprise_entity_id is None:
+                raise ValidationException(
+                    "confirm_match requires a candidate enterprise entity reference"
+                )
+            entity_id: UUID | None = current_enterprise_entity_id
+            outcome = ResolutionOutcome.RESOLVED
+            confidence = BusinessConfidence.HIGH
+            reasons: tuple[str, ...] = (
+                "Authorized human override: steward confirmed the proposed candidate.",
+            )
+        elif action is StewardDecisionAction.REJECT_MATCH:
+            entity_id = None
+            if decision.outcome is ResolutionOutcome.BLOCKED_CONFLICT:
+                # A hard veto conflict cannot be rejected away; the evidence
+                # itself still blocks automatic or steward resolution.
+                outcome = ResolutionOutcome.BLOCKED_CONFLICT
+            else:
+                outcome = (
+                    ResolutionOutcome.POSSIBLE
+                    if decision.score >= self.policy.possible_threshold
+                    else ResolutionOutcome.UNRESOLVED
+                )
+            confidence = decision.business_confidence
+            reasons = ("Steward rejected the proposed candidate.", *decision.structured_reasons)
+        elif action is StewardDecisionAction.MARK_UNRESOLVED:
+            entity_id = None
+            outcome = ResolutionOutcome.UNRESOLVED
+            confidence = BusinessConfidence.LOW
+            reasons = ("Steward marked this case unresolved.",)
+        elif action is StewardDecisionAction.BLOCK_CONFLICT:
+            if decision.outcome is not ResolutionOutcome.BLOCKED_CONFLICT:
+                raise ValidationException(
+                    "block_conflict requires persisted evidence containing an applicable "
+                    "veto/conflict"
+                )
+            entity_id = None
+            outcome = ResolutionOutcome.BLOCKED_CONFLICT
+            confidence = BusinessConfidence.LOW
+            reasons = decision.triggered_veto_rules or ("Steward blocked this case.",)
+        else:
+            raise ValidationException(f"Unknown steward decision action: {action}")
+
+        narrative = (
+            f"{outcome.value} using policy {self.policy.policy_version} (steward action: "
+            f"{action.value}): {'; '.join(reasons)}."
+        )
+        return EnterpriseEntityResolutionRecord(
+            record_id=uuid4(),
+            tenant_id=tenant_id,
+            enterprise_entity_id=entity_id,
+            supporting_source_object_ids=supporting_source_object_ids,
+            outcome=outcome,
+            business_confidence=confidence,
+            structured_reasons=reasons,
+            narrative_explanation=narrative,
+            produced_at=produced_at,
+            policy_version=self.policy.policy_version,
+            evidence_profile=evidence_profile,
+            policy_id=self.policy_id,
+            actor_id=actor_id,
+            decision_rationale=decision_rationale,
         )
