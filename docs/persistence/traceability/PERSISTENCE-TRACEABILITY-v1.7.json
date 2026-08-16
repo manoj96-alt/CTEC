@@ -1,0 +1,4098 @@
+{
+  "schema_source": "architecture/released/v1.9/ECOM_Physical_Data_Model_v1_7.sql",
+  "schema_sha256": "2a2c8d9faa99320310df59f16725177b5e0b761cd0d2fe7d62f341457eb9b0f4",
+  "ead_source": "docs/persistence/traceability/EAD-001-v1.7.json",
+  "tables": 32,
+  "columns": 374,
+  "foreign_keys": [
+    {
+      "constraint": "fk_enterprises_enterprise_type_id",
+      "source": "enterprises.enterprise_type_id",
+      "target": "enterprise_types.enterprise_type_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_enterprises_country_id",
+      "source": "enterprises.country_id",
+      "target": "countries.country_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_enterprises_created_by",
+      "source": "enterprises.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_enterprises_modified_by",
+      "source": "enterprises.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_enterprises_previous_version_id",
+      "source": "enterprises.previous_version_id",
+      "target": "enterprises.enterprise_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_business_domains_enterprise_id",
+      "source": "business_domains.enterprise_id",
+      "target": "enterprises.enterprise_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_business_domains_created_by",
+      "source": "business_domains.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_business_domains_modified_by",
+      "source": "business_domains.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_business_domains_previous_version_id",
+      "source": "business_domains.previous_version_id",
+      "target": "business_domains.business_domain_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_concepts_created_by",
+      "source": "institutional_concepts.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_concepts_modified_by",
+      "source": "institutional_concepts.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_concepts_previous_version_id",
+      "source": "institutional_concepts.previous_version_id",
+      "target": "institutional_concepts.institutional_concept_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_concepts_enterprise_id",
+      "source": "institutional_concepts.enterprise_id",
+      "target": "enterprises.enterprise_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_relationship_types_created_by",
+      "source": "relationship_types.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_relationship_types_modified_by",
+      "source": "relationship_types.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_relationship_types_previous_version_id",
+      "source": "relationship_types.previous_version_id",
+      "target": "relationship_types.relationship_type_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_entity_types_created_by",
+      "source": "entity_types.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_entity_types_modified_by",
+      "source": "entity_types.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_entity_types_previous_version_id",
+      "source": "entity_types.previous_version_id",
+      "target": "entity_types.entity_type_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_entity_types_institutional_concept_id",
+      "source": "entity_types.institutional_concept_id",
+      "target": "institutional_concepts.institutional_concept_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_enterprise_entities_created_by",
+      "source": "enterprise_entities.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_enterprise_entities_modified_by",
+      "source": "enterprise_entities.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_enterprise_entities_previous_version_id",
+      "source": "enterprise_entities.previous_version_id",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_enterprise_entities_entity_type_id",
+      "source": "enterprise_entities.entity_type_id",
+      "target": "entity_types.entity_type_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_enterprise_entities_business_domain_id",
+      "source": "enterprise_entities.business_domain_id",
+      "target": "business_domains.business_domain_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_evidences_created_by",
+      "source": "evidences.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_evidences_modified_by",
+      "source": "evidences.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_evidences_previous_version_id",
+      "source": "evidences.previous_version_id",
+      "target": "evidences.evidence_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_evidences_source_object_id",
+      "source": "evidences.source_object_id",
+      "target": "source_objects.source_object_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_created_by",
+      "source": "assertions.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_assertions_modified_by",
+      "source": "assertions.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_assertions_previous_version_id",
+      "source": "assertions.previous_version_id",
+      "target": "assertions.assertion_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_assertions_subject_entity_id",
+      "source": "assertions.subject_entity_id",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_object_entity_id",
+      "source": "assertions.object_entity_id",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_source_system_id",
+      "source": "assertions.source_system_id",
+      "target": "source_systems.source_system_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_source_object_id",
+      "source": "assertions.source_object_id",
+      "target": "source_objects.source_object_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_prior_assertion_id",
+      "source": "assertions.prior_assertion_id",
+      "target": "assertions.assertion_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_knowledge_id",
+      "source": "assertions.knowledge_id",
+      "target": "knowledges.knowledge_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_assertions_relationship_type_id",
+      "source": "assertions.relationship_type_id",
+      "target": "relationship_types.relationship_type_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_institutional_relationships_created_by",
+      "source": "institutional_relationships.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_relationships_modified_by",
+      "source": "institutional_relationships.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_relationships_previous_version_id",
+      "source": "institutional_relationships.previous_version_id",
+      "target": "institutional_relationships.institutional_relationship_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_relationships_relationship_type_id",
+      "source": "institutional_relationships.relationship_type_id",
+      "target": "relationship_types.relationship_type_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_institutional_relationships_superseded_by_id",
+      "source": "institutional_relationships.superseded_by_id",
+      "target": "institutional_relationships.institutional_relationship_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_knowledges_created_by",
+      "source": "knowledges.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_knowledges_modified_by",
+      "source": "knowledges.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_knowledges_previous_version_id",
+      "source": "knowledges.previous_version_id",
+      "target": "knowledges.knowledge_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_reasons_created_by",
+      "source": "reasons.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_reasons_modified_by",
+      "source": "reasons.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_reasons_previous_version_id",
+      "source": "reasons.previous_version_id",
+      "target": "reasons.reason_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_reasons_reason_graph_id",
+      "source": "reasons.reason_graph_id",
+      "target": "reason_graphs.reason_graph_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_reasons_derived_from_reason_id",
+      "source": "reasons.derived_from_reason_id",
+      "target": "reasons.reason_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_reason_graphs_created_by",
+      "source": "reason_graphs.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_reason_graphs_modified_by",
+      "source": "reason_graphs.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_reason_graphs_previous_version_id",
+      "source": "reason_graphs.previous_version_id",
+      "target": "reason_graphs.reason_graph_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decision_objectives_created_by",
+      "source": "decision_objectives.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decision_objectives_modified_by",
+      "source": "decision_objectives.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decision_objectives_previous_version_id",
+      "source": "decision_objectives.previous_version_id",
+      "target": "decision_objectives.decision_objective_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_occasions_created_by",
+      "source": "occasions.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_occasions_modified_by",
+      "source": "occasions.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_occasions_previous_version_id",
+      "source": "occasions.previous_version_id",
+      "target": "occasions.occasion_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_occasions_decision_objective_id",
+      "source": "occasions.decision_objective_id",
+      "target": "decision_objectives.decision_objective_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_occasions_pattern_of_relevance_id",
+      "source": "occasions.pattern_of_relevance_id",
+      "target": "pattern_of_relevances.pattern_of_relevance_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_occasions_context_id",
+      "source": "occasions.context_id",
+      "target": "contexts.context_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_pattern_of_relevances_created_by",
+      "source": "pattern_of_relevances.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_pattern_of_relevances_modified_by",
+      "source": "pattern_of_relevances.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_pattern_of_relevances_previous_version_id",
+      "source": "pattern_of_relevances.previous_version_id",
+      "target": "pattern_of_relevances.pattern_of_relevance_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decisions_created_by",
+      "source": "decisions.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decisions_modified_by",
+      "source": "decisions.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decisions_previous_version_id",
+      "source": "decisions.previous_version_id",
+      "target": "decisions.decision_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decisions_reason_graph_id",
+      "source": "decisions.reason_graph_id",
+      "target": "reason_graphs.reason_graph_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_decisions_decision_state_id",
+      "source": "decisions.decision_state_id",
+      "target": "decision_states.decision_state_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_decisions_accountable_owner_id",
+      "source": "decisions.accountable_owner_id",
+      "target": "accountable_owners.accountable_owner_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_decisions_institutional_act_id",
+      "source": "decisions.institutional_act_id",
+      "target": "institutional_acts.institutional_act_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_decision_states_created_by",
+      "source": "decision_states.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decision_states_modified_by",
+      "source": "decision_states.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_decision_states_previous_version_id",
+      "source": "decision_states.previous_version_id",
+      "target": "decision_states.decision_state_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_actions_created_by",
+      "source": "institutional_actions.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_actions_modified_by",
+      "source": "institutional_actions.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_actions_previous_version_id",
+      "source": "institutional_actions.previous_version_id",
+      "target": "institutional_actions.institutional_action_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_actions_institutional_act_id",
+      "source": "institutional_actions.institutional_act_id",
+      "target": "institutional_acts.institutional_act_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_outcomes_created_by",
+      "source": "outcomes.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_outcomes_modified_by",
+      "source": "outcomes.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_outcomes_previous_version_id",
+      "source": "outcomes.previous_version_id",
+      "target": "outcomes.outcome_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_outcomes_institutional_action_id",
+      "source": "outcomes.institutional_action_id",
+      "target": "institutional_actions.institutional_action_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_experiences_created_by",
+      "source": "experiences.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_experiences_modified_by",
+      "source": "experiences.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_experiences_previous_version_id",
+      "source": "experiences.previous_version_id",
+      "target": "experiences.experience_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_experiences_outcome_id",
+      "source": "experiences.outcome_id",
+      "target": "outcomes.outcome_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_experiences_context_id",
+      "source": "experiences.context_id",
+      "target": "contexts.context_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_governances_created_by",
+      "source": "governances.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_governances_modified_by",
+      "source": "governances.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_governances_previous_version_id",
+      "source": "governances.previous_version_id",
+      "target": "governances.governance_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_accountable_owners_created_by",
+      "source": "accountable_owners.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_accountable_owners_modified_by",
+      "source": "accountable_owners.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_accountable_owners_previous_version_id",
+      "source": "accountable_owners.previous_version_id",
+      "target": "accountable_owners.accountable_owner_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_source_systems_created_by",
+      "source": "source_systems.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_source_systems_modified_by",
+      "source": "source_systems.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_source_systems_previous_version_id",
+      "source": "source_systems.previous_version_id",
+      "target": "source_systems.source_system_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_source_objects_created_by",
+      "source": "source_objects.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_source_objects_modified_by",
+      "source": "source_objects.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_source_objects_previous_version_id",
+      "source": "source_objects.previous_version_id",
+      "target": "source_objects.source_object_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_acts_created_by",
+      "source": "institutional_acts.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_acts_modified_by",
+      "source": "institutional_acts.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_acts_previous_version_id",
+      "source": "institutional_acts.previous_version_id",
+      "target": "institutional_acts.institutional_act_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_institutional_acts_governance_id",
+      "source": "institutional_acts.governance_id",
+      "target": "governances.governance_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_institutional_acts_accountable_owner_id",
+      "source": "institutional_acts.accountable_owner_id",
+      "target": "accountable_owners.accountable_owner_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_institutional_acts_decision_id",
+      "source": "institutional_acts.decision_id",
+      "target": "decisions.decision_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_institutional_acts_superseded_act_id",
+      "source": "institutional_acts.superseded_act_id",
+      "target": "institutional_acts.institutional_act_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "fk_contexts_created_by",
+      "source": "contexts.created_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_contexts_modified_by",
+      "source": "contexts.modified_by",
+      "target": "enterprise_entities.enterprise_entity_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "fk_contexts_previous_version_id",
+      "source": "contexts.previous_version_id",
+      "target": "contexts.context_id",
+      "relationship_authority": "EAD-001/Physical Model implementation metadata; Logical Model omission approved by ARCH-001"
+    },
+    {
+      "constraint": "inline",
+      "source": "reason_decision_objectives.reason_id",
+      "target": "reasons.reason_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "reason_decision_objectives.decision_objective_id",
+      "target": "decision_objectives.decision_objective_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "reason_evidence.reason_id",
+      "target": "reasons.reason_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "reason_evidence.evidence_id",
+      "target": "evidences.evidence_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "assertion_evidence.assertion_id",
+      "target": "assertions.assertion_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "assertion_evidence.evidence_id",
+      "target": "evidences.evidence_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "institutional_relationship_assertions.institutional_relationship_id",
+      "target": "institutional_relationships.institutional_relationship_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    },
+    {
+      "constraint": "inline",
+      "source": "institutional_relationship_assertions.assertion_id",
+      "target": "assertions.assertion_id",
+      "relationship_authority": "Logical Model v1.3 and Physical Model v1.7"
+    }
+  ],
+  "column_traceability": [
+    {
+      "table": "enterprises",
+      "column": "enterprise_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "enterprise_id",
+      "ead_row": 2,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "enterprise_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "enterprise_name",
+      "ead_row": 3,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "legal_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "legal_name",
+      "ead_row": 4,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "enterprise_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "enterprise_type_id",
+      "ead_row": 5,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "country_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "country_id",
+      "ead_row": 6,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 7,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "effective_from",
+      "ead_row": 8,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "effective_to",
+      "ead_row": 9,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "governance_status",
+      "ead_row": 10,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "created_by",
+      "ead_row": 11,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "created_on",
+      "ead_row": 12,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "modified_by",
+      "ead_row": 13,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "modified_on",
+      "ead_row": 14,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "version_number",
+      "ead_row": 15,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprises",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 16,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_types",
+      "column": "enterprise_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Type",
+      "ead_attribute": "enterprise_type_id",
+      "ead_row": 17,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_types",
+      "column": "type_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Type",
+      "ead_attribute": "type_name",
+      "ead_row": 18,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "countries",
+      "column": "country_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Country",
+      "ead_attribute": "country_id",
+      "ead_row": 19,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "countries",
+      "column": "country_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Country",
+      "ead_attribute": "country_name",
+      "ead_row": 20,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "countries",
+      "column": "iso2_code",
+      "category": "A - EAD attribute",
+      "ead_entity": "Country",
+      "ead_attribute": "iso2_code",
+      "ead_row": 21,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "countries",
+      "column": "iso3_code",
+      "category": "A - EAD attribute",
+      "ead_entity": "Country",
+      "ead_attribute": "iso3_code",
+      "ead_row": 22,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "business_domain_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "business_domain_id",
+      "ead_row": 23,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "enterprise_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "enterprise_id",
+      "ead_row": 24,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "domain_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "domain_name",
+      "ead_row": 25,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 26,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "effective_from",
+      "ead_row": 27,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "effective_to",
+      "ead_row": 28,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "governance_status",
+      "ead_row": 29,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "created_by",
+      "ead_row": 30,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "created_on",
+      "ead_row": 31,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "modified_by",
+      "ead_row": 32,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "modified_on",
+      "ead_row": 33,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "version_number",
+      "ead_row": 34,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "business_domains",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Business Domain",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 35,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "institutional_concept_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "institutional_concept_id",
+      "ead_row": 36,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "institutional_concept_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "institutional_concept_name",
+      "ead_row": 37,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 38,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "effective_from",
+      "ead_row": 39,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "effective_to",
+      "ead_row": 40,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "governance_status",
+      "ead_row": 41,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "created_by",
+      "ead_row": 42,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "created_on",
+      "ead_row": 43,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "modified_by",
+      "ead_row": 44,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "modified_on",
+      "ead_row": 45,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "version_number",
+      "ead_row": 46,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 47,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_concepts",
+      "column": "enterprise_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Concept",
+      "ead_attribute": "enterprise_id",
+      "ead_row": 363,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "relationship_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "relationship_type_id",
+      "ead_row": 48,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "relationship_type_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "relationship_type_name",
+      "ead_row": 49,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 50,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "effective_from",
+      "ead_row": 51,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "effective_to",
+      "ead_row": 52,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "governance_status",
+      "ead_row": 53,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "created_by",
+      "ead_row": 54,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "created_on",
+      "ead_row": 55,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "modified_by",
+      "ead_row": 56,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "modified_on",
+      "ead_row": 57,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "version_number",
+      "ead_row": 58,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "relationship_types",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Relationship Type",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 59,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "entity_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "entity_type_id",
+      "ead_row": 60,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "entity_type_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "entity_type_name",
+      "ead_row": 61,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 62,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "effective_from",
+      "ead_row": 63,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "effective_to",
+      "ead_row": 64,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "governance_status",
+      "ead_row": 65,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "created_by",
+      "ead_row": 66,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "created_on",
+      "ead_row": 67,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "modified_by",
+      "ead_row": 68,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "modified_on",
+      "ead_row": 69,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "version_number",
+      "ead_row": 70,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 71,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "entity_types",
+      "column": "institutional_concept_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Entity Type",
+      "ead_attribute": "institutional_concept_id",
+      "ead_row": 334,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "enterprise_entity_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "enterprise_entity_id",
+      "ead_row": 72,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "tenant_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "tenant_id",
+      "ead_row": 364,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "enterprise_entity_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "enterprise_entity_name",
+      "ead_row": 73,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 74,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "effective_from",
+      "ead_row": 75,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "effective_to",
+      "ead_row": 76,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "governance_status",
+      "ead_row": 77,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "created_by",
+      "ead_row": 78,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "created_on",
+      "ead_row": 79,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "modified_by",
+      "ead_row": 80,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "modified_on",
+      "ead_row": 81,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "version_number",
+      "ead_row": 82,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 83,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "entity_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "entity_type_id",
+      "ead_row": 335,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "enterprise_entities",
+      "column": "business_domain_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Enterprise Entity",
+      "ead_attribute": "business_domain_id",
+      "ead_row": 361,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "evidence_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "evidence_id",
+      "ead_row": 84,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "evidence_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "evidence_name",
+      "ead_row": 85,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 86,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "effective_from",
+      "ead_row": 87,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "effective_to",
+      "ead_row": 88,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "governance_status",
+      "ead_row": 89,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "created_by",
+      "ead_row": 90,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "created_on",
+      "ead_row": 91,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "modified_by",
+      "ead_row": 92,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "modified_on",
+      "ead_row": 93,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "version_number",
+      "ead_row": 94,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 95,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "evidences",
+      "column": "source_object_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Evidence",
+      "ead_attribute": "source_object_id",
+      "ead_row": 359,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "assertion_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "assertion_id",
+      "ead_row": 96,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "assertion_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "assertion_name",
+      "ead_row": 97,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 98,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "effective_from",
+      "ead_row": 99,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "effective_to",
+      "ead_row": 100,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "governance_status",
+      "ead_row": 101,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "created_by",
+      "ead_row": 102,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "created_on",
+      "ead_row": 103,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "modified_by",
+      "ead_row": 104,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "modified_on",
+      "ead_row": 105,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "version_number",
+      "ead_row": 106,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 107,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "subject_entity_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "subject_entity_id",
+      "ead_row": 324,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "predicate",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "predicate",
+      "ead_row": 325,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "object_value",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "object_value",
+      "ead_row": 326,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "object_entity_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "object_entity_id",
+      "ead_row": 327,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "source_system_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "source_system_id",
+      "ead_row": 328,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "source_object_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "source_object_id",
+      "ead_row": 329,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "asserted_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "asserted_on",
+      "ead_row": 330,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "prior_assertion_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "prior_assertion_id",
+      "ead_row": 331,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "knowledge_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "knowledge_id",
+      "ead_row": 332,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "assertion_type",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "assertion_type",
+      "ead_row": 333,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "assertions",
+      "column": "relationship_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Assertion",
+      "ead_attribute": "relationship_type_id",
+      "ead_row": 362,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "institutional_relationship_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "institutional_relationship_id",
+      "ead_row": 108,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "tenant_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "tenant_id",
+      "ead_row": 367,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "institutional_relationship_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "institutional_relationship_name",
+      "ead_row": 109,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 110,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "effective_from",
+      "ead_row": 111,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "effective_to",
+      "ead_row": 112,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "governance_status",
+      "ead_row": 113,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "created_by",
+      "ead_row": 114,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "created_on",
+      "ead_row": 115,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "modified_by",
+      "ead_row": 116,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "modified_on",
+      "ead_row": 117,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "version_number",
+      "ead_row": 118,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 119,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "relationship_type_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "relationship_type_id",
+      "ead_row": 336,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "from_entity_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "from_entity_id",
+      "ead_row": 337,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "to_entity_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "to_entity_id",
+      "ead_row": 338,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_relationships",
+      "column": "superseded_by_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Relationship",
+      "ead_attribute": "superseded_by_id",
+      "ead_row": 339,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "knowledge_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "knowledge_id",
+      "ead_row": 120,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "knowledge_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "knowledge_name",
+      "ead_row": 121,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 122,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "effective_from",
+      "ead_row": 123,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "effective_to",
+      "ead_row": 124,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "governance_status",
+      "ead_row": 125,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "created_by",
+      "ead_row": 126,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "created_on",
+      "ead_row": 127,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "modified_by",
+      "ead_row": 128,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "modified_on",
+      "ead_row": 129,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "version_number",
+      "ead_row": 130,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "knowledges",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Knowledge",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 131,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "reason_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "reason_id",
+      "ead_row": 132,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "reason_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "reason_name",
+      "ead_row": 133,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 134,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "effective_from",
+      "ead_row": 135,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "effective_to",
+      "ead_row": 136,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "governance_status",
+      "ead_row": 137,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "created_by",
+      "ead_row": 138,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "created_on",
+      "ead_row": 139,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "modified_by",
+      "ead_row": 140,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "modified_on",
+      "ead_row": 141,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "version_number",
+      "ead_row": 142,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 143,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "reason_graph_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "reason_graph_id",
+      "ead_row": 344,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reasons",
+      "column": "derived_from_reason_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason",
+      "ead_attribute": "derived_from_reason_id",
+      "ead_row": 345,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "reason_graph_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "reason_graph_id",
+      "ead_row": 144,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "reason_graph_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "reason_graph_name",
+      "ead_row": 145,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 146,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "effective_from",
+      "ead_row": 147,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "effective_to",
+      "ead_row": 148,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "governance_status",
+      "ead_row": 149,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "created_by",
+      "ead_row": 150,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "created_on",
+      "ead_row": 151,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "modified_by",
+      "ead_row": 152,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "modified_on",
+      "ead_row": 153,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "version_number",
+      "ead_row": 154,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_graphs",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Reason Graph",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 155,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "decision_objective_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "decision_objective_id",
+      "ead_row": 156,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "decision_objective_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "decision_objective_name",
+      "ead_row": 157,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 158,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "effective_from",
+      "ead_row": 159,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "effective_to",
+      "ead_row": 160,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "governance_status",
+      "ead_row": 161,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "created_by",
+      "ead_row": 162,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "created_on",
+      "ead_row": 163,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "modified_by",
+      "ead_row": 164,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "modified_on",
+      "ead_row": 165,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "version_number",
+      "ead_row": 166,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_objectives",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision Objective",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 167,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "occasion_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "occasion_id",
+      "ead_row": 168,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "occasion_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "occasion_name",
+      "ead_row": 169,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 170,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "effective_from",
+      "ead_row": 171,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "effective_to",
+      "ead_row": 172,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "governance_status",
+      "ead_row": 173,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "created_by",
+      "ead_row": 174,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "created_on",
+      "ead_row": 175,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "modified_by",
+      "ead_row": 176,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "modified_on",
+      "ead_row": 177,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "version_number",
+      "ead_row": 178,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 179,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "decision_objective_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "decision_objective_id",
+      "ead_row": 340,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "pattern_of_relevance_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "pattern_of_relevance_id",
+      "ead_row": 341,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "context_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "context_id",
+      "ead_row": 342,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "occasions",
+      "column": "occasion_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Occasion",
+      "ead_attribute": "occasion_status",
+      "ead_row": 343,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "pattern_of_relevance_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "pattern_of_relevance_id",
+      "ead_row": 180,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "pattern_of_relevance_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "pattern_of_relevance_name",
+      "ead_row": 181,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 182,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "effective_from",
+      "ead_row": 183,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "effective_to",
+      "ead_row": 184,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "governance_status",
+      "ead_row": 185,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "created_by",
+      "ead_row": 186,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "created_on",
+      "ead_row": 187,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "modified_by",
+      "ead_row": 188,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "modified_on",
+      "ead_row": 189,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "version_number",
+      "ead_row": 190,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "pattern_of_relevances",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Pattern of Relevance",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 191,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "decision_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "decision_id",
+      "ead_row": 192,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "decision_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "decision_name",
+      "ead_row": 193,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 194,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "effective_from",
+      "ead_row": 195,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "effective_to",
+      "ead_row": 196,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "governance_status",
+      "ead_row": 197,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "created_by",
+      "ead_row": 198,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "created_on",
+      "ead_row": 199,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "modified_by",
+      "ead_row": 200,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "modified_on",
+      "ead_row": 201,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "version_number",
+      "ead_row": 202,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 203,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "reason_graph_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "reason_graph_id",
+      "ead_row": 346,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "decision_state_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "decision_state_id",
+      "ead_row": 347,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "accountable_owner_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "accountable_owner_id",
+      "ead_row": 348,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decisions",
+      "column": "institutional_act_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision",
+      "ead_attribute": "institutional_act_id",
+      "ead_row": 349,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "decision_state_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "decision_state_id",
+      "ead_row": 204,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "decision_state_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "decision_state_name",
+      "ead_row": 205,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 206,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "effective_from",
+      "ead_row": 207,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "effective_to",
+      "ead_row": 208,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "governance_status",
+      "ead_row": 209,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "created_by",
+      "ead_row": 210,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "created_on",
+      "ead_row": 211,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "modified_by",
+      "ead_row": 212,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "modified_on",
+      "ead_row": 213,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "version_number",
+      "ead_row": 214,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 215,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "decision_states",
+      "column": "state_value",
+      "category": "A - EAD attribute",
+      "ead_entity": "Decision State",
+      "ead_attribute": "state_value",
+      "ead_row": 350,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "institutional_action_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "institutional_action_id",
+      "ead_row": 216,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "institutional_action_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "institutional_action_name",
+      "ead_row": 217,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 218,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "effective_from",
+      "ead_row": 219,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "effective_to",
+      "ead_row": 220,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "governance_status",
+      "ead_row": 221,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "created_by",
+      "ead_row": 222,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "created_on",
+      "ead_row": 223,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "modified_by",
+      "ead_row": 224,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "modified_on",
+      "ead_row": 225,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "version_number",
+      "ead_row": 226,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 227,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_actions",
+      "column": "institutional_act_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Action",
+      "ead_attribute": "institutional_act_id",
+      "ead_row": 355,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "outcome_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "outcome_id",
+      "ead_row": 228,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "outcome_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "outcome_name",
+      "ead_row": 229,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 230,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "effective_from",
+      "ead_row": 231,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "effective_to",
+      "ead_row": 232,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "governance_status",
+      "ead_row": 233,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "created_by",
+      "ead_row": 234,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "created_on",
+      "ead_row": 235,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "modified_by",
+      "ead_row": 236,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "modified_on",
+      "ead_row": 237,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "version_number",
+      "ead_row": 238,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 239,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "outcomes",
+      "column": "institutional_action_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Outcome",
+      "ead_attribute": "institutional_action_id",
+      "ead_row": 356,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "experience_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "experience_id",
+      "ead_row": 240,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "experience_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "experience_name",
+      "ead_row": 241,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 242,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "effective_from",
+      "ead_row": 243,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "effective_to",
+      "ead_row": 244,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "governance_status",
+      "ead_row": 245,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "created_by",
+      "ead_row": 246,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "created_on",
+      "ead_row": 247,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "modified_by",
+      "ead_row": 248,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "modified_on",
+      "ead_row": 249,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "version_number",
+      "ead_row": 250,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 251,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "outcome_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "outcome_id",
+      "ead_row": 357,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "experiences",
+      "column": "context_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Experience",
+      "ead_attribute": "context_id",
+      "ead_row": 358,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "governance_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "governance_id",
+      "ead_row": 252,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "governance_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "governance_name",
+      "ead_row": 253,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 254,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "effective_from",
+      "ead_row": 255,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "effective_to",
+      "ead_row": 256,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "governance_status",
+      "ead_row": 257,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "created_by",
+      "ead_row": 258,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "created_on",
+      "ead_row": 259,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "modified_by",
+      "ead_row": 260,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "modified_on",
+      "ead_row": 261,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "version_number",
+      "ead_row": 262,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "governances",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Governance",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 263,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "accountable_owner_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "accountable_owner_id",
+      "ead_row": 264,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "accountable_owner_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "accountable_owner_name",
+      "ead_row": 265,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 266,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "effective_from",
+      "ead_row": 267,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "effective_to",
+      "ead_row": 268,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "governance_status",
+      "ead_row": 269,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "created_by",
+      "ead_row": 270,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "created_on",
+      "ead_row": 271,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "modified_by",
+      "ead_row": 272,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "modified_on",
+      "ead_row": 273,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "version_number",
+      "ead_row": 274,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "accountable_owners",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Accountable Owner",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 275,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "source_system_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "source_system_id",
+      "ead_row": 276,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "tenant_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "tenant_id",
+      "ead_row": 365,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "source_system_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "source_system_name",
+      "ead_row": 277,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 278,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "effective_from",
+      "ead_row": 279,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "effective_to",
+      "ead_row": 280,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "governance_status",
+      "ead_row": 281,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "created_by",
+      "ead_row": 282,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "created_on",
+      "ead_row": 283,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "modified_by",
+      "ead_row": 284,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "modified_on",
+      "ead_row": 285,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "version_number",
+      "ead_row": 286,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_systems",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source System",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 287,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "source_object_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "source_object_id",
+      "ead_row": 288,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "tenant_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "tenant_id",
+      "ead_row": 366,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "source_object_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "source_object_name",
+      "ead_row": 289,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 290,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "effective_from",
+      "ead_row": 291,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "effective_to",
+      "ead_row": 292,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "governance_status",
+      "ead_row": 293,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "created_by",
+      "ead_row": 294,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "created_on",
+      "ead_row": 295,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "modified_by",
+      "ead_row": 296,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "modified_on",
+      "ead_row": 297,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "version_number",
+      "ead_row": 298,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 299,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "source_objects",
+      "column": "source_system_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Source Object",
+      "ead_attribute": "source_system_id",
+      "ead_row": 360,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "institutional_act_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "institutional_act_id",
+      "ead_row": 300,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "institutional_act_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "institutional_act_name",
+      "ead_row": 301,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 302,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "effective_from",
+      "ead_row": 303,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "effective_to",
+      "ead_row": 304,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "governance_status",
+      "ead_row": 305,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "created_by",
+      "ead_row": 306,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "created_on",
+      "ead_row": 307,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "modified_by",
+      "ead_row": 308,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "modified_on",
+      "ead_row": 309,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "version_number",
+      "ead_row": 310,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 311,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "governance_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "governance_id",
+      "ead_row": 351,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "accountable_owner_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "accountable_owner_id",
+      "ead_row": 352,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "decision_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "decision_id",
+      "ead_row": 353,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "institutional_acts",
+      "column": "superseded_act_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Institutional Act",
+      "ead_attribute": "superseded_act_id",
+      "ead_row": 354,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "context_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "context_id",
+      "ead_row": 312,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "context_name",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "context_name",
+      "ead_row": 313,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "lifecycle_state",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "lifecycle_state",
+      "ead_row": 314,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "effective_from",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "effective_from",
+      "ead_row": 315,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "effective_to",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "effective_to",
+      "ead_row": 316,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "governance_status",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "governance_status",
+      "ead_row": 317,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "created_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "created_by",
+      "ead_row": 318,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "created_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "created_on",
+      "ead_row": 319,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "modified_by",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "modified_by",
+      "ead_row": 320,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "modified_on",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "modified_on",
+      "ead_row": 321,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "version_number",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "version_number",
+      "ead_row": 322,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "contexts",
+      "column": "previous_version_id",
+      "category": "A - EAD attribute",
+      "ead_entity": "Context",
+      "ead_attribute": "previous_version_id",
+      "ead_row": 323,
+      "physical_model": "ECOM Physical Data Model v1.7"
+    },
+    {
+      "table": "reason_decision_objectives",
+      "column": "reason_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "reason_decision_objectives",
+      "column": "decision_objective_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "reason_evidence",
+      "column": "reason_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "reason_evidence",
+      "column": "evidence_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "assertion_evidence",
+      "column": "assertion_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "assertion_evidence",
+      "column": "evidence_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "institutional_relationship_assertions",
+      "column": "institutional_relationship_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    },
+    {
+      "table": "institutional_relationship_assertions",
+      "column": "assertion_id",
+      "category": "B - Physical Model M:N infrastructure",
+      "ead_entity": null,
+      "ead_attribute": null,
+      "ead_row": null,
+      "physical_model": "ECOM Physical Data Model v1.7 join table"
+    }
+  ],
+  "missing_ead_traces": []
+}

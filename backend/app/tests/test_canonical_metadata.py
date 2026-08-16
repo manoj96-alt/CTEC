@@ -14,18 +14,18 @@ MIGRATIONS = Path("app/infrastructure/persistence/migrations")
 FROZEN_V1_3_PHYSICAL_MODEL = Path("../architecture/released/v1.1/ECOM_Physical_Data_Model_v1_3.sql")
 CANONICAL_MIGRATION = MIGRATIONS / "canonical_v1_3.sql"
 
-# The current authoritative physical model (Increment 3A-0 / RFC-015). Its
+# The current authoritative physical model (Gate D1 / RFC-016). Its
 # canonical section (before CANONICAL_BOUNDARY_MARKER) is the ORM's current
-# 32-table/373-column authority; its bounded-extension section (after the
+# 32-table/374-column authority; its bounded-extension section (after the
 # marker) governs the seven CDD-012/CDD-013 extension tables separately.
-CURRENT_PHYSICAL_MODEL = Path("../architecture/released/v1.8/ECOM_Physical_Data_Model_v1_6.sql")
+CURRENT_PHYSICAL_MODEL = Path("../architecture/released/v1.9/ECOM_Physical_Data_Model_v1_7.sql")
 CANONICAL_BOUNDARY_MARKER = (
     "-- ---------- BOUNDED NON-CANONICAL EXTENSIONS (CDD-012, CDD-013) ----------"
 )
-TRACEABILITY = Path("../docs/persistence/traceability/PERSISTENCE-TRACEABILITY-v1.6.json")
+TRACEABILITY = Path("../docs/persistence/traceability/PERSISTENCE-TRACEABILITY-v1.7.json")
 
 CANONICAL_TABLE_COUNT = 32
-CANONICAL_COLUMN_COUNT = 373
+CANONICAL_COLUMN_COUNT = 374
 BOUNDED_EXTENSION_TABLE_COUNT = 7
 
 
@@ -110,7 +110,7 @@ def test_indexes_match_frozen_physical_model() -> None:
 def test_traceability_covers_every_physical_column() -> None:
     manifest = json.loads(TRACEABILITY.read_text())
     assert (
-        manifest["schema_source"] == "architecture/released/v1.8/ECOM_Physical_Data_Model_v1_6.sql"
+        manifest["schema_source"] == "architecture/released/v1.9/ECOM_Physical_Data_Model_v1_7.sql"
     )
     canonical_sql, _bounded_sql = _canonical_and_bounded_sections(
         CURRENT_PHYSICAL_MODEL.read_text()

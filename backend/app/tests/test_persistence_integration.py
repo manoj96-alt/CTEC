@@ -24,7 +24,7 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-        assert revision == "0011_erm_tenant_and_evidence"
+        assert revision == "0012_ir_tenant_ownership"
         assert table_count == 52
 
 

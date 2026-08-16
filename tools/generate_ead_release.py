@@ -54,7 +54,13 @@ class EadGenerationError(Exception):
     """Raised for any condition that must abort generation without writing output."""
 
 
-def _build_row(entity: str, package: str, row_number: int, attribute_name: str) -> dict[str, Any]:
+def _build_row(
+    entity: str,
+    package: str,
+    row_number: int,
+    attribute_name: str,
+    constitutional_meaning: str,
+) -> dict[str, Any]:
     return {
         "row": row_number,
         "Entity": entity,
@@ -79,7 +85,7 @@ def _build_row(entity: str, package: str, row_number: int, attribute_name: str) 
         "Indexed": "Yes",
         "Relationship Entity": None,
         "Relationship Attribute": None,
-        "Constitutional Meaning": DEFAULT_CONSTITUTIONAL_MEANING,
+        "Constitutional Meaning": constitutional_meaning,
         "Entity Package": package,
     }
 
@@ -103,6 +109,7 @@ def generate(
     expected_source_rows: int = DEFAULT_EXPECTED_SOURCE_ROWS,
     new_attribute_rows: tuple[tuple[str, str], ...] = DEFAULT_NEW_ATTRIBUTE_ROWS,
     attribute_name: str = DEFAULT_ATTRIBUTE_NAME,
+    constitutional_meaning: str = DEFAULT_CONSTITUTIONAL_MEANING,
 ) -> Path:
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     if output_path.exists():
@@ -144,7 +151,7 @@ def generate(
         raise EadGenerationError("source EAD file has no integer 'row' values to continue numbering from")
     next_row_number = max(row_numbers) + 1
     new_rows = [
-        _build_row(entity, package, next_row_number + i, attribute_name)
+        _build_row(entity, package, next_row_number + i, attribute_name, constitutional_meaning)
         for i, (entity, package) in enumerate(new_attribute_rows)
     ]
 

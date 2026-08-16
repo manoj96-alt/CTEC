@@ -211,6 +211,26 @@ AUTHORIZED_CHANGED_PATHS = {
     # sign-off before registry publication. No runtime code is touched.
     "architecture/proposed/gate-d0/RFC-016_Institutional_Relationship_Canonical_Authorization_and_Tenant_Ownership_v1.0_RELEASE_CANDIDATE.md",
     "architecture/proposed/gate-d0/PAD-001-Product-Internal-Deterministic-Capability-Boundary-Clarification-v1.0_RELEASE_CANDIDATE.md",
+    # Gate D1 -- architecture baseline v1.9 registry publication (RFC-016
+    # frozen, PAD-001 Product-Internal Deterministic Capability Boundary
+    # Clarification frozen) and the institutional_relationships
+    # tenant-ownership migration it authorizes.
+    "architecture/released/v1.9/ARCHITECTURE-CONSISTENCY-REPORT-v1.10_FROZEN.md",
+    "architecture/released/v1.9/DEPENDENCY-MATRIX-v1.9.csv",
+    "architecture/released/v1.9/ECOM_Physical_Data_Model_v1_7.sql",
+    "architecture/released/v1.9/PAD-001-Product-Internal-Deterministic-Capability-Boundary-Clarification-v1.0_FROZEN.md",
+    "architecture/released/v1.9/README.md",
+    "architecture/released/v1.9/RELEASE-MANIFEST-v1.9.xlsx",
+    "architecture/released/v1.9/RFC-016_Institutional_Relationship_Canonical_Authorization_and_Tenant_Ownership_v1.0_FROZEN.md",
+    "docs/persistence/traceability/EAD-001-v1.7.json",
+    "docs/persistence/traceability/PERSISTENCE-TRACEABILITY-v1.7.json",
+    "tools/generate_v1_9_ead_release.py",
+    "tools/generate_v1_9_physical_model_release.py",
+    "tools/generate_v1_9_release_manifest.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0012_institutional_relationship_tenant_ownership.py",
+    "backend/app/infrastructure/persistence/models/institutional_relationship.py",
+    "backend/app/tests/test_institutional_relationship_tenant_migration_postgres.py",
+    "backend/app/tests/test_institutional_relationship_tenant_migration_unit.py",
 }
 
 
