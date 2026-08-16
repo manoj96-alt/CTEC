@@ -231,6 +231,29 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/models/institutional_relationship.py",
     "backend/app/tests/test_institutional_relationship_tenant_migration_postgres.py",
     "backend/app/tests/test_institutional_relationship_tenant_migration_unit.py",
+    # Gate D -- Ask CTEC MVP (Priority 6): deterministic, read-only,
+    # non-LLM natural-language ontology exploration, authorized by RFC-016
+    # and the PAD-001 Product-Internal Deterministic Capability Boundary
+    # Clarification (architecture/released/v1.9/).
+    "backend/app/domain/ontology_copilot/__init__.py",
+    "backend/app/domain/ontology_copilot/intent.py",
+    "backend/app/domain/ontology_copilot/traversal.py",
+    "backend/app/domain/ontology_copilot/answer.py",
+    "backend/app/infrastructure/persistence/institutional_relationship_store.py",
+    "backend/app/infrastructure/persistence/demo_ontology_copilot_seeder.py",
+    "backend/app/application/ontology_copilot_api.py",
+    "backend/app/api/ontology_copilot/__init__.py",
+    "backend/app/api/ontology_copilot/dependencies.py",
+    "backend/app/api/ontology_copilot/router.py",
+    "backend/app/api/ontology_copilot/schemas.py",
+    "backend/app/tests/test_ontology_copilot_intent.py",
+    "backend/app/tests/test_ontology_copilot_traversal.py",
+    "backend/app/tests/test_ontology_copilot_answer.py",
+    "backend/app/tests/test_ontology_copilot_api_postgres.py",
+    "backend/app/tests/test_ontology_copilot_router.py",
+    "backend/app/tests/test_ontology_copilot_full_stack_postgres.py",
+    "backend/app/tests/test_demo_ontology_copilot_seeder.py",
+    "backend/app/tests/test_demo_ontology_copilot_seeder_postgres.py",
 }
 
 
