@@ -1,4 +1,4 @@
-# Generated from ECOM Physical Data Model v1.3. Do not edit manually.
+# Generated from ECOM Physical Data Model v1.7. Do not edit manually.
 from datetime import datetime
 from uuid import UUID
 
@@ -6,9 +6,11 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -42,6 +44,31 @@ class InstitutionalRelationship(BaseEntity):
         Index("idx_institutional_relationships_from_entity_id", "from_entity_id"),
         Index("idx_institutional_relationships_to_entity_id", "to_entity_id"),
         Index("idx_institutional_relationships_superseded_by_id", "superseded_by_id"),
+        Index("idx_institutional_relationships_tenant_id", "tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "institutional_relationship_name",
+            name="uq_institutional_relationships_tenant_name",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "institutional_relationship_id",
+            name="uq_institutional_relationships_tenant_pk",
+        ),
+        # Tenant-qualified composite FKs (Gate D1 / RFC-016): a relationship
+        # can only reference entities owned by the same tenant. Replace the
+        # single-column FKs on from_entity_id/to_entity_id (see migration
+        # 0012).
+        ForeignKeyConstraint(
+            ["tenant_id", "from_entity_id"],
+            ["enterprise_entities.tenant_id", "enterprise_entities.enterprise_entity_id"],
+            name="fk_institutional_relationships_from_entity_id",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "to_entity_id"],
+            ["enterprise_entities.tenant_id", "enterprise_entities.enterprise_entity_id"],
+            name="fk_institutional_relationships_to_entity_id",
+        ),
     )
 
     institutional_relationship_id: Mapped[UUID] = mapped_column(
@@ -50,9 +77,12 @@ class InstitutionalRelationship(BaseEntity):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    institutional_relationship_name: Mapped[str] = mapped_column(
-        String(200), nullable=False, unique=True
-    )
+    # Not part of the ECOM Physical Data Model v1.3-v1.6 release; added to
+    # establish tenant ownership for institutional_relationships (see
+    # migration 0012_institutional_relationship_tenant_ownership, RFC-016).
+    # Not a business-governed field.
+    tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    institutional_relationship_name: Mapped[str] = mapped_column(String(200), nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(
         Enum("Draft", "Active", "Suspended", "Archived", name="lifecyclestate_t"),
         nullable=False,
@@ -98,22 +128,8 @@ class InstitutionalRelationship(BaseEntity):
         ),
         nullable=False,
     )
-    from_entity_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey(
-            "enterprise_entities.enterprise_entity_id",
-            name="fk_institutional_relationships_from_entity_id",
-        ),
-        nullable=False,
-    )
-    to_entity_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey(
-            "enterprise_entities.enterprise_entity_id",
-            name="fk_institutional_relationships_to_entity_id",
-        ),
-        nullable=False,
-    )
+    from_entity_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
+    to_entity_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     superseded_by_id: Mapped[UUID | None] = mapped_column(
         Uuid(),
         ForeignKey(

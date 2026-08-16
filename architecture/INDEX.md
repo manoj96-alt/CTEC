@@ -6,11 +6,11 @@ This file is the sole authoritative registry for released CTEC architecture. Eng
 
 | Registry Version | Status | Current | Authority | Approval |
 |---:|---|---|---|---|
-| 1.6 | FROZEN | YES | AUTHORITATIVE | Tenant-foundation architecture release, Increment 3A-0 (RFC-015) |
+| 1.7 | FROZEN | YES | AUTHORITATIVE | Gate D1 architecture release (RFC-016 / PAD-001 Clarification) |
 
 ## Release policy
 
-- `architecture/released/v1.8/` is the current bounded amendment baseline and inherits unchanged authorities from v1.7.
+- `architecture/released/v1.9/` is the current bounded amendment baseline and inherits unchanged authorities from v1.8.
 - `architecture/released/v1.0/` and `architecture/released/v1.1/` are retained for historical traceability only.
 - A document is authoritative only when it appears in the Authoritative artifacts table with lifecycle status `FROZEN` and authority `AUTHORITATIVE`.
 - Superseded documents must not be used for implementation.
@@ -43,25 +43,27 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | RFC-013 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RFC-013_Governance_Authority_and_Evaluation_Separation_v1.2_FROZEN.docx) |
 | RFC-014 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/RFC-014_Cognitive_Capability_Integration_Handoff_and_Transaction_Policy_v1.3_FROZEN.md) |
 | RFC-015 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.8/RFC-015_Tenant_Ownership_Physical_Model_Authorization_v1.0_FROZEN.md) |
+| RFC-016 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/RFC-016_Institutional_Relationship_Canonical_Authorization_and_Tenant_Ownership_v1.0_FROZEN.md) |
 | RSP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.3/RSP-001_Runtime_Security_Retention_and_Replay_Authority_v1.0_FROZEN.md) |
 | CIM-001 | 1.1 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CIM-001-Cognitive-Integration-Contract-Model-v1.1_FROZEN.md) |
 | CVR-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CVR-001_Supplier_Risk_Canonical_Vocabulary_Clarification_v1.0_FROZEN.docx) |
 | ARCH-005 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCH-005-Bounded-Supplier-Risk-Vocabulary-Ownership-v1.0_FROZEN.md) |
 | PAD-EIC Compatibility Clarification | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/PAD-EIC-Legacy-Invocation-Compatibility-Clarification-v1.0_FROZEN.md) |
+| Product-Internal Deterministic Capability Boundary Clarification (PAD-001) | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/PAD-001-Product-Internal-Deterministic-Capability-Boundary-Clarification-v1.0_FROZEN.md) |
 | CDD-010 | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/CDD-010_Trusted_Admission_Identity_Clarification_v1.5_FROZEN.md) |
 | CDD-012 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/CDD-012_Authenticated_Replay_Clarification_v1.3_FROZEN.md) |
 | RCP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/RCP-001_Authenticated_Replay_Execution_Contract_v1.0_FROZEN.md) |
 | CAM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CAM-001_Canonical_Projection_Model_v1.2_FROZEN.docx) |
 | Architecture Glossary | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-GLOSSARY-v1.2_FROZEN.md) |
 | Baseline Record | 1.9 | Baseline Record v1.8 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/BASELINE-RECORD-v1.9_FROZEN.md) |
-| Architecture Consistency Report | 1.9 | 1.8 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.8/ARCHITECTURE-CONSISTENCY-REPORT-v1.9_FROZEN.md) |
+| Architecture Consistency Report | 1.10 | 1.9 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/ARCHITECTURE-CONSISTENCY-REPORT-v1.10_FROZEN.md) |
 | Architecture Drift Report | 1.8 | 1.7 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/ARCHITECTURE-DRIFT-REPORT-v1.8_FROZEN.md) |
 | Architecture Remediation Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-REMEDIATION-REPORT-v1.2_FROZEN.md) |
 | Release Readiness Report | 1.8 | 1.7 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/RELEASE-READINESS-REPORT-v1.8_FROZEN.md) |
 | PMM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/PMM-001_Runtime_Persistence_Role_Mapping_v1.2_FROZEN.md) |
 | CDS-001 | 1.3 | CDS-001 v1.2 and Authorized Artifacts Amendment | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDS-001_Codex_Development_Standard_v1.3_FROZEN.docx) |
 | CDD-003 Revision 2 | 2.0 | CDD-003 Foundation Reference Model | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-003-Revision-2-Complete-Canonical-Enterprise-Ontology.md) |
-| ECOM Physical Data Model | 1.6 | 1.5 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.8/ECOM_Physical_Data_Model_v1_6.sql) |
+| ECOM Physical Data Model | 1.7 | 1.6 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/ECOM_Physical_Data_Model_v1_7.sql) |
 | PAS-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/PAS-001_Trusted_Receipt_Timestamp_Clarification_v1.2_FROZEN.md) |
 | IDP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/IDP-001_Provider_Neutral_OIDC_Identity_Validation_Contract_v1.0_FROZEN.md) |
 | BSP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.6/BSP-001_Supplier_Risk_Browser_Authentication_and_Session_Profile_v1.0_FROZEN.md) |
@@ -83,7 +85,7 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | CDD Template | 2.2 | CDD Template v2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD_TEMPLATE_v2.2_FROZEN.docx) |
 | CDD Authorization Gap Review | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-AUTHORIZATION-GAP-REVIEW-v1.1_FROZEN.md) |
 | Dependency Resolution Report | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/DEPENDENCY-RESOLUTION-REPORT-v1.1_FROZEN.md) |
-| Architecture Dependency Matrix | 1.8 | 1.7 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.8/DEPENDENCY-MATRIX-v1.8.csv) |
+| Architecture Dependency Matrix | 1.9 | 1.8 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/DEPENDENCY-MATRIX-v1.9.csv) |
 | RND-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RND-001_Architecture_Registry_Normalization_v1.0_FROZEN.md) |
 | RELEASE-README | v1.2 | v1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/README.md) |
 
@@ -219,6 +221,9 @@ All documents below are `SUPERSEDED` and retained only for audit history.
 | ECOM Physical Data Model | 1.5 | ECOM Physical Data Model v1.6 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.4/ECOM_Physical_Data_Model_v1_5.sql) |
 | Architecture Consistency Report | 1.8 | Architecture Consistency Report v1.9 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.7/ARCHITECTURE-CONSISTENCY-REPORT-v1.8_FROZEN.md) |
 | Architecture Dependency Matrix | 1.7 | Architecture Dependency Matrix v1.8 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.7/DEPENDENCY-MATRIX-v1.7.csv) |
+| ECOM Physical Data Model | 1.6 | ECOM Physical Data Model v1.7 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.8/ECOM_Physical_Data_Model_v1_6.sql) |
+| Architecture Consistency Report | 1.9 | Architecture Consistency Report v1.10 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.8/ARCHITECTURE-CONSISTENCY-REPORT-v1.9_FROZEN.md) |
+| Architecture Dependency Matrix | 1.8 | Architecture Dependency Matrix v1.9 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.8/DEPENDENCY-MATRIX-v1.8.csv) |
 
 ## Runtime dependency chain
 
@@ -237,7 +242,8 @@ The Architecture Release Manifest is the authoritative integrity register for it
 
 | Baseline | Status | Manifest | Manifest SHA-256 |
 |---|---|---|---|
-| v1.8 | CURRENT | [RELEASE-MANIFEST-v1.8.xlsx](released/v1.8/RELEASE-MANIFEST-v1.8.xlsx) | `e8e947af8f2bee7fe2b064e3976a937aab4a181a22321efe4b6a67fdc01153f4` |
+| v1.9 | CURRENT | [RELEASE-MANIFEST-v1.9.xlsx](released/v1.9/RELEASE-MANIFEST-v1.9.xlsx) | `4036e7d96e738189cbe69f97756ea3a54ef804ce5a60d4f61ef62d67d4293c7d` |
+| v1.8 | HISTORICAL | [RELEASE-MANIFEST-v1.8.xlsx](released/v1.8/RELEASE-MANIFEST-v1.8.xlsx) | `e8e947af8f2bee7fe2b064e3976a937aab4a181a22321efe4b6a67fdc01153f4` |
 | v1.7 | HISTORICAL | [RELEASE-MANIFEST-v1.7.xlsx](released/v1.7/RELEASE-MANIFEST-v1.7.xlsx) | `a589d5aa471b2338277439801e60a62be7f35e4ee2169b8c626e40e283ee5566` |
 | v1.6 | HISTORICAL | [RELEASE-MANIFEST-v1.6.xlsx](released/v1.6/RELEASE-MANIFEST-v1.6.xlsx) | `b9175b9afbba278c2fb365002174874a2578c9b012b3e0c73a90bfb71e1536aa` |
 | v1.5 | HISTORICAL | [RELEASE-MANIFEST-v1.5.xlsx](released/v1.5/RELEASE-MANIFEST-v1.5.xlsx) | `2db925f4f28983dc7d12b12fcf58b806d1816a0ba52aaff465b8996fd2c2780a` |
