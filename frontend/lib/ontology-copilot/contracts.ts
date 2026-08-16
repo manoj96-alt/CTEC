@@ -2,7 +2,8 @@
 // is ever generated client-side; every value comes from the authenticated
 // Gate D API response.
 
-export type AskStatus = "answered" | "no_match" | "ambiguous_match" | "unsupported_question";
+export type AskStatus =
+  "answered" | "no_match" | "ambiguous_match" | "unsupported_question";
 
 export interface ResolvedEntity {
   entity_id: string;

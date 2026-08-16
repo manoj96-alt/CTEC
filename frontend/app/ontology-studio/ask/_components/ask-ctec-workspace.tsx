@@ -65,7 +65,11 @@ export function AskCtecWorkspace() {
       </div>
 
       <section className="panel" aria-label="Ask CTEC">
-        <form onSubmit={handleSubmit} className="action-row" style={{ flexWrap: "wrap" }}>
+        <form
+          onSubmit={handleSubmit}
+          className="action-row"
+          style={{ flexWrap: "wrap" }}
+        >
           <label htmlFor="ask-ctec-question" className="sr-only">
             Question
           </label>
@@ -77,7 +81,11 @@ export function AskCtecWorkspace() {
             placeholder={EXAMPLE_QUESTION}
             style={{ flex: "1 1 320px" }}
           />
-          <button type="submit" className="button" disabled={state.status === "loading"}>
+          <button
+            type="submit"
+            className="button"
+            disabled={state.status === "loading"}
+          >
             Ask CTEC
           </button>
         </form>
@@ -124,9 +132,7 @@ export function AskCtecWorkspace() {
         </div>
       )}
 
-      {state.status === "result" && (
-        <AskResult response={state.response} />
-      )}
+      {state.status === "result" && <AskResult response={state.response} />}
     </div>
   );
 }
@@ -135,7 +141,9 @@ function AskResult({ response }: { response: AskResponse }) {
   if (response.status === "unsupported_question") {
     return (
       <div className="panel" role="status" aria-label="Unsupported question">
-        <p style={{ fontWeight: 700 }}>This question type is not supported yet</p>
+        <p style={{ fontWeight: 700 }}>
+          This question type is not supported yet
+        </p>
         <p style={{ color: "var(--muted)" }}>
           CTEC currently supports questions like <em>{EXAMPLE_QUESTION}</em>
         </p>
@@ -168,8 +176,9 @@ function AskResult({ response }: { response: AskResponse }) {
 
       {response.resolved_entity && (
         <p style={{ color: "var(--muted)" }}>
-          Resolved to governed entity: <strong>{response.resolved_entity.entity_name}</strong>{" "}
-          ({response.resolved_entity.entity_type_name})
+          Resolved to governed entity:{" "}
+          <strong>{response.resolved_entity.entity_name}</strong> (
+          {response.resolved_entity.entity_type_name})
         </p>
       )}
 

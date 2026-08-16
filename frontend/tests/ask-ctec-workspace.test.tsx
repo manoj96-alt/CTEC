@@ -41,10 +41,34 @@ const answeredResponse = {
   result_names: ["Product A", "Product B"],
   evidence: [
     [
-      { step: 1, entity_id: "e1", entity_name: "TSMC", entity_type_name: "Supplier", relationship_name: "supplies" },
-      { step: 2, entity_id: "e2", entity_name: "Material A", entity_type_name: "Material", relationship_name: "usedIn" },
-      { step: 3, entity_id: "e3", entity_name: "BOM A", entity_type_name: "BOM", relationship_name: "defines" },
-      { step: 4, entity_id: "e4", entity_name: "Product A", entity_type_name: "Product", relationship_name: null },
+      {
+        step: 1,
+        entity_id: "e1",
+        entity_name: "TSMC",
+        entity_type_name: "Supplier",
+        relationship_name: "supplies",
+      },
+      {
+        step: 2,
+        entity_id: "e2",
+        entity_name: "Material A",
+        entity_type_name: "Material",
+        relationship_name: "usedIn",
+      },
+      {
+        step: 3,
+        entity_id: "e3",
+        entity_name: "BOM A",
+        entity_type_name: "BOM",
+        relationship_name: "defines",
+      },
+      {
+        step: 4,
+        entity_id: "e4",
+        entity_name: "Product A",
+        entity_type_name: "Product",
+        relationship_name: null,
+      },
     ],
   ],
   reason: null,
@@ -52,13 +76,20 @@ const answeredResponse = {
 
 function apiError(code: string, status = 400) {
   return new OntologyCopilotApiError(
-    { code, message: "Request could not be completed", correlation_id: "corr-1", retryable: false },
+    {
+      code,
+      message: "Request could not be completed",
+      correlation_id: "corr-1",
+      retryable: false,
+    },
     status,
   );
 }
 
 async function askQuestion(text: string) {
-  fireEvent.change(screen.getByLabelText("Question"), { target: { value: text } });
+  fireEvent.change(screen.getByLabelText("Question"), {
+    target: { value: text },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Ask CTEC" }));
 }
 
@@ -73,7 +104,11 @@ test("submitting invokes the API with the entered question", async () => {
   askMock.mockResolvedValue(answeredResponse);
   render(<AskCtecWorkspace />);
   await askQuestion("Which products depend on TSMC?");
-  await waitFor(() => expect(askMock).toHaveBeenCalledWith({ question: "Which products depend on TSMC?" }));
+  await waitFor(() =>
+    expect(askMock).toHaveBeenCalledWith({
+      question: "Which products depend on TSMC?",
+    }),
+  );
 });
 
 test("shows a loading state while the request is in flight", async () => {
@@ -87,7 +122,9 @@ test("shows a loading state while the request is in flight", async () => {
   await askQuestion("Which products depend on TSMC?");
   expect(screen.getByRole("status")).toHaveTextContent(/Thinking/);
   resolvePromise(answeredResponse);
-  await waitFor(() => expect(screen.getByRole("heading", { name: "Answer" })).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "Answer" })).toBeInTheDocument(),
+  );
 });
 
 test("renders a successful answer with resolved entity and evidence", async () => {
@@ -95,12 +132,18 @@ test("renders a successful answer with resolved entity and evidence", async () =
   render(<AskCtecWorkspace />);
   await askQuestion("Which products depend on TSMC?");
 
-  await waitFor(() => expect(screen.getByRole("heading", { name: "Answer" })).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "Answer" })).toBeInTheDocument(),
+  );
   expect(screen.getByText(/2 products depend on TSMC/)).toBeInTheDocument();
   expect(screen.getByText(/Resolved to governed entity:/)).toBeInTheDocument();
-  expect(screen.getAllByText("TSMC", { selector: "strong" }).length).toBeGreaterThan(0);
+  expect(
+    screen.getAllByText("TSMC", { selector: "strong" }).length,
+  ).toBeGreaterThan(0);
   expect(screen.getByText("Why?")).toBeInTheDocument();
-  expect(screen.getByText("Product A", { selector: "strong" })).toBeInTheDocument();
+  expect(
+    screen.getByText("Product A", { selector: "strong" }),
+  ).toBeInTheDocument();
   expect(screen.getByText(/supplies/)).toBeInTheDocument();
 });
 
@@ -120,14 +163,17 @@ test("renders the unsupported-question state", async () => {
   await waitFor(() =>
     expect(screen.getByLabelText("Unsupported question")).toBeInTheDocument(),
   );
-  expect(screen.getByText("This question type is not supported yet")).toBeInTheDocument();
+  expect(
+    screen.getByText("This question type is not supported yet"),
+  ).toBeInTheDocument();
 });
 
 test("renders the no-match state", async () => {
   askMock.mockResolvedValue({
     status: "no_match",
     intent: "products_depending_on_supplier",
-    answer: "CTEC does not currently have sufficient governed ontology evidence to answer this question.",
+    answer:
+      "CTEC does not currently have sufficient governed ontology evidence to answer this question.",
     resolved_entity: null,
     result_names: [],
     evidence: [],
@@ -136,15 +182,22 @@ test("renders the no-match state", async () => {
   render(<AskCtecWorkspace />);
   await askQuestion("Which products depend on Nobody?");
 
-  await waitFor(() => expect(screen.getByLabelText("No match found")).toBeInTheDocument());
-  expect(screen.getByText(/does not currently have sufficient governed ontology evidence/)).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByLabelText("No match found")).toBeInTheDocument(),
+  );
+  expect(
+    screen.getByText(
+      /does not currently have sufficient governed ontology evidence/,
+    ),
+  ).toBeInTheDocument();
 });
 
 test("renders the ambiguous-match state", async () => {
   askMock.mockResolvedValue({
     status: "ambiguous_match",
     intent: "products_depending_on_supplier",
-    answer: "CTEC found more than one governed entity named 'TSMC' and cannot determine which one you mean.",
+    answer:
+      "CTEC found more than one governed entity named 'TSMC' and cannot determine which one you mean.",
     resolved_entity: null,
     result_names: [],
     evidence: [],
@@ -153,7 +206,9 @@ test("renders the ambiguous-match state", async () => {
   render(<AskCtecWorkspace />);
   await askQuestion("Which products depend on TSMC?");
 
-  await waitFor(() => expect(screen.getByLabelText("Ambiguous match")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByLabelText("Ambiguous match")).toBeInTheDocument(),
+  );
   expect(screen.getByText(/more than one governed entity/)).toBeInTheDocument();
 });
 
@@ -162,7 +217,9 @@ test("renders an unauthorized state and offers sign-in", async () => {
   render(<AskCtecWorkspace />);
   await askQuestion("Which products depend on TSMC?");
 
-  await waitFor(() => expect(screen.getByText("Sign in required")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText("Sign in required")).toBeInTheDocument(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(signInMock).toHaveBeenCalledWith("/ontology-studio/ask");
 });
@@ -172,11 +229,17 @@ test("renders a backend error state with a retry that re-submits the question", 
   render(<AskCtecWorkspace />);
   await askQuestion("Which products depend on TSMC?");
 
-  await waitFor(() => expect(screen.getByText("Ask CTEC service unavailable")).toBeInTheDocument());
+  await waitFor(() =>
+    expect(
+      screen.getByText("Ask CTEC service unavailable"),
+    ).toBeInTheDocument(),
+  );
 
   askMock.mockResolvedValueOnce(answeredResponse);
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() => expect(screen.getByRole("heading", { name: "Answer" })).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "Answer" })).toBeInTheDocument(),
+  );
   expect(askMock).toHaveBeenCalledTimes(2);
 });
 
@@ -186,6 +249,8 @@ test("network failure that is not an OntologyCopilotApiError shows a generic err
   await askQuestion("Which products depend on TSMC?");
 
   await waitFor(() =>
-    expect(screen.getByText("The Ask CTEC service could not be reached.")).toBeInTheDocument(),
+    expect(
+      screen.getByText("The Ask CTEC service could not be reached."),
+    ).toBeInTheDocument(),
   );
 });

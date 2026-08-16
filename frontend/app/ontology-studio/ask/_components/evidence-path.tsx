@@ -6,7 +6,9 @@ export function EvidencePath({ steps }: { steps: EvidenceStep[] }) {
       {steps.map((step) => (
         <li key={step.step}>
           <strong>{step.entity_name}</strong>{" "}
-          <span style={{ color: "var(--muted)" }}>({step.entity_type_name})</span>
+          <span style={{ color: "var(--muted)" }}>
+            ({step.entity_type_name})
+          </span>
           {step.relationship_name && (
             <div style={{ color: "var(--muted)", fontSize: "0.85em" }}>
               ↓ {step.relationship_name}
