@@ -16,6 +16,7 @@ import { QualityPanel } from "./quality-panel";
 import { ApiExportPanel } from "./api-export-panel";
 import { ActivationCard } from "./activation-card";
 import { EntityResolutionLinkCard } from "./entity-resolution-link-card";
+import { AskCtecLinkCard } from "./ask-ctec-link-card";
 
 type LoadState =
   | { status: "loading" }
@@ -112,6 +113,7 @@ export function StudioClient() {
         connectorCount={connectorCount(connectors)}
       />
       <EntityResolutionLinkCard />
+      <AskCtecLinkCard />
       <ConnectorCatalogPanel connectors={connectors} />
       <OntologyGraph
         concepts={ontology.concepts}

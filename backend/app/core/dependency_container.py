@@ -8,6 +8,7 @@ from app.api.supplier_risk.authentication import OidcJwtVerifier, TokenVerifier
 from app.api.supplier_risk.rate_limit import RateLimiter
 from app.application.entity_resolution_steward_api import EntityResolutionStewardApiService
 from app.application.ontology_activation import OntologyActivationService
+from app.application.ontology_copilot_api import OntologyCopilotApiService
 from app.application.supplier_risk_api import SupplierRiskApiService
 from app.core.config import Settings, get_settings
 from app.domain.assertion_engine import AssertionEngine, AssertionPolicy
@@ -41,6 +42,7 @@ class Container:
     token_verifier: TokenVerifier | None = None
     supplier_risk_api: SupplierRiskApiService | None = None
     entity_resolution_steward_api: EntityResolutionStewardApiService | None = None
+    ontology_copilot_api: OntologyCopilotApiService | None = None
     security_audit: SecurityAuditService | None = None
     rate_limiter: RateLimiter | None = None
     ontology_sessions: "sessionmaker[Session] | None" = None
@@ -55,12 +57,14 @@ def build_container() -> Container:
     audit = None
     ontology_sessions = None
     entity_resolution_steward_api = None
+    ontology_copilot_api = None
     if settings.database_url:
         engine = create_database_engine(settings)
         sessions = create_session_factory(engine)
         ontology_sessions = sessions
         audit = SecurityAuditService(ApiSecurityAuditRepository(sessions))
         entity_resolution_steward_api = EntityResolutionStewardApiService(sessions)
+        ontology_copilot_api = OntologyCopilotApiService(sessions)
         if settings.runtime_handoff_key:
             persistence = SqlAlchemyCapabilityPersistence(sessions)
             dependencies = IntegrationDependencies(
@@ -136,6 +140,7 @@ def build_container() -> Container:
         token_verifier=verifier,
         supplier_risk_api=api_service,
         entity_resolution_steward_api=entity_resolution_steward_api,
+        ontology_copilot_api=ontology_copilot_api,
         security_audit=audit,
         rate_limiter=RateLimiter(settings.supplier_risk_rate_limit_per_minute),
         ontology_sessions=ontology_sessions,

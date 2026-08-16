@@ -16,7 +16,7 @@ export function browserAuthConfig(): BrowserAuthConfig {
     apiOrigin: process.env.NEXT_PUBLIC_CTEC_API_ORIGIN ?? "",
     scope:
       process.env.NEXT_PUBLIC_OIDC_SCOPE ??
-      "openid profile supplier-risk:read entity-resolution:read entity-resolution:decide",
+      "openid profile supplier-risk:read entity-resolution:read entity-resolution:decide ontology-copilot:ask",
   };
   if (
     Object.entries(values).some(([key, value]) => key !== "scope" && !value)

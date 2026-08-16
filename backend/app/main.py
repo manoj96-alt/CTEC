@@ -13,6 +13,7 @@ from app.api.config.router import router as config_router
 from app.api.entity_resolution.router import router as entity_resolution_router
 from app.api.health.router import router as health_router
 from app.api.ontology.router import router as ontology_router
+from app.api.ontology_copilot.router import router as ontology_copilot_router
 from app.api.supplier_risk.router import router as supplier_risk_router
 from app.api.version.router import router as version_router
 from app.core.constants import API_PREFIX, APP_NAME, APP_VERSION, REQUEST_ID_HEADER
@@ -49,7 +50,11 @@ def create_app() -> FastAPI:
     # {"detail": ...} body. Additive only: every other existing path
     # (ontology, config, version, health) keeps the default shape
     # byte-for-byte.
-    _STABLE_ERROR_CONTRACT_PATHS = ("/api/v1/supplier-risk", "/api/v1/entity-resolution")
+    _STABLE_ERROR_CONTRACT_PATHS = (
+        "/api/v1/supplier-risk",
+        "/api/v1/entity-resolution",
+        "/api/v1/ontology-copilot",
+    )
 
     @app.exception_handler(HTTPException)
     async def supplier_risk_http_error(request: Request, exc: HTTPException) -> JSONResponse:
@@ -118,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(supplier_risk_router)
     app.include_router(ontology_router)
     app.include_router(entity_resolution_router)
+    app.include_router(ontology_copilot_router)
     return app
 
 
