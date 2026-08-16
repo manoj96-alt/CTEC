@@ -1,0 +1,188 @@
+{
+  "realm": "CTEC",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "ctec-frontend",
+      "name": "CTEC Frontend (local/demo public SPA client)",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "redirectUris": ["http://localhost:3000/auth/callback"],
+      "webOrigins": ["http://localhost:3000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "ctec-identity",
+        "supplier-risk:read",
+        "entity-resolution:read",
+        "ontology-copilot:ask"
+      ],
+      "optionalClientScopes": [
+        "supplier-risk:submit",
+        "supplier-risk:retry",
+        "supplier-risk:replay",
+        "entity-resolution:decide"
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "openid",
+      "protocol": "openid-connect",
+      "description": "Standard OIDC scope; required for oidc-client-ts's Authorization Code + PKCE request and ID token issuance.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "profile",
+      "protocol": "openid-connect",
+      "description": "Standard OIDC scope requested by oidc-client-ts's default configuration.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ctec-identity",
+      "protocol": "openid-connect",
+      "description": "Always-included claims required by the CTEC backend authorization contract (tenant_id, aud) -- PAD-002 SS8, SS9.",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "ctec-api-audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "ctec-supplier-risk-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "supplier-risk:read",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Supplier Risk read access.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "supplier-risk:submit",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Supplier Risk submission (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "supplier-risk:retry",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Supplier Risk retry (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "supplier-risk:replay",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Supplier Risk replay (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "entity-resolution:read",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Entity Resolution read access.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "entity-resolution:decide",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Entity Resolution decide (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "ontology-copilot:ask",
+      "protocol": "openid-connect",
+      "description": "PAD-002 canonical scope -- Ask CTEC.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "ctec-demo-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "CTEC",
+      "lastName": "Demo User",
+      "email": "ctec-demo-user@example.invalid",
+      "attributes": {
+        "tenant_id": ["ctec-demo-tenant"]
+      }
+    }
+  ]
+}
