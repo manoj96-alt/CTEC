@@ -205,6 +205,12 @@ AUTHORIZED_CHANGED_PATHS = {
     "frontend/app/ontology-studio/entity-resolution/_components/policy-preview-panel.tsx",
     "frontend/app/ontology-studio/_components/entity-resolution-link-card.tsx",
     "frontend/tests/entity-resolution-workspace.test.tsx",
+    # Gate D0 -- governance-only remediation drafts (Priority 6 discovery
+    # blockers). Neither document is authoritative yet; both are
+    # RELEASE CANDIDATE, pending explicit Product Owner / architecture review
+    # sign-off before registry publication. No runtime code is touched.
+    "architecture/proposed/gate-d0/RFC-016_Institutional_Relationship_Canonical_Authorization_and_Tenant_Ownership_v1.0_RELEASE_CANDIDATE.md",
+    "architecture/proposed/gate-d0/PAD-001-Product-Internal-Deterministic-Capability-Boundary-Clarification-v1.0_RELEASE_CANDIDATE.md",
 }
 
 
