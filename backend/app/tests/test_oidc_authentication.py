@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TypedDict
 
 import jwt
 import pytest
@@ -94,6 +94,13 @@ def test_token_missing_subject_claim_is_rejected() -> None:
     assert error.value.code == "AUTH_TOKEN_UNVERIFIABLE"
 
 
+class _ClaimOverride(TypedDict, total=False):
+    iss: str
+    aud: str
+    exp: int
+    tenant_id: list[str]
+
+
 @pytest.mark.parametrize(
     ("change", "code"),
     [
@@ -103,7 +110,7 @@ def test_token_missing_subject_claim_is_rejected() -> None:
         ({"tenant_id": ["a", "b"]}, "AUTH_TENANT_MISSING_OR_AMBIGUOUS"),
     ],
 )
-def test_rejects_invalid_or_ambiguous_claims(change: dict[str, object], code: str) -> None:
+def test_rejects_invalid_or_ambiguous_claims(change: _ClaimOverride, code: str) -> None:
     verifier, private = _verifier()
     with pytest.raises(AuthenticationError) as error:
         verifier.verify(_token(private, **change))
