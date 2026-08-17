@@ -110,7 +110,14 @@ export function AskCtecWorkspace() {
             type="button"
             className="button"
             style={{ marginTop: "0.75rem" }}
-            onClick={() => void signIn("/ontology-studio/ask")}
+            onClick={() => {
+              void signIn("/ontology-studio/ask").catch(() => {
+                setState({
+                  status: "error",
+                  message: "Sign-in could not be started. Please try again.",
+                });
+              });
+            }}
           >
             Sign in
           </button>

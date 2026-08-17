@@ -66,7 +66,13 @@ class OidcJwtVerifier:
                 audience=self._settings.oidc_audience,
                 issuer=self._settings.oidc_issuer,
                 leeway=self._settings.oidc_clock_skew_seconds,
-                options={"require": ["exp", "nbf", self._settings.oidc_subject_claim]},
+                # "nbf" is intentionally not required: PyJWT still validates
+                # it normally whenever a token does include it (rejecting a
+                # not-yet-valid token), but a standards-compliant IdP that
+                # omits "nbf" entirely (e.g. Keycloak's default access
+                # token) must not be treated as unverifiable for that
+                # reason alone.
+                options={"require": ["exp", self._settings.oidc_subject_claim]},
             )
             return self._principal(claims)
         except AuthenticationError:
