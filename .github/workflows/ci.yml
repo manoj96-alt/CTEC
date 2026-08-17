@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CTEC_RUNTIME_HANDOFF_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      CTEC_KEYCLOAK_ADMIN_PASSWORD: ci-only-placeholder-admin-password
+      CTEC_DEMO_USER_PASSWORD: ci-only-placeholder-demo-password
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
