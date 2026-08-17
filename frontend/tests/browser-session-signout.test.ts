@@ -63,8 +63,7 @@ const originalEnv = Object.fromEntries(
 );
 
 beforeEach(() => {
-  for (const [key, value] of Object.entries(OIDC_ENV))
-    process.env[key] = value;
+  for (const [key, value] of Object.entries(OIDC_ENV)) process.env[key] = value;
   callOrder = [];
   constructedChannelNames = [];
   removeUserMock.mockReset();
@@ -101,9 +100,8 @@ test("no token/user object is exposed to a caller of signOut()", async () => {
 });
 
 test("signOut() broadcasts a logout signal on the same channel name observeSessionLoss subscribes to", async () => {
-  const { signOut, observeSessionLoss } = await import(
-    "@/lib/auth/browser-session"
-  );
+  const { signOut, observeSessionLoss } =
+    await import("@/lib/auth/browser-session");
   const stop = observeSessionLoss(() => {});
   const observerChannelName = constructedChannelNames.at(-1);
   expect(observerChannelName).toBeTruthy();
@@ -126,9 +124,8 @@ test("a signoutRedirect() failure clears the local session and rejects determini
 
 test("signOut() still broadcasts logout even when signoutRedirect() subsequently fails", async () => {
   signoutRedirectMock.mockRejectedValue(new Error("network failure"));
-  const { signOut, observeSessionLoss } = await import(
-    "@/lib/auth/browser-session"
-  );
+  const { signOut, observeSessionLoss } =
+    await import("@/lib/auth/browser-session");
   const stop = observeSessionLoss(() => {});
   const observerChannelName = constructedChannelNames.at(-1);
 

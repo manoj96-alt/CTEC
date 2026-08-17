@@ -63,7 +63,7 @@ def test_valid_signed_token_derives_minimum_trusted_principal() -> None:
 
 
 def test_valid_token_without_nbf_is_accepted() -> None:
-    """"nbf" is optional (e.g. Keycloak's default access token omits it
+    """ "nbf" is optional (e.g. Keycloak's default access token omits it
     entirely): its absence must not make an otherwise-valid token
     unverifiable."""
     verifier, private = _verifier()
