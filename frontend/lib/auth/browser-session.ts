@@ -45,9 +45,25 @@ export async function completeSignIn(): Promise<{
   };
 }
 export async function signOut(): Promise<void> {
-  await sessionManager().removeUser();
+  // Broadcast first: signoutRedirect() below navigates the browser away,
+  // which can interrupt anything after it.
   new BroadcastChannel(channelName).postMessage("logout");
-  await sessionManager().signoutRedirect();
+  try {
+    // signoutRedirect() itself loads the current user, derives
+    // id_token_hint from it, and only then removes it -- calling
+    // removeUser() ourselves beforehand (as this used to do) discards the
+    // ID token first, so Keycloak never receives id_token_hint and falls
+    // back to an interactive "Do you want to log out?" confirmation
+    // instead of completing RP-initiated logout silently.
+    await sessionManager().signoutRedirect();
+  } catch (error) {
+    // signoutRedirect() failed before the browser navigated away (e.g. it
+    // could not reach Keycloak's end-session endpoint). Clear the local
+    // session directly so CTEC does not keep presenting an authenticated
+    // UI indefinitely, then propagate the failure to the caller.
+    await sessionManager().removeUser();
+    throw error;
+  }
 }
 export function observeSessionLoss(onLoss: () => void): () => void {
   const channel = new BroadcastChannel(channelName);

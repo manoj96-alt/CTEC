@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SessionControls } from "./session-controls";
 
 const navItems = [
   { label: "Home", href: "/" },
@@ -29,6 +30,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
+          <SessionControls />
         </div>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">

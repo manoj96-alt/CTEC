@@ -98,7 +98,14 @@ export function EntityResolutionWorkspace() {
           type="button"
           className="button"
           style={{ marginTop: "0.75rem" }}
-          onClick={() => void signIn("/ontology-studio/entity-resolution")}
+          onClick={() => {
+            void signIn("/ontology-studio/entity-resolution").catch(() => {
+              setQueueState({
+                status: "error",
+                message: "Sign-in could not be started. Please try again.",
+              });
+            });
+          }}
         >
           Sign in
         </button>

@@ -27,6 +27,7 @@ vi.mock("@/lib/auth/browser-session", () => ({
 beforeEach(() => {
   askMock.mockReset();
   signInMock.mockReset();
+  signInMock.mockResolvedValue(undefined);
 });
 
 const answeredResponse = {
@@ -222,6 +223,24 @@ test("renders an unauthorized state and offers sign-in", async () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(signInMock).toHaveBeenCalledWith("/ontology-studio/ask");
+});
+
+test("a sign-in failure (e.g. unreachable/unconfigured identity provider) shows a visible error instead of an unhandled rejection", async () => {
+  askMock.mockRejectedValue(apiError("AUTH_REQUIRED", 401));
+  signInMock.mockReset();
+  signInMock.mockRejectedValue(new Error("discovery failed"));
+  render(<AskCtecWorkspace />);
+  await askQuestion("Which products depend on TSMC?");
+
+  await waitFor(() =>
+    expect(screen.getByText("Sign in required")).toBeInTheDocument(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await waitFor(() =>
+    expect(
+      screen.getByText("Sign-in could not be started. Please try again."),
+    ).toBeInTheDocument(),
+  );
 });
 
 test("renders a backend error state with a retry that re-submits the question", async () => {

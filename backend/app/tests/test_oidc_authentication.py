@@ -35,7 +35,7 @@ def _verifier() -> tuple[OidcJwtVerifier, object]:
     return verifier, private
 
 
-def _token(key: Any, **changes: object) -> str:
+def _token(key: Any, *, omit: tuple[str, ...] = (), **changes: object) -> str:
     now = datetime.now(UTC)
     claims = {
         "sub": "principal",
@@ -49,6 +49,8 @@ def _token(key: Any, **changes: object) -> str:
         "exp": int((now + timedelta(minutes=5)).timestamp()),
     }
     claims.update(changes)
+    for key_name in omit:
+        claims.pop(key_name, None)
     return jwt.encode(claims, key, algorithm="RS256", headers={"kid": "key-1"})
 
 
@@ -58,6 +60,38 @@ def test_valid_signed_token_derives_minimum_trusted_principal() -> None:
     assert principal.principal_id == "principal"
     assert principal.tenant_id == "tenant-a"
     assert "supplier-risk:submit" in principal.scopes
+
+
+def test_valid_token_without_nbf_is_accepted() -> None:
+    """"nbf" is optional (e.g. Keycloak's default access token omits it
+    entirely): its absence must not make an otherwise-valid token
+    unverifiable."""
+    verifier, private = _verifier()
+    principal = verifier.verify(_token(private, omit=("nbf",)))
+    assert principal.principal_id == "principal"
+
+
+def test_token_with_future_nbf_is_rejected() -> None:
+    """When "nbf" IS present, it must still be enforced normally."""
+    verifier, private = _verifier()
+    future_nbf = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(_token(private, nbf=future_nbf))
+    assert error.value.code == "AUTH_TOKEN_NOT_YET_VALID"
+
+
+def test_token_missing_exp_is_rejected() -> None:
+    verifier, private = _verifier()
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(_token(private, omit=("exp",)))
+    assert error.value.code == "AUTH_TOKEN_UNVERIFIABLE"
+
+
+def test_token_missing_subject_claim_is_rejected() -> None:
+    verifier, private = _verifier()
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(_token(private, omit=("sub",)))
+    assert error.value.code == "AUTH_TOKEN_UNVERIFIABLE"
 
 
 @pytest.mark.parametrize(

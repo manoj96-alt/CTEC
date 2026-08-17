@@ -61,6 +61,7 @@ beforeEach(() => {
   previewMock.mockReset();
   decideMock.mockReset();
   signInMock.mockReset();
+  signInMock.mockResolvedValue(undefined);
 });
 
 const caseSummary = {
@@ -193,6 +194,22 @@ test("shows an unauthorized state with a sign-in action when no token is present
   expect(screen.getByText("Sign in required")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(signInMock).toHaveBeenCalledWith("/ontology-studio/entity-resolution");
+});
+
+test("a sign-in failure (e.g. unreachable/unconfigured identity provider) shows a visible error instead of an unhandled rejection", async () => {
+  queueMock.mockRejectedValue(
+    apiError("AUTH_REQUIRED", "Sign in is required", 401),
+  );
+  signInMock.mockReset();
+  signInMock.mockRejectedValue(new Error("discovery failed"));
+  render(<EntityResolutionWorkspace />);
+  await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await waitFor(() =>
+    expect(
+      screen.getByText("Sign-in could not be started. Please try again."),
+    ).toBeInTheDocument(),
+  );
 });
 
 test("shows a bounded error state with Retry when the service is unavailable, never fabricated data", async () => {

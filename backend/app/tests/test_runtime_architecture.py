@@ -254,6 +254,23 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_ontology_copilot_full_stack_postgres.py",
     "backend/app/tests/test_demo_ontology_copilot_seeder.py",
     "backend/app/tests/test_demo_ontology_copilot_seeder_postgres.py",
+    # Gate E Phase 2 -- local/demo authentication runtime wiring
+    # (frontend/backend wired to the Gate E Phase 1 Keycloak substrate,
+    # PAD-002, architecture/released/v1.10/).
+    "frontend/next.config.ts",
+    "frontend/components/session-controls.tsx",
+    "frontend/tests/session-controls.test.tsx",
+    "frontend/tests/browser-session.test.ts",
+    "frontend/lib/auth/browser-session.ts",
+    "frontend/tests/browser-session-signout.test.ts",
+    "frontend/app/ontology-studio/ask/_components/ask-ctec-workspace.tsx",
+    "frontend/tests/ask-ctec-workspace.test.tsx",
+    "keycloak/ctec-realm.json",
+    # Retained local RELEASE_CANDIDATE review-trail copy (PAD-002 governance
+    # precedent) -- untracked, never staged/committed, but present in the
+    # working tree throughout Gate E and therefore visible to this
+    # tracked+untracked union check.
+    "architecture/proposed/gate-e/PAD-002-Local-Development-Identity-Provider-and-Demo-Persona-Authorization-Boundary_v1.0_RELEASE_CANDIDATE.md",
 }
 
 

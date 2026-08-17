@@ -14,9 +14,12 @@ export function browserAuthConfig(): BrowserAuthConfig {
     postLogoutRedirectUri:
       process.env.NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI ?? "",
     apiOrigin: process.env.NEXT_PUBLIC_CTEC_API_ORIGIN ?? "",
+    // "||", not "??": an empty-string build-time value (e.g. an unset
+    // Docker build arg passed through as "") must fall back to this
+    // default too, not be treated as an explicit empty scope request.
     scope:
-      process.env.NEXT_PUBLIC_OIDC_SCOPE ??
-      "openid profile supplier-risk:read entity-resolution:read entity-resolution:decide ontology-copilot:ask",
+      process.env.NEXT_PUBLIC_OIDC_SCOPE ||
+      "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask",
   };
   if (
     Object.entries(values).some(([key, value]) => key !== "scope" && !value)
