@@ -6,7 +6,9 @@ AUTHORITY.** Nothing in this directory is registered in
 authority. It exists for Product Owner review only, produced by Gate F F2
 (Proposed Architecture Package Drafting) following Gate F F0 (Discovery) and
 F1 (Decision Analysis), and verified/corrected by Gate F F2.1 (Architecture
-Evidence & Persistence Verification).
+Evidence & Persistence Verification), with its persistence-correlation
+design and RFC-010 compliance finalized by Gate F F2.2 (Persistence
+Correlation and RFC-010 Compliance Design).
 
 ## Contents
 
@@ -46,11 +48,14 @@ Requirements, Decision Readiness).
 ## Status of open questions
 
 F2.1 closed the two evidence questions the Product Owner required before
-architecture finalization: RFC-010's primary text was read directly and
-confirms (does not merely support by inference) RFC-017's approach, and the
+architecture finalization: RFC-010's primary text was read directly, and the
 Gate F decision-time persistence contract was proven against a realistic
-multi-material/multi-candidate case — CDD-015's persistence sections were
-corrected to specify the exact mechanism required (see
-`GATE-F-ARCHITECTURE-DECISION-TRACE.md`'s "F2.1 verification outcomes").
-Remaining open items are listed in that document's final section; none are
-blocking for Product Owner review.
+multi-material/multi-candidate case. F2.2 then replaced F2.1's
+convention-based correlation approach (rejected by the Product Owner) with a
+small, explicit, noncanonical `decision_evaluations` persistence extension
+(CDD-015 §16-17, persistence classification **P3**), and resolved the
+Logical Model/Physical Model/EAD-001 compliance question definitively rather
+than leaving it as a residual item — see
+`GATE-F-ARCHITECTURE-DECISION-TRACE.md`'s "F2.2 outcomes." Remaining open
+items are listed in that document's final section; none are blocking for
+Product Owner review.

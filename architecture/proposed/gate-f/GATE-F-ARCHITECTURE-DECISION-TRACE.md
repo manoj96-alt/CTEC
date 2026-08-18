@@ -11,7 +11,7 @@ future-gate implication.
 | 2 | RFC required for new canonical semantics; CDD-only authority rejected | Whole document | — | §31 (cites, does not self-authorize) | Three new relationship types (§3a-3c) plus retroactive ratification of the pre-existing 7 types/10 concepts (§6) — all under RFC authority, none under CDD-only authority. | Closes the SUPPLIER-RISK-ONTOLOGY-V1 governance gap for good, so later gates don't inherit it or repeat the pattern. |
 | 3 | One new read scope | — | Whole document | §18, §21, §25 (cites, does not self-authorize) | `supply-chain-impact:read` (recommended name, PAD-003 §2) gates every new Gate F endpoint. No scope proliferation — one scope for the entire read surface. | Establishes the "one scope per bounded capability" pattern for whatever vertical slice comes after Gate F. |
 | 4 | Human-authority-required belongs to GRM | — | §3, §7 | §12, §14, §28.4 | GRM (not DRM's `HumanOverrideService`) produces `HUMAN_APPROVAL_REQUIRED` as a `governance_evaluation_records` outcome. | Establishes GRM, not DRM, as the architectural home for any future "does this decision need a human" question — relevant to future Decision Readiness. |
-| 5 | Hybrid persistence | §5 (no schema change) | — | §9, §16-17, §19-20, §28 (F2.1-corrected) | Dependency path stays derived-on-read (no new table). The decision snapshot reuses `decision_evaluation_records` + `governance_evaluation_records` unmodified, but F2.1 verification proved this only works if CDD-015 specifies: per-pair facts via `institutional_relationship_assertions` (not bare `assertions`), one-or-more correlated `decision_evaluation_records` rows per evaluation via `business_context_reference` (not "exactly one"), and application-layer (not DB-enforced) tenant verification for these tables. | No new canonical entity or table for Gate F means no migration debt for a future gate to work around, but the correlation-by-convention pattern (§16 item 3) is a precedent worth formalizing with a real column if a later gate needs it more than once. |
+| 5 | Hybrid persistence | §5 (no canonical schema change) | — | §9, §16-17, §19-20, §28 (F2.2-corrected) | Dependency path stays derived-on-read (no new table). The decision snapshot reuses `decision_evaluation_records`/`governance_evaluation_records`/`institutional_relationship_assertions`, plus one small new **noncanonical** persistence extension CDD-015 §16-17 authorizes directly: a `decision_evaluations` group table + a nullable FK column on `decision_evaluation_records`, replacing F2.1's rejected `business_context_reference`-convention approach. | No new canonical entity for Gate F. The new `decision_evaluations` concept is deliberately generic (not supplier-risk-shaped) so a later gate needing multi-record decision grouping can reuse the same table rather than reinventing correlation. |
 | 6 | No generalized revenue aggregation | §1 (reuses `generatesRevenue` as-is) | — | §17, §27 | Revenue exposure is a single-hop read off the existing Product→Revenue-Exposure edge; no rollup engine. | Leaves room for a future, genuinely general revenue-aggregation capability to be designed properly later, rather than inheriting a supplier-risk-shaped one. |
 | 7 | Reuse Contract if semantically valid | §2, §3b | — | §5, §9 | `Contract` concept reused unchanged; only the missing `Material→Contract` edge (`coveredBy`) is added. No "Supply Agreement" concept created. | Avoids a duplicate-concept problem a future gate would otherwise have to reconcile. |
 
@@ -31,30 +31,51 @@ future-gate implication.
 - **RFC-010 primary text**: read directly, read-only (RFC-017 §5). §10
   explicitly requires RFC authority for new canonical relationships —
   confirms, and strengthens, RFC-016's characterization and RFC-017's
-  approach. The evidentiary caveat below is closed. One narrower residual
-  question remains (RFC-017 §5, "Residual open item"): whether RFC-010 §10's
-  "and updates to the Logical Model, Physical Model and EAD-001" clause
-  applies to a pure data-row addition like RFC-017's, given no existing
-  precedent covers that exact case.
+  approach.
 - **Decision-snapshot persistence**: verified against a realistic
   multi-material/multi-candidate case (CDD-015 §16). Existing tables
   (`assertions`, `institutional_relationship_assertions`,
   `decision_evaluation_records`, `governance_evaluation_records`) are
-  structurally sufficient — no schema change is required — but only once
-  CDD-015's persistence contract is made precise about per-pair scoping,
-  multi-row correlation, and tenant-verification-by-join. CDD-015 §9,
-  §16-17, §19-20, and §28 were corrected accordingly. See the Gate F F2.1
-  report for the full evidence trail.
+  structurally sufficient for per-pair fact scoping, but F2.1's proposed
+  correlation mechanism (`business_context_reference` by convention) was
+  superseded at F2.2 (below).
+
+## F2.2 outcomes (2026-08-18) — persistence correlation + RFC-010 compliance
+
+- **`business_context_reference` rejected as the correlation mechanism.**
+  It has a distinct, documented, FROZEN/AUTHORITATIVE meaning ("Existing
+  canonical Context reference," CIM-001 §6, scoped to CIM-001's own bounded
+  supplier-risk vertical slice) — reusing it would conflate two unrelated
+  concepts. Replaced by a new, small, noncanonical `decision_evaluations`
+  group table (CDD-015 §16-17), authorized directly by CDD-015 following the
+  CDD-008/009/012 precedent (none of `decision_evaluation_records`,
+  `governance_evaluation_records`, or `runtime_executions` were ever
+  RFC-gated or added to the Physical Model/EAD-001 when created). Runtime
+  identifiers (`execution_id`, `logical_execution_id`) were evaluated and
+  not reused directly — their semantics are infrastructure/replay-layer, not
+  business-decision-layer; collapsing them was exactly the risk the Product
+  Owner flagged. Persistence classification moved from **P2 to P3**
+  (Decision C explicitly permitted this).
+- **RFC-010 §10's Logical/Physical Model/EAD-001 clause — resolved, not
+  left open.** Physical Model: no relationship-type seed data exists in the
+  Physical Model SQL at all (confirmed by direct inspection) — nothing to
+  update. EAD-001: tracks attribute/column metadata only, confirmed by
+  reading `EAD-001-v1.7.json` directly — no taxonomy-value entries exist for
+  any entity, so nothing to update. Logical Model: no authoritative Logical
+  Model exists in this repository (`architecture/INDEX.md:102`,
+  DEVELOPMENT/NON-AUTHORITATIVE) — RFC-017 explicitly records this rather
+  than silently omitting mention of it, as RFC-015/016 both did without
+  explanation. See RFC-017 §5 for the full determination.
 
 ## Open items this package does not resolve
 
 - Whether revenue exposure ever needs cross-product rollup beyond the
   single-hop `generatesRevenue` read (F1 §34.3) — deferred to real business
   requirements, not decided by this package.
-- RFC-010 §10's Logical/Physical Model/EAD-001 clause as applied to
-  data-only RFCs (RFC-017 §5, "Residual open item") — not blocking, flagged
-  for the architecture owner to confirm at authorization time.
-- The `business_context_reference` correlation-by-convention approach
-  (CDD-015 §16 item 3) is not DB-enforced; if a future gate needs this
-  pattern more than once, formalizing it with a real correlation column is
-  worth considering then — not proposed by this package.
+- The pre-existing inconsistency between the INDEX.md-registered EAD-001
+  v1.3 (.xlsx, DEVELOPMENT/NON-AUTHORITATIVE) and the JSON traceability
+  lineage (`EAD-001-v1.X.json`) RFC-015/016 actually treat as authoritative
+  — predates Gate F, noted for completeness (RFC-017 §5), not resolved here.
+- Whether `decision_evaluations.logical_execution_id` should be a real FK to
+  `runtime_executions` or remain a loose audit-trail reference (CDD-015 §16
+  item 1) — left as an implementation-time detail, not decided here.

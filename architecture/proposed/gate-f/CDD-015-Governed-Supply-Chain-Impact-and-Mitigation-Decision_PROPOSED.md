@@ -188,85 +188,131 @@ traversal-derived exposure facts (Material, Product/BOM, Facility) remain
 recomputable from `institutional_relationships` and are **not** separately
 persisted as their own canonical artifact.
 
-**F2.1 correction (binding, replaces the F2 draft's "one row per evaluation"
-description)**: F2.1's persistence verification found that `decision_evaluation_records.knowledge_references`
-is a flat, unstructured `list[str]` with no role/pairing metadata
-(`decision_evaluation.py:28`) and that the current supplier-risk pipeline has
-only ever populated it with a single reference
-(`integration/adapters/drm.py:69`) — it does not, by itself, prove out under
-Gate F's realistic multi-material/multi-candidate case. Gate F's persistence
-contract is therefore, precisely:
+**F2.2 correction (binding, supersedes F2.1's `business_context_reference`
+convention).** F2.1 had proposed correlating multiple `decision_evaluation_records`
+rows for one Gate F evaluation by convention, via the existing
+`business_context_reference` column. The Product Owner rejected this at
+F2.2: `business_context_reference` already has a distinct, documented,
+FROZEN/AUTHORITATIVE meaning — "Existing canonical Context reference"
+(`docs/architecture/CIM-001-Cognitive-Integration-Contract-Model-DRAFT.md:94`,
+frozen identically at `architecture/released/v1.2/CIM-001-...v1.1_FROZEN.md:94`)
+— scoped to CIM-001's own bounded supplier-risk vertical-slice contract
+(CIM-001 §1: "bounded MVP semantics authorized for this vertical slice only
+[...] not universal canonical vocabulary"). Repurposing it for Gate F's
+decision-evaluation-group identity would silently overload one field with
+two unrelated meanings — exactly what was rejected. Gate F instead introduces
+a small, explicit, noncanonical runtime persistence extension:
 
-1. Every derived alternate-supplier fact (qualification, capacity, lead time,
-   cost) is an `assertions` row attached to a specific
-   `(Alternate Supplier, Material)` `institutional_relationships` instance via
-   `institutional_relationship_assertions` (§9) — this, not a bare
-   `knowledge_references` string, is what preserves per-pair cardinality
-   without collision.
-2. DRM produces **one `decision_evaluation_records` row per recommended
-   (Material, Alternate Supplier, allocation) unit** — not necessarily one row
-   for the whole Gate F evaluation. A recommendation spanning multiple
-   Materials (e.g., "shift 40% of M1 to A1, shift 25% of M2 to A3") produces
-   multiple rows. Each row's `knowledge_references` references the specific
-   assertions/relationship instance (via §9's mechanism) that fed that
-   specific unit, plus the triggering Supplier/Risk Event, affected
-   Product/BOM, Facility, and revenue exposure value for that unit.
-3. All `decision_evaluation_records` rows belonging to one Gate F evaluation
-   MUST share a single, caller-generated correlation identifier, carried in
-   the existing (currently generic, unused-by-other-capabilities)
-   `business_context_reference` column (`decision_evaluation.py`). No new
-   column is introduced; this is a usage convention this CDD imposes on an
-   existing field, because no dedicated `execution_id`/`correlation_id`
-   column exists on this table today and none is being added.
-4. Exactly one `governance_evaluation_records` row per Gate F evaluation (not
-   per unit) references the evaluation's `decision_evaluation_records` rows
-   via its existing `governed_record_reference`/`governed_record_type`
-   columns (`governance_evaluation.py:29-30`) — using the same correlation
-   identifier from item 3 if more than one decision record must be
-   referenced, since `governed_record_reference` is a single-value column,
-   not a list; the mechanism for this in the multi-row case is the same
-   correlation-by-convention approach as item 3, not a schema change — and
-   carries the `HUMAN_APPROVAL_REQUIRED` outcome.
-5. A Material/Alternate-Supplier pair that was considered (has a
-   `candidateFor` relationship instance and attached assertions per §9) but
-   was **not** selected in the final recommendation is represented
-   *implicitly* — by the absence of its relationship instance from any
-   `decision_evaluation_records.knowledge_references` entry — not by a
-   dedicated rejection/exclusion flag. No such flag exists in the current
-   schema and this CDD does not add one.
-6. Tenant scoping for every artifact in this chain is verified by following
-   entity-owning foreign keys back to a tenant-scoped row (`institutional_relationships`/
-   `enterprise_entities`, both of which carry a real, DB-constrained
-   `tenant_id` — RFC-015/RFC-016), **not** by a direct `tenant_id` column on
-   `assertions`, `decision_evaluation_records`, `governance_evaluation_records`,
-   or `institutional_relationship_assertions` — none of which carry one
-   (F2.1 finding). This is consistent with, not a departure from, how the
-   rest of the system already scopes these same tables; Gate F introduces no
-   new tenant-scoping gap, but this CDD does not claim a stronger guarantee
-   (e.g., a DB-enforced cross-tenant reference rejection) than the existing
-   pattern actually provides.
+**New concept: Decision Evaluation.** The stable identity of one governed
+Gate F decision evaluation, whose result may require multiple persisted
+decision records — a business/decision-layer concept, deliberately distinct
+from `runtime_executions.execution_id` (an infrastructure/admission-layer
+concept: one per physical pipeline run, and a *new* `execution_id` is minted
+on every replay — `runtime_recovery_attempts.replay_execution_id`,
+`persistence/models.py:104-106`) and from `runtime_executions.logical_execution_id`
+(the runtime layer's own replay-stable identity for *that infrastructure
+concern*, `persistence/models.py:25`, distinct in kind even though its
+replay-stability behavior is the model this design follows).
 
-Together, items 1-6 are sufficient to reproduce why CTEC made the
-recommendation at decision time using entirely existing tables — **no new
-schema is introduced** — but only because this CDD specifies these usage
-conventions explicitly. The F2 draft's earlier, simpler description ("one
-`decision_evaluation_records` row per evaluation... each as a
-`knowledge_references` pointer") is corrected by this section; it was
-directionally right about reusing existing tables but materially
-underspecified the cardinality and correlation mechanism required to make
-that reuse actually work (Gate F F2.1 persistence verification).
+1. **`decision_evaluations`** (new, noncanonical, CDD-015-governed — same
+   governance tier as `decision_evaluation_records`/`governance_evaluation_records`
+   themselves, CDD-008/CDD-009-authorized, and `runtime_executions`,
+   CDD-012-authorized; not a canonical entity, no RFC implication — see §33):
+   one row per governed Gate F decision evaluation. Carries its own direct,
+   DB-constrained `tenant_id` (following the `institutional_relationships`/
+   `runtime_executions` pattern for tables new enough to get this right from
+   the start, not the older, indirect-only `assertions`/`decision_evaluation_records`
+   pattern), `decision_evaluation_id` (PK), and an optional
+   `logical_execution_id` reference column (nullable, for audit traceability
+   back to the runtime execution(s) that computed it — not a foreign key
+   `runtime_executions` depends on, purely a backward-pointing audit trail).
+2. **`decision_evaluation_records.decision_evaluation_id`** (new, nullable
+   `ForeignKey("decision_evaluations.decision_evaluation_id")` column):
+   every Gate F-produced decision record sets this to its evaluation's group
+   ID. Nullable for backward compatibility — CDD-011's existing single-material
+   supplier-risk rows are unaffected and remain valid with this column NULL
+   ("stands alone, no explicit group" remains a legitimate state; this CDD
+   does not retrofit historical rows).
+3. Every derived alternate-supplier fact (qualification, capacity, lead time,
+   cost) remains an `assertions` row attached to a specific
+   `(Alternate Supplier, Material)` `institutional_relationships` instance
+   via `institutional_relationship_assertions` (§9) — unchanged from the
+   F2.1 correction; this is what preserves per-pair cardinality without
+   collision, and is orthogonal to the correlation problem this section now
+   resolves.
+4. DRM produces one `decision_evaluation_records` row per recommended
+   (Material, Alternate Supplier, allocation) unit, each carrying the same
+   `decision_evaluation_id` (item 2) and referencing (via `knowledge_references`)
+   the specific assertions/relationship instance that fed that unit.
+5. Exactly **one** `governance_evaluation_records` row per Gate F evaluation
+   references the group directly: `governed_record_reference = decision_evaluations.decision_evaluation_id`,
+   `governed_record_type = "DecisionEvaluation"` — reusing
+   `governance_evaluation_records`' existing, already-polymorphic
+   `governed_record_reference`/`governed_record_type` columns
+   (`governance_evaluation.py:29-30`) with a new type-string convention.
+   **No schema change to `governance_evaluation_records` is needed** — its
+   reference is now to a real, referentially-integrous row (the group),
+   rather than to a bare shared UUID value with nothing backing it.
+6. A Material/Alternate-Supplier pair that was considered but not selected
+   is represented implicitly (absence from any child record's references),
+   not by a dedicated rejection/exclusion flag — unchanged from F2.1.
+7. **Tenant isolation invariant (binding)**: every child `decision_evaluation_records`
+   row belonging to a `decision_evaluations` group MUST resolve, through its
+   referenced business facts/relationships, to the same tenant as
+   `decision_evaluations.tenant_id`. This is an application-layer validation
+   invariant (the persistence adapter must check it at write time), not a
+   claim of automatic composite-FK enforcement — `decision_evaluation_records`
+   itself still carries no direct `tenant_id` (F2.1 finding, unchanged; this
+   CDD does not redesign that system-wide pattern). The group table's own
+   direct `tenant_id` is the enforcement anchor this invariant checks against.
+
+Items 1-7 are sufficient to reproduce why CTEC made the recommendation at
+decision time, with real referential integrity for the one-to-many
+relationship the F2.1 convention-based approach lacked. This is a genuine,
+if small, persistence extension — not "no schema change" (Gate F F2.2
+persistence classification: **P3** — see §17's canonical-vs-runtime
+distinction below and the Gate F F2.2 report).
 
 ## 17. Persistence behavior
 
 Summarized from §16: dependency path/traversal results are derived-on-read,
 never persisted as their own table. Alternate-supplier facts are persisted as
 `assertions` scoped to per-pair `institutional_relationships` instances via
-`institutional_relationship_assertions` (§9, §16 item 1). The recommendation
-is persisted as one-or-more correlated `decision_evaluation_records` rows
-(§16 items 2-3). The governance standing is persisted as one
-`governance_evaluation_records` row per evaluation (§16 item 4). No new table
-is authorized by this CDD; `business_context_reference` is reused as a
-correlation identifier by convention, not by schema change.
+`institutional_relationship_assertions` (§9, §16 item 3). The recommendation
+is persisted as one-or-more `decision_evaluation_records` rows, each FK'd to
+a `decision_evaluations` group row (§16 items 1-2, 4). The governance
+standing is persisted as one `governance_evaluation_records` row per group,
+referencing it via the existing polymorphic `governed_record_reference`/
+`governed_record_type` columns (§16 item 5).
+
+**Canonical semantic change vs. noncanonical runtime persistence change
+(binding distinction — Gate F F2.2)**: this CDD makes two structurally
+different kinds of change, and they must not be conflated:
+
+- **A. Canonical semantic vocabulary change**: three new `relationship_types`
+  data rows (`assembledAt`, `coveredBy`, `candidateFor`) plus retroactive
+  ratification of the pre-existing ten concepts/seven relationship types —
+  authorized exclusively by RFC-017, per RFC-010 §10's requirement that any
+  canonical entity/attribute/relationship change go through a new RFC. This
+  CDD does not self-authorize any of it (§31).
+- **B. Noncanonical runtime persistence change**: the new `decision_evaluations`
+  table and the new `decision_evaluation_records.decision_evaluation_id`
+  column (§16). This is **not** a canonical-ontology change under RFC-010's
+  own scope — RFC-010 §10 governs "canonical entities, attributes,
+  relationships or lifecycle changes" within the Canonical Enterprise
+  Ontology (RFC-010 §4); `decision_evaluations` is a peer, at the same
+  governance tier, to `decision_evaluation_records`/`governance_evaluation_records`
+  (CDD-008/CDD-009-authorized) and `runtime_executions` (CDD-012-authorized)
+  — none of which were ever RFC-gated, added to the ECOM Physical Data Model
+  SQL artifact, or added to EAD-001 when they were created (confirmed:
+  `decision_evaluation_records`/`governance_evaluation_records` do not appear
+  in `architecture/released/v1.9/ECOM_Physical_Data_Model_v1_7.sql` at all,
+  and neither table nor `runtime_executions` has any entry in
+  `docs/persistence/traceability/EAD-001-v1.7.json`). **This CDD authorizes
+  change B directly, on its own authority**, following that exact precedent
+  — no RFC, no Physical Model regeneration, no EAD-001 update, no Logical
+  Model update. See the Gate F F2.2 report §24-32 for the full evidence
+  trail.
 
 ## 18. Authorization
 
@@ -280,18 +326,31 @@ accepts or requires `entity-resolution:decide`.
 Unchanged mechanism: every new `institutional_relationships` row (using the
 RFC-017 relationship types) carries the existing composite
 `(tenant_id, entity_id)` FK pattern (migration 0012, RFC-016 §2b) — this is a
-real, DB-constrained guarantee. **F2.1 correction**: `assertions`,
+real, DB-constrained guarantee. **F2.1 finding (unchanged)**: `assertions`,
 `decision_evaluation_records`, `governance_evaluation_records`, and
 `institutional_relationship_assertions` carry **no direct `tenant_id` column**
 and are **not** DB-constrained against cross-tenant reference — tenant
 scoping for these is available only by the application following their
 entity-owning foreign keys back to a tenant-scoped `institutional_relationships`/
-`enterprise_entities` row (§16 item 6). This is the existing, system-wide
-pattern for these table types (not a gap Gate F introduces), but this CDD
-does not claim a stronger enforcement guarantee than that pattern actually
-provides, and any implementation must verify tenant scope at the application
-layer for these tables rather than relying on a database constraint. No new
-tenant-propagation mechanism is introduced.
+`enterprise_entities` row. This is the existing, system-wide pattern for
+these table types (not a gap Gate F introduces), and this CDD does not
+redesign it.
+
+**F2.2 addition**: the new `decision_evaluations` table (§16) **does**
+carry a direct, DB-constrained `tenant_id` column — new tables introduced by
+this CDD get this right from the start, following the
+`institutional_relationships`/`runtime_executions` pattern rather than the
+older, indirect-only `assertions`/`decision_evaluation_records` pattern.
+**Binding tenant isolation invariant**: every child `decision_evaluation_records`
+row referencing a given `decision_evaluations.decision_evaluation_id` MUST
+resolve, through its own referenced business facts/relationships, to the
+same tenant as that group's `tenant_id`. This is an application-layer
+invariant the persistence adapter must validate at write time (§16 item 7)
+— it is not claimed to be enforced by a composite foreign key, since
+`decision_evaluation_records` itself is not being given a direct `tenant_id`
+column (this CDD does not redesign that existing pattern). No new
+tenant-propagation mechanism is introduced beyond this one new table and
+this one new invariant.
 
 ## 20. Replay/recovery
 
@@ -319,6 +378,24 @@ already-completed `decision_evaluation_records.knowledge_references` remain
 resolvable indefinitely after the fact (those references are not
 FK-enforced — §16), which is a separate, longer-horizon data-retention
 question this CDD does not resolve.
+
+**F2.2 addition — correlation identity lifecycle across replay (binding)**:
+`decision_evaluations.decision_evaluation_id` is minted exactly once, by
+Gate F's new capability itself, at the moment it begins deriving/evaluating
+a decision (i.e., when the new adapter set starts producing the assertions
+and Knowledge described in §9-10) — **not** at trusted admission (too early;
+the runtime envelope does not yet know this is a multi-record Gate F
+evaluation) and **not** implicitly by first persistence write (would be
+accidental, not explicit). If the underlying runtime execution is
+subsequently replayed/recovered (§20 above), the recovery path MUST look up
+and reuse the SAME `decision_evaluation_id` for that logical decision —
+found via the optional `logical_execution_id` audit-trail column on
+`decision_evaluations` (§16 item 1) — rather than minting a new one; this
+mirrors, without reusing, the exact replay-stability guarantee
+`runtime_executions.logical_execution_id` already provides at the
+infrastructure layer (`persistence/models.py:25`, `runtime_recovery_attempts.logical_execution_id`
+at line 100). This is a specification for implementation, not implemented
+by this CDD.
 
 ## 21. API behavior
 
@@ -406,22 +483,21 @@ cites PAD-003; it does not itself authorize a scope).
    instances via `institutional_relationship_assertions` (§9, §16 item 1) —
    not as caller-supplied request fields, and not as unscoped `assertions`
    that could collide across materials/candidates.
-3. One or more `decision_evaluation_records` rows (one per recommended
-   Material/Alternate-Supplier/allocation unit — §16 item 2) sharing a single
-   correlation identifier in `business_context_reference`, and exactly one
-   `governance_evaluation_records` row per Gate F evaluation (§16 items 3-4),
-   are produced, each referencing the specific input assertions/relationship
-   instances used for its unit.
+3. One `decision_evaluations` row is created per governed Gate F evaluation;
+   one or more `decision_evaluation_records` rows (one per recommended
+   Material/Alternate-Supplier/allocation unit — §16 item 4) reference it via
+   `decision_evaluation_id`; exactly one `governance_evaluation_records` row
+   references the same group via `governed_record_reference`/`governed_record_type`
+   (§16 item 5) — not per-unit.
 4. The governance-standing output is exactly `HUMAN_APPROVAL_REQUIRED` or its
    absence — no other action-implying state is producible.
 5. Every Gate F endpoint requires `supply-chain-impact:read`; none accept or
    grant `entity-resolution:decide`.
-6. Tenant scoping is verified at the application layer for every artifact in
-   the chain by following entity-owning foreign keys to a tenant-scoped
-   `institutional_relationships`/`enterprise_entities` row (§16 item 6, §19);
-   no cross-tenant read is possible via that verification, consistent with —
-   not exceeding — the existing system-wide enforcement pattern for
-   `assertions`/`decision_evaluation_records`/`governance_evaluation_records`.
+6. Tenant scoping: `decision_evaluations.tenant_id` is DB-constrained;
+   every child `decision_evaluation_records` row's own resolved tenant
+   (via its existing indirect entity-join pattern) is verified at the
+   application layer to match its group's `tenant_id` (§16 item 7, §19); no
+   cross-tenant read is possible via that verification.
 7. `runtime/orchestration.py`'s six-port contract and `runtime/recovery.py`'s
    `STAGES` tuple are unmodified.
 8. `/demo/supplier-risk` and its scenario/rule files are unmodified.
@@ -432,11 +508,15 @@ Domain: new-adapter unit tests for qualification/capacity/lead-time/cost
 derivation, following the CDD-011 adapter test pattern. Persistence:
 assertion/decision/governance record creation and tenant-isolation tests,
 following `test_institutional_relationship_tenant_migration_postgres.py`'s
-pattern — **including an explicit cardinality test** (F2.1 addition) that
-constructs the multi-material/multi-candidate case (§16) and asserts that
-per-pair facts do not collide and that all `decision_evaluation_records`
-rows for one evaluation are correctly correlated via
-`business_context_reference`. Security: scope-enforcement tests for `supply-chain-impact:read`,
+pattern — **including an explicit cardinality test** (F2.1/F2.2 addition)
+that constructs the multi-material/multi-candidate case (§16) and asserts
+that per-pair facts do not collide and that all `decision_evaluation_records`
+rows for one evaluation correctly reference the same `decision_evaluations`
+group, with exactly one `governance_evaluation_records` row per group — plus
+a migration test for the new `decision_evaluations` table and
+`decision_evaluation_records.decision_evaluation_id` column, and a
+tenant-isolation test asserting the §16 item 7 / §19 invariant is rejected
+when violated. Security: scope-enforcement tests for `supply-chain-impact:read`,
 following `test_supplier_risk_api_security.py`'s pattern, including an
 explicit negative test that no Gate F endpoint accepts or is reachable via
 `entity-resolution:decide`. Architecture-drift: a Gate-F equivalent of
@@ -461,8 +541,14 @@ frontend TypeScript. This scenario is not implemented by F2.
 This CDD does not itself authorize any canonical semantic vocabulary (see
 RFC-017) or any access scope (see PAD-003) — it cites both and relies on
 their authorization. It does not modify CDD-010's six-stage contract, any
-existing CDD-004–014 boundary, PAD-001, PAD-002, RFC-015, or RFC-016. It does
-not authorize implementation; F2 is document drafting only.
+existing CDD-004–014 boundary, PAD-001, PAD-002, RFC-015, or RFC-016. **This
+CDD does directly authorize** the noncanonical runtime persistence extension
+in §16-17 (the `decision_evaluations` table and
+`decision_evaluation_records.decision_evaluation_id` column) on its own
+authority, per the CDD-008/009/012 precedent (§17) — this is not a canonical
+change and is explicitly distinguished from RFC-017's scope (§17's
+canonical-vs-runtime distinction). It does not authorize implementation; F2
+is document drafting only.
 
 ## 32. Authorization
 

@@ -165,21 +165,70 @@ of RFC-level authorization for §3's three new relationship types, and for
 §6's ratification, is therefore fully and directly supported by RFC-010's
 primary text, with no remaining evidentiary gap.
 
-**Residual open item (not blocking, flagged for the architecture owner)**:
-RFC-010 §10's requirement literally reads "a new RFC **and** updates to the
-Logical Model, Physical Model and EAD-001." RFC-015 and RFC-016 — the only
-existing precedents — both paired their RFC with a regenerated physical
-model release and EAD-001 update (RFC-016 §3). Neither precedent involved a
-*data-only* taxonomy addition with no structural schema change, so there is
-no clean precedent for whether §10's "and updates to..." clause applies to a
-pure data-row addition (this RFC's case) or only to structural changes.
-This RFC's position is that no Logical/Physical Model/EAD-001 update is
-needed here because neither document's content changes (no new table,
-column, or attribute — EAD-001 tracks attributes/columns, not taxonomy
-values, per RFC-016 §3's own description of what it updated). This
-interpretation is not certain and should be explicitly confirmed by the
-architecture owner at authorization time, alongside the rest of this
-package.
+**Gate F F2.2 — Logical Model, Physical Model, and EAD-001 compliance
+determination (resolves the F2.1 residual item, honoring RFC-010 §10
+literally per the Product Owner's F2.2 Decision A — no artifact is silently
+skipped).**
+
+- **Physical Model — no update required, directly evidenced.**
+  `architecture/released/v1.9/ECOM_Physical_Data_Model_v1_7.sql` defines the
+  `relationship_types` TABLE structure only; it contains zero `INSERT`
+  statements for any relationship-type or entity-type VALUE (confirmed by
+  direct inspection — no seed data of any kind appears in this file for
+  `relationship_types`, `entity_types`, or `institutional_concepts`). Seed
+  values are exclusively application-level (`ontology_seed.py`). Because
+  RFC-017 §3/§6 add and ratify DATA ROWS only — no new column, no new table,
+  no structural change — there is nothing in the Physical Model artifact for
+  this RFC to update. This is not an inference from RFC-016's language; it
+  is direct inspection of the current authoritative Physical Model file.
+- **EAD-001 — no update required, directly evidenced.** The current EAD-001
+  traceability artifact (`docs/persistence/traceability/EAD-001-v1.7.json`)
+  was read directly: every entry is one row per (Entity, Attribute Name)
+  pair — e.g. `Enterprise.enterprise_id`, `Enterprise.enterprise_name` — i.e.
+  column/attribute-level metadata. It contains no entries representing
+  taxonomy *values* (no row for "supplies" or "boundBy" as a value of
+  `Relationship Type`), even though "Institutional Concept" itself has
+  attribute-level entries. RFC-017 changes no attribute/column on any
+  entity, so EAD-001 requires no update. (Note, for completeness, not
+  decision-relevant: the formally INDEX.md-registered "EAD-001" document —
+  `architecture/released/v1.2/EAD-001_Enterprise_Attribute_Dictionary_v1_3.xlsx`,
+  registered DEVELOPMENT/NON-AUTHORITATIVE, `architecture/INDEX.md:103` — is
+  a different, stale artifact from the JSON traceability lineage RFC-015/016
+  actually updated as their "EAD-001." This is a pre-existing inconsistency
+  in how "EAD-001" is tracked, predating Gate F; this RFC follows the
+  JSON-traceability lineage precedent RFC-015/016 actually used, and does
+  not attempt to resolve the inconsistency, which is out of Gate F's scope.)
+- **Logical Model — no update possible or required, directly evidenced, and
+  explicitly recorded rather than silently skipped.** `architecture/INDEX.md:102`
+  registers "ECOM Logical Data Model | 1.3 | DEVELOPMENT | NO |
+  NON-AUTHORITATIVE." **No authoritative Logical Model exists in this
+  repository at all.** RFC-010 §10 requires updating "the Logical Model" as
+  an authoritative artifact; there being none, this RFC cannot update what
+  does not authoritatively exist, and does not attempt to. This is not a
+  gap RFC-017 introduces: RFC-015 and RFC-016 (`architecture/released/v1.8/RFC-015...md`,
+  `architecture/released/v1.9/RFC-016...md`) — both read directly — list
+  their governed artifacts explicitly (§"Governed artifacts" in each) and
+  **neither lists any Logical Model file**, for the same reason, though
+  neither RFC stated that reason explicitly. This RFC does what its two
+  predecessors did not: it explicitly records why the Logical Model
+  obligation is inapplicable, rather than silently omitting mention of it.
+- **The correlation-persistence extension separately authorized under
+  CDD-015** (a new, noncanonical `decision_evaluations` table — see CDD-015
+  §16-17) similarly requires no Physical Model, EAD-001, or Logical Model
+  update, on independent grounds: `decision_evaluation_records` and
+  `governance_evaluation_records` — the tables it is a direct peer to —
+  were themselves never added to the Physical Model SQL or to EAD-001 when
+  they were created under CDD-008/CDD-009, confirming this class of
+  noncanonical runtime/decision persistence artifact sits outside the
+  boundary RFC-010 §10 governs in practice, not just in this RFC's
+  argument. This is CDD-015's determination, cited here only for
+  completeness; RFC-017 does not authorize the persistence extension (see
+  CDD-015 §17's canonical-vs-runtime distinction).
+
+With this direct evidence, no residual uncertainty remains for RFC-017's
+own scope. The only remaining pre-existing inconsistency (the stale
+INDEX.md-registered EAD-001 v1.3 vs. the JSON traceability lineage) is noted
+for completeness and is explicitly out of scope for Gate F to resolve.
 
 ## 6. SUPPLIER-RISK-ONTOLOGY-V1 governance-trail resolution
 
