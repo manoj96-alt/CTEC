@@ -20,7 +20,10 @@ from app.domain.governance_engine import (
 )
 from app.domain.shared.exceptions import ValidationException
 from app.infrastructure.persistence.models.assertion_record import AssertionRecordModel
-from app.infrastructure.persistence.models.decision_evaluation import DecisionEvaluationORM
+from app.infrastructure.persistence.models.decision_evaluation import (
+    DecisionEvaluationGroupORM,
+    DecisionEvaluationORM,
+)
 from app.infrastructure.persistence.models.entity_resolution import (
     EnterpriseEntityResolutionRecordModel,
 )
@@ -36,6 +39,13 @@ GOVERNED_RECORD_MODELS: dict[str, type[object]] = {
     "Assertion": AssertionRecordModel,
     "Knowledge Evaluation": KnowledgeEvaluationRecordModel,
     "Decision Evaluation": DecisionEvaluationORM,
+    # Gate F (CDD-015 §16 item 5; merged Gate F Governed Impact Decision
+    # Policy Clarification and Remediation Report, PR #69): the
+    # `decision_evaluations` group row, referenced once per Gate F
+    # evaluation by its single `governance_evaluation_records` row. No
+    # other change to this dict, or to any other method in this file, is
+    # authorized.
+    "DecisionEvaluation": DecisionEvaluationGroupORM,
 }
 
 

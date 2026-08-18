@@ -1,6 +1,10 @@
 import ast
 import subprocess
+from dataclasses import fields
 from pathlib import Path
+
+from app.runtime.orchestration import CapabilityStepPorts
+from app.runtime.recovery import STAGES
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPOSITORY_ROOT / "backend" / "app" / "runtime"
@@ -280,6 +284,30 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/decision_repository.py",
     "backend/app/application/decision_engine.py",
     "backend/app/tests/test_gate_f_semantic_foundation.py",
+    # Gate F F-I2 -- governed impact and mitigation backend (CDD-015 §9-§12,
+    # §33-§35, architecture/released/v1.11/), remediated per the merged
+    # Gate F Governed Impact Decision Policy Clarification and Remediation
+    # Report (PR #69: public repository contracts only, $10M annual-revenue
+    # materiality, no lead-time/candidate-cost threshold, governed
+    # high-severity/single-source facts, binary RECOMMENDED/REJECTED
+    # policy, UNKNOWN != FALSE). No Gate F API, Keycloak scope enforcement,
+    # KRM/DRM/GRM Gate F behavior beyond this, frontend, or production
+    # seeder startup wiring.
+    "backend/app/domain/decision_engine/configuration.py",
+    "backend/app/infrastructure/persistence/governance_repository.py",
+    "backend/app/integration/adapters/gate_f/__init__.py",
+    "backend/app/integration/adapters/gate_f/krm.py",
+    "backend/app/integration/adapters/gate_f/drm.py",
+    "backend/app/integration/adapters/gate_f/grm.py",
+    "backend/app/integration/gate_f_pipeline.py",
+    "backend/app/application/supply_chain_impact_api.py",
+    "backend/app/tests/test_gate_f_adapters.py",
+    "backend/app/tests/test_gate_f_cardinality.py",
+    "backend/app/tests/test_gate_f_traversal_orchestration.py",
+    "backend/app/tests/test_gate_f_tenant_isolation.py",
+    "backend/app/tests/test_gate_f_replay_recovery.py",
+    "backend/app/tests/test_gate_f_repository_contracts.py",
+    "backend/app/tests/test_integration_architecture.py",
 }
 
 
@@ -300,6 +328,28 @@ def test_changed_files_match_cdd_010_and_cdd_012_exhaustive_allowlists() -> None
     )
     changed = set(tracked.stdout.splitlines()) | set(untracked.stdout.splitlines())
     assert changed <= AUTHORIZED_CHANGED_PATHS
+
+
+def test_gate_f_introduces_no_seventh_cognitive_engine_stage() -> None:
+    """CDD-015 §7, §20, §35: Gate F's new adapters plug into the existing
+    six-port CDD-010/CDD-012 durable-execution and replay model unmodified
+    -- no seventh stage, no change to `runtime/orchestration.py`'s
+    `CapabilityStepPorts` contract or `runtime/recovery.py`'s `STAGES`
+    tuple/`range(len(STAGES))` validation."""
+    assert STAGES == ("ERM", "SRM", "ASM", "KRM", "DRM", "GRM")
+    assert {field.name for field in fields(CapabilityStepPorts)} == {
+        "erm",
+        "srm",
+        "asm",
+        "krm",
+        "drm",
+        "grm",
+    }
+
+    gate_f_root = REPOSITORY_ROOT / "backend" / "app" / "integration" / "adapters" / "gate_f"
+    gate_f_source = "\n".join(path.read_text() for path in gate_f_root.glob("*.py"))
+    assert "CapabilityStepPort" not in gate_f_source
+    assert "runtime.orchestration" not in gate_f_source
 
 
 def test_runtime_imports_only_standard_library_and_runtime_modules() -> None:

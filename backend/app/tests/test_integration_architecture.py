@@ -32,4 +32,12 @@ def test_integration_package_contains_only_authorized_modules() -> None:
         "adapters/krm.py",
         "adapters/drm.py",
         "adapters/grm.py",
+        # Gate F F-I2 (CDD-015 §33): a new, separate adapter package, to
+        # avoid any regression risk to CDD-011's existing supplier-risk
+        # pipeline above.
+        "gate_f_pipeline.py",
+        "adapters/gate_f/__init__.py",
+        "adapters/gate_f/krm.py",
+        "adapters/gate_f/drm.py",
+        "adapters/gate_f/grm.py",
     }
