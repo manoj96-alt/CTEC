@@ -5,8 +5,10 @@ Status: FROZEN
 Implementation state: NOT STARTED
 Architecture Baseline: v1.11
 Governing authorities: RFC-017 (FROZEN, semantic vocabulary), PAD-003
-(FROZEN, `supply-chain-impact:read` scope), plus already-FROZEN CDD-004
-through CDD-013, PAD-001, RFC-015, RFC-016
+(FROZEN, `supply-chain-impact:read` and `supply-chain-impact:evaluate`
+scopes), plus already-FROZEN CDD-004 through CDD-013, PAD-001, RFC-015,
+RFC-016
+Mandatory template: CDD Template v2.2 (§31-35 — F5.1 remediation)
 
 **Publication note**: this Work Order is an architecture authority
 (CDD Gate: FROZEN), published as part of Gate F architecture baseline
@@ -15,6 +17,14 @@ authorize implementation; a separate Product Owner
 implementation-planning authorization is required before any code is
 written against it (see `architecture/INDEX.md`'s Governed implementation
 work orders entry for this CDD's current Implementation State).
+
+**F5.1 governance remediation note**: Gate F F5 (Implementation Planning)
+found this Work Order lacked CDD Template v2.2's mandatory exhaustive
+per-artifact authorization records (§7-11 of the template) and conflated
+read and evaluate operations under a single read-only claim. Both are
+remediated below (§31-35 add the authorization records; §12, §18, §21, §25,
+§28 correct the read/evaluate conflation) without altering any previously
+approved Gate F business/architecture decision.
 
 ## 1. Purpose
 
@@ -38,8 +48,11 @@ governed backend. Gate F closes this gap for exactly this one vertical slice.
 ## 3. Persona
 
 The same authenticated demo/production persona Gate E already establishes
-(OIDC session, PAD-002), holding `supply-chain-impact:read` (PAD-003) — a
-risk/sourcing analyst reviewing a specific at-risk supplier.
+(OIDC session, PAD-002), holding `supply-chain-impact:read` and
+`supply-chain-impact:evaluate` (PAD-003 §2a-§2b, §9 — F5.1 correction) — a
+risk/sourcing analyst reviewing a specific at-risk supplier and, per the
+Product Owner's Gate F F5.1 Decision 5, able to run the governed evaluation
+itself.
 
 ## 4. Trigger
 
@@ -67,8 +80,9 @@ In scope: read-only dependency traversal; governed derivation of alternate-
 supplier qualification/capacity/lead-time/cost as assertions; a mitigation
 recommendation (DRM); a governance-standing/human-authority-required
 indicator (GRM); an immutable decision-time snapshot sufficient to reproduce
-the recommendation (§16); one new read API surface (§21) under
-`supply-chain-impact:read`.
+the recommendation (§16); two new API operation kinds (§21 — F5.1
+correction): retrieval under `supply-chain-impact:read` and governed
+evaluation under `supply-chain-impact:evaluate`.
 
 Out of scope (binding, restated from the Product Owner's Gate F business
 boundary): human approval workflow, approve/reject/conditionally-approve
@@ -158,10 +172,30 @@ Gate F (noted as an open question in F1 §34.2; the Product Owner's F1
 decision resolves it in favor of GRM). GRM evaluates the DRM recommendation
 against governance policy and produces a `governance_evaluation_records` row
 whose outcome includes the `HUMAN_APPROVAL_REQUIRED` indicator — a governed
-fact about decision-readiness, not an approval action (PAD-003 §7). Gate F
+fact about decision-readiness, not an approval action (PAD-003 §3a, §7). Gate F
 implements no code path that can produce `APPROVED`, `REJECTED`, or any
 other action-implying state; the only GRM outputs Gate F defines are
 `HUMAN_APPROVAL_REQUIRED` and its absence.
+
+**F5.1 correction — internal outcome vs. business semantic mapping
+(binding, resolves the F5 open design question).** `domain/governance_engine/model.py`'s
+shared `GovernanceOutcome` enum (`COMPLIANT`, `NON_COMPLIANT`,
+`EXCEPTION_GRANTED`, `REQUIRES_REVIEW`) is **not** extended with a new
+`HUMAN_APPROVAL_REQUIRED` member — per the Product Owner's Gate F F5.1
+Decision 3, Gate F reuses the existing `REQUIRES_REVIEW` outcome as GRM's
+internal, persisted engine result. The persisted
+`governance_evaluation_records` row retains `governance_outcome =
+REQUIRES_REVIEW`, unchanged from how every other GRM consumer's
+`REQUIRES_REVIEW` outcome is already persisted (no new column, no new enum
+value, no change to `domain/governance_engine/model.py`). Gate F's own
+API/view-model layer (§21, §17) applies a **deterministic, Gate F-specific,
+non-authoritative-for-other-GRM-consumers projection**: internal outcome
+`REQUIRES_REVIEW` → Gate F business/API semantic state
+`HUMAN_APPROVAL_REQUIRED`. This projection is a presentation-layer mapping
+only — it introduces no shared architecture change, no approval workflow,
+and does not imply GRM itself has gained an additional outcome. Any other
+capability that also produces `REQUIRES_REVIEW` is unaffected and does not
+inherit Gate F's `HUMAN_APPROVAL_REQUIRED` label.
 
 ## 13. Mitigation recommendation
 
@@ -324,10 +358,18 @@ different kinds of change, and they must not be conflated:
 
 ## 18. Authorization
 
-Every Gate F read endpoint requires `supply-chain-impact:read` (PAD-003).
-Tenant authority originates exclusively from `TrustedPrincipal.tenant_id`
-(PAD-003 §8), never from client input. No endpoint defined by this CDD
-accepts or requires `entity-resolution:decide`.
+**F5.1 correction (binding, supersedes the single-scope claim below).** Per
+the Product Owner's Gate F F5.1 Decision 2 and the revised PAD-003 §2a-§4a:
+Gate F has **two** distinct scopes, not one. Every Gate F **retrieval**
+endpoint (existing Decision Evaluations and their results, §21) requires
+`supply-chain-impact:read` (PAD-003 §3). Every Gate F **evaluate** operation
+(creating a new Decision Evaluation, §16) requires
+`supply-chain-impact:evaluate` (PAD-003 §3a) — this operation MUST NOT be
+gated by `supply-chain-impact:read` alone; the two scopes are
+non-compositional (PAD-003 §4a). Tenant authority originates exclusively
+from `TrustedPrincipal.tenant_id` (PAD-003 §8), never from client input, for
+both scopes. No endpoint defined by this CDD accepts or requires
+`entity-resolution:decide`, under either scope.
 
 ## 19. Tenant isolation
 
@@ -407,10 +449,39 @@ by this CDD.
 
 ## 21. API behavior
 
-One new, additive, read-only API surface (exact routes to be specified at
-implementation time, not by this CDD) returning the §3 PAD-003 output
-categories under `supply-chain-impact:read`. No existing API's contract is
-modified. No command/mutating endpoint is introduced.
+**F5.1 correction (binding, supersedes the original "read-only" claim,
+resolves the F5 §21 flagged gap).** Gate F F5's implementation-planning pass
+found that this CDD's original claim — "read-only API surface... no
+command/mutating endpoint is introduced" — was inaccurate: §16 requires
+creating new persisted rows (`decision_evaluations`, N
+`decision_evaluation_records`, one `governance_evaluation_records`) on every
+governed evaluation, which is unambiguous write behavior. The Product
+Owner's Gate F F5.1 Decision 2 resolves this by splitting Gate F's API
+surface into two operation kinds, precisely distinguished:
+
+1. **READ endpoint(s)**: additive, genuinely read-only, retrieve existing,
+   previously-created Decision Evaluations and their results (the §3 PAD-003
+   output categories) under `supply-chain-impact:read` (PAD-003 §3). No
+   existing API's contract is modified.
+2. **GOVERNED EVALUATION endpoint/operation**: creates one new
+   `decision_evaluations` group and its child records (§16) under
+   `supply-chain-impact:evaluate` (PAD-003 §3a). This operation is
+   **mutating with respect to runtime decision persistence** (new rows in
+   `decision_evaluations`/`decision_evaluation_records`/`governance_evaluation_records`,
+   new `candidateFor` `institutional_relationships` instances and their
+   attached `assertions`, §9) but **is not mutating with respect to
+   canonical enterprise master data** — it never alters an
+   `enterprise_entity`, never alters an existing `institutional_relationship`
+   beyond the bounded candidate-evaluation edges §9 already authorizes, and
+   performs no ERP/execution action (§27). This distinction — governed
+   runtime-decision persistence vs. canonical master-data mutation — is the
+   basis for `:evaluate` being a distinct, non-`:read`, non-approval,
+   non-execution scope (PAD-003 §3a).
+
+Evaluation-creation persistence MUST NOT be described or implemented as a
+"read side effect" of `supply-chain-impact:read` — it is its own, separately
+scoped operation (PAD-003 §4a on scope composition). Exact routes remain
+unspecified by this CDD, to be defined at implementation time.
 
 ## 22. Frontend responsibility
 
@@ -445,13 +516,20 @@ every Gate F endpoint, consistent with how it already applies to
 
 ## 25. Negative/security behavior
 
-A caller without `supply-chain-impact:read` MUST receive the existing
-standard authorization-failure behavior (unchanged mechanism, CDD-013). A
-caller may not supply a `tenant_id` to influence which tenant's data is
-returned (PAD-003 §8). No Gate F endpoint accepts or exposes any parameter
-that could trigger `entity-resolution:decide`-scoped behavior (PAD-003 §7).
-No Gate F endpoint accepts an approval, rejection, or execution instruction
-of any kind — there is no code path for one to exist.
+**F5.1 correction (binding)**: applies independently to both scopes. A
+caller without `supply-chain-impact:read` MUST receive the existing standard
+authorization-failure behavior on any retrieval endpoint; a caller without
+`supply-chain-impact:evaluate` MUST receive the same standard
+authorization-failure behavior on the evaluate operation — **holding
+`supply-chain-impact:read` does not, by itself, authorize creating a new
+Decision Evaluation** (PAD-003 §4a, non-compositional scopes). A caller may
+not supply a `tenant_id` to influence which tenant's data is read or which
+tenant a new Decision Evaluation is created under (PAD-003 §8). No Gate F
+endpoint, under either scope, accepts or exposes any parameter that could
+trigger `entity-resolution:decide`-scoped behavior (PAD-003 §7). No Gate F
+endpoint, under either scope, accepts an approval, rejection, or execution
+instruction of any kind — there is no code path for one to exist (PAD-003
+§3a, §10).
 
 ## 26. Future platform compatibility
 
@@ -483,9 +561,17 @@ cites PAD-003; it does not itself authorize a scope).
 
 ## 28. Acceptance criteria
 
-1. A Gate F read request for an at-risk Supplier returns a dependency chain
-   (Material, Product/BOM, Facility) derived via Ask CTEC traversal, with no
-   traversal result persisted as a new canonical artifact.
+**F5.1 correction (binding)**: criteria 1 and 5 are corrected below to
+reflect the read/evaluate split (PAD-003 §2a-§4a); criteria 9-15 are added
+per the Product Owner's Gate F F5.1 Decision 2/Part 8, testing both
+authorities explicitly.
+
+**Evaluate acceptance:**
+
+1. A Gate F **evaluate** request for an at-risk Supplier, authorized under
+   `supply-chain-impact:evaluate`, returns a dependency chain (Material,
+   Product/BOM, Facility) derived via Ask CTEC traversal, with no traversal
+   result persisted as a new canonical artifact.
 2. Alternate-supplier qualification/capacity/lead-time/cost are represented
    as `assertions` attached to per-(candidate, material) `institutional_relationships`
    instances via `institutional_relationship_assertions` (§9, §16 item 3) —
@@ -498,14 +584,40 @@ cites PAD-003; it does not itself authorize a scope).
    references the same group via `governed_record_reference`/`governed_record_type`
    (§16 item 5) — not per-unit.
 4. The governance-standing output is exactly `HUMAN_APPROVAL_REQUIRED` or its
-   absence — no other action-implying state is producible.
-5. Every Gate F endpoint requires `supply-chain-impact:read`; none accept or
-   grant `entity-resolution:decide`.
+   absence — no other action-implying state is producible (§12's
+   `REQUIRES_REVIEW` → `HUMAN_APPROVAL_REQUIRED` projection applies).
+9. A caller without any token is denied on the evaluate endpoint.
+10. A caller holding only `supply-chain-impact:read` (no `:evaluate`) is
+    denied when attempting to create a new Decision Evaluation — `:read`
+    does not imply `:evaluate` (PAD-003 §4a).
+11. A caller holding `supply-chain-impact:evaluate` may perform the
+    evaluation; tenant authority for the created `decision_evaluations` row
+    originates exclusively from `TrustedPrincipal`; a client-supplied tenant
+    value is ignored/rejected (PAD-003 §8).
+12. No approval, rejection, or execution operation exists on the evaluate
+    endpoint or anywhere in Gate F's API surface (§27).
+
+**Read acceptance:**
+
+5. Every Gate F retrieval endpoint requires `supply-chain-impact:read`; none
+   accept or grant `entity-resolution:decide`.
+13. A caller without any token is denied on every read endpoint.
+14. A caller holding `supply-chain-impact:read` can retrieve a
+    previously-created Decision Evaluation and its results; a caller holding
+    only `supply-chain-impact:evaluate` (no `:read`) is denied general
+    retrieval of *other*, previously-existing Decision Evaluations — except
+    for the single-response carve-out in PAD-003 §4a (an evaluate call's own
+    freshly-created result).
+15. A caller from the wrong tenant is denied retrieval of another tenant's
+    Decision Evaluation.
+
+**Shared acceptance (both scopes):**
+
 6. Tenant scoping: `decision_evaluations.tenant_id` is DB-constrained;
    every child `decision_evaluation_records` row's own resolved tenant
    (via its existing indirect entity-join pattern) is verified at the
    application layer to match its group's `tenant_id` (§16 item 7, §19); no
-   cross-tenant read is possible via that verification.
+   cross-tenant read or evaluate is possible via that verification.
 7. `runtime/orchestration.py`'s six-port contract and `runtime/recovery.py`'s
    `STAGES` tuple are unmodified.
 8. `/demo/supplier-risk` and its scenario/rule files are unmodified.
@@ -524,10 +636,14 @@ group, with exactly one `governance_evaluation_records` row per group — plus
 a migration test for the new `decision_evaluations` table and
 `decision_evaluation_records.decision_evaluation_id` column, and a
 tenant-isolation test asserting the §16 item 7 / §19 invariant is rejected
-when violated. Security: scope-enforcement tests for `supply-chain-impact:read`,
-following `test_supplier_risk_api_security.py`'s pattern, including an
-explicit negative test that no Gate F endpoint accepts or is reachable via
-`entity-resolution:decide`. Architecture-drift: a Gate-F equivalent of
+when violated. Security: scope-enforcement tests for **both**
+`supply-chain-impact:read` and `supply-chain-impact:evaluate` (F5.1
+correction), following `test_supplier_risk_api_security.py`'s pattern,
+including an explicit test that `:read` does not imply `:evaluate` and
+`:evaluate` does not imply general `:read` (PAD-003 §4a), and an explicit
+negative test that no Gate F endpoint, under either scope, accepts or is
+reachable via `entity-resolution:decide`. Architecture-drift: a Gate-F
+equivalent of
 `test_runtime_architecture.py`'s allowlist/six-stage-contract assertions,
 confirming no seventh stage was introduced. Replay/recovery: confirm Gate
 F's adapters participate correctly in the existing six-stage checkpoint
@@ -544,7 +660,84 @@ and a GRM `HUMAN_APPROVAL_REQUIRED` indicator — with every fact traceable to
 a persisted assertion or decision/governance record, none of it computed in
 frontend TypeScript. This scenario is not implemented by F2.
 
-## 31. Non-claims
+## 31. Authorized Business Artifacts (F5.1 addition — CDD Template v2.2 §7)
+
+**None authorized.** Gate F implements released BCS capability semantics
+(ERM-001, SRM-001, ASM-001, KRM-001, DRM-001, GRM-001) and RFC-017's
+released semantic vocabulary; it creates no new Business Capability
+Specification or other business-authority artifact. This matches CDD-011
+§5's identical precedent exactly.
+
+## 32. Authorized External Contracts (F5.1 addition — CDD Template v2.2 §8)
+
+| Artifact and path | Action | Authority | Purpose | Exclusions | Evidence |
+|---|---|---|---|---|---|
+| Gate F read/evaluate API package marker — `backend/app/api/supply_chain_impact/__init__.py` | CREATE | PAD-003 v1.0 (§2a-§4a) | Define the bounded Gate F API package. | No product exports beyond the router. | Import/file-boundary test. |
+| Gate F API router — `backend/app/api/supply_chain_impact/router.py` | CREATE | PAD-003 v1.0 (§2a-§4a); CDD-013 v1.0 pattern | Expose the READ endpoint(s) (§21 item 1) under `supply-chain-impact:read` and the GOVERNED EVALUATION endpoint (§21 item 2) under `supply-chain-impact:evaluate`, using the existing `_authorize()` pattern. | No approval, rejection, or execution endpoint (PAD-003 §3a, §10). No endpoint reachable via `entity-resolution:decide`. | Security tests (§29); acceptance criteria 9-15 (§28). |
+| Gate F API request/response schemas — `backend/app/api/supply_chain_impact/schemas.py` | CREATE | CDD-015 §16, §21 | Define the evaluate-request and read/evaluate-response contracts (dependency chain, evaluated alternates, recommendation, governance standing). | No field accepts an approval/rejection/execution instruction (§25). No field accepts a client-supplied `tenant_id` (§19, PAD-003 §8). | Schema validation tests. |
+| Gate F API scope dependency — `backend/app/api/supply_chain_impact/dependencies.py` | CREATE | PAD-003 v1.0 (§2a-§4a) | Wire `TrustedPrincipal`/container dependencies for the new router, following the `api/supplier_risk/dependencies.py` pattern. | No new authentication mechanism (PAD-003 §11, unchanged from Gate E). | Dependency-injection tests. |
+
+No other external contract is authorized. This authorization set implements
+the read/evaluate split (§21) precisely: the router and schemas exist to
+carry the two distinct scopes, not to introduce a third undifferentiated
+surface.
+
+## 33. Authorized Persistence Artifacts (F5.1 addition — CDD Template v2.2 §9)
+
+| Artifact and path | Action | Authority | Purpose | Exclusions | Evidence |
+|---|---|---|---|---|---|
+| Migration — `backend/app/infrastructure/persistence/migrations/versions/0013_decision_evaluation_group.py` | CREATE | CDD-015 §16 items 1-2 | Create `decision_evaluations` (direct `tenant_id`, `decision_evaluation_id` PK, nullable `logical_execution_id` audit column per §16 item 1, §8 F5 recommendation) and add the nullable `decision_evaluation_records.decision_evaluation_id` foreign-key column (§16 item 2). | No structural change to any other existing table. No new column on `governance_evaluation_records` (§16 item 5 — its existing polymorphic reference is reused unchanged). No `NOT NULL` retrofit of existing rows. | Migration test; backward-compatibility test confirming existing CDD-011 rows remain valid with the column NULL. |
+| Decision Evaluation group model — `backend/app/infrastructure/persistence/models/decision_evaluation.py` | MODIFY | CDD-015 §16 items 1-2 | Add the `DecisionEvaluationGroupORM` model (or equivalent class in this file) for `decision_evaluations`, and add the `decision_evaluation_id` field to the existing `DecisionEvaluationORM`. | No change to any other existing column, constraint, or the table's existing DB-level immutability trigger. No FK to `runtime_executions` on `logical_execution_id` (§8 F5 recommendation: non-FK stable association). | Model test. |
+| Decision repository — `backend/app/infrastructure/persistence/decision_repository.py` | MODIFY | CDD-015 §16 | Add create/query methods for `decision_evaluations` rows and for retrieving all `decision_evaluation_records` belonging to one group. | No change to existing `DecisionEvaluationRepositoryImpl` behavior for CDD-011's existing single-material callers. | Repository test; cardinality test. |
+| Decision application request model — `backend/app/application/decision_engine.py` | MODIFY | CDD-015 §16 item 2 | Add an optional `decision_evaluation_id` field to `DecisionEvaluationRequest`, mirroring its existing `business_context_reference` field, threaded through to the ORM. | `business_context_reference` itself is not repurposed as Gate F correlation (Product Owner Gate F F2.2/F4 Decision, restated binding here). | Request/response contract test. |
+| Ontology seed — `backend/app/infrastructure/persistence/ontology_seed.py` | MODIFY | RFC-017 v1.0 §3, §6 | Append exactly three tuples to `REQUIRED_RELATIONSHIPS`: `("assembledAt","Product","Facility")`, `("coveredBy","Material","Contract")`, `("candidateFor","Alternate Supplier","Material")`. | `ONTOLOGY_SEED_VERSION` MUST NOT be bumped (would break idempotency of the ten already-ratified concepts/seven already-ratified relationship types, RFC-017 §6). No new concept added (RFC-017 §1: zero new concepts). No production-startup wiring change (Product Owner Gate F F5.1 Decision 5 — explicitly deferred, not authorized here). | Ontology seed test extension (idempotency + correct domain/range bindings). |
+| Gate F contextual-fact adapters — `backend/app/integration/adapters/gate_f/{__init__.py,krm.py,drm.py,grm.py}` | CREATE | CDD-015 §9-§12 | New, separate adapter package (distinct from CDD-011's existing `integration/adapters/{krm,drm,grm}.py`, to avoid any regression risk to the existing, implemented supplier-risk pipeline — §27) implementing: qualification/capacity/lead-time/cost derivation as `institutional_relationship_assertions` via `candidateFor` relationship instances (§9); DRM policy evaluation producing `decision_evaluation_records` (§11, §16 item 4); GRM evaluation producing the one `governance_evaluation_records` row per group with the `REQUIRES_REVIEW` → `HUMAN_APPROVAL_REQUIRED` projection (§12) and `governed_record_type = "DecisionEvaluation"` (no space — §16 item 5, distinct from CDD-011's existing `"Decision Evaluation"` per-record string). | No modification to CDD-011's existing `integration/adapters/{erm,srm,asm,krm,drm,grm}.py`. No modification to the shared `domain/governance_engine/model.py` `GovernanceOutcome` enum (Product Owner Gate F F5.1 Decision 3, binding). No seventh cognitive-engine port (§7, §20). | Domain/adapter unit tests; cardinality test. |
+| Gate F traversal orchestration — `backend/app/application/supply_chain_impact_api.py` | CREATE | CDD-015 §8, §14 (F5 recommendation) | New, separate orchestration entry point (distinct from `application/ontology_copilot_api.py`, which remains scoped to Ask CTEC only) that loads the tenant graph once and calls the existing `find_paths_to_target_type` once per chain segment (Supplier→Material→Product/BOM→Facility, Product→Revenue-Exposure, Alternate-Supplier via `candidateFor`), then hands results to the §9-§12 adapters. | No modification to `domain/ontology_copilot/traversal.py` or `application/ontology_copilot_api.py`. No traversal result persisted as a new canonical artifact (§28 criterion 1). | Traversal-integration test (§29's identified gap, now authorized here for creation). |
+| Gate F pipeline factory — `backend/app/integration/gate_f_pipeline.py` | CREATE | CDD-015 §7 (CDD-011 pattern reuse) | Construct the Gate F adapter set and return the in-process dependency set, mirroring `integration/pipeline.py`'s existing CDD-011 factory pattern. | No alternate cognitive-engine port order; no bypass of the existing six-port `CapabilityStepPorts` contract (§7, §20). | Integration test. |
+
+All existing domain services, models, and CDD-011 adapters are READ-ONLY
+implementation dependencies under this authorization — Gate F's new
+artifacts may call them but may not alter their business behavior, matching
+CDD-011 §8's identical precedent for its own dependencies. No other
+persistence source file, ORM model, migration, schema, index, or database
+configuration beyond the table above may be created or modified. Each new
+adapter owns one capability-local transaction, following the existing
+`SqlAlchemyCapabilityPersistence` pattern (§27, F5 §27 recommendation) — no
+new cross-cutting distributed transaction is authorized.
+
+## 34. Authorized Configuration Artifacts (F5.1 addition — CDD Template v2.2 §10)
+
+| Artifact and path | Action | Authority | Purpose | Exclusions | Evidence |
+|---|---|---|---|---|---|
+| Keycloak realm configuration — `keycloak/ctec-realm.json` | MODIFY | PAD-003 v1.0 §2a-§2b, §9 | Add two new client-scope blocks (`supply-chain-impact:read`, `supply-chain-impact:evaluate`), following the existing per-scope block pattern (e.g. the `supplier-risk:read` block), and add both to the demo persona's granted-scopes list per PAD-003 §9/Product Owner Gate F F5.1 Decision 5. | No change to any existing scope block (`supplier-risk:*`, `entity-resolution:*`, `ontology-copilot:ask`). No grant of `entity-resolution:decide` to the demo persona (unchanged, PAD-003 §7, §18). | Manual/negative security tests. |
+| DRM policy configuration — `backend/app/domain/decision_engine/configuration.py` | MODIFY | CDD-015 §11 | Add a Gate F materiality-threshold policy-configuration entry, replacing the frontend prototype's hardcoded `MATERIALITY_THRESHOLD_USD` (§23) with a governed configuration value. | No change to any existing DRM configuration entry used by CDD-011. No business-semantics change beyond representing the existing prototype threshold as governed configuration. | Domain unit test. |
+
+No other configuration file, environment key, loader, or validator is
+authorized. Runtime/application startup composition, deployment
+configuration, and environment provisioning beyond the two entries above are
+explicitly out of scope (Product Owner Gate F F5.1 Decision 5 — ontology
+seeder startup wiring is deferred, not authorized here).
+
+## 35. Authorized Test Artifacts (F5.1 addition — CDD Template v2.2 §11)
+
+| Path | Action | Required coverage |
+|---|---|---|
+| `backend/app/tests/test_decision_evaluation_group_migration.py` | CREATE | Migration correctness; backward compatibility (existing CDD-011 rows valid with `decision_evaluation_id` NULL); index/FK presence. |
+| `backend/app/tests/test_gate_f_cardinality.py` | CREATE | The multi-material/multi-candidate case (§16): per-pair facts via `institutional_relationship_assertions` do not collide; all `decision_evaluation_records` for one evaluation reference the same `decision_evaluations` group; exactly one `governance_evaluation_records` row per group. |
+| `backend/app/tests/test_gate_f_adapters.py` | CREATE | New KRM/DRM/GRM adapter unit tests (§9-§12), following the CDD-011 `test_capability_adapters.py` pattern; explicit assertion that GRM can only produce `REQUIRES_REVIEW`/its absence, never `COMPLIANT`/`NON_COMPLIANT`/`EXCEPTION_GRANTED` for a Gate F evaluation. |
+| `backend/app/tests/test_gate_f_traversal_orchestration.py` | CREATE | Multi-segment traversal correctness (Supplier→Material→Product/BOM→Facility→Revenue-Exposure→Candidate-Supplier); confirms no traversal result is persisted as a new canonical artifact (§28 criterion 1). |
+| `backend/app/tests/test_gate_f_tenant_isolation.py` | CREATE | The §16 item 7/§19 tenant invariant is rejected when violated. |
+| `backend/app/tests/test_gate_f_api_security.py` | CREATE | Both scopes independently: missing token, wrong scope, `:read` does not imply `:evaluate` and vice versa (PAD-003 §4a), wrong tenant, `entity-resolution:decide` unreachable — following the `test_supplier_risk_api_security.py` 3-pattern template. Acceptance criteria 9-15 (§28). |
+| `backend/app/tests/test_gate_f_replay_recovery.py` | CREATE | Gate F's adapters participate correctly in the existing two-case (fresh/resume) replay model (§20); `decision_evaluation_id` stability across a simulated resume. |
+| `backend/app/tests/test_runtime_architecture.py` | MODIFY | Extend the existing six-stage allowlist/architecture-drift assertions (`test_changed_files_match_cdd_010_and_cdd_012_exhaustive_allowlists`) to confirm no seventh stage was introduced by Gate F's new adapters. |
+| `frontend/tests/supply-chain-impact-api-client.test.ts` | CREATE | New Gate F frontend API client, following the existing per-capability client test pattern. |
+| `frontend/tests/supply-chain-impact-accessibility.test.tsx` | CREATE | Accessibility check, following `supplier-risk-accessibility.test.tsx`'s pattern. |
+
+No other test artifact is authorized. `/demo/supplier-risk`'s existing test
+files (`demo-supplier-risk-*.test.tsx`) are explicitly READ-ONLY reference
+material under this CDD — none may be modified (§23, §28 criterion 8).
+
+## 36. Non-claims
 
 This CDD does not itself authorize any canonical semantic vocabulary (see
 RFC-017) or any access scope (see PAD-003) — it cites both and relies on
@@ -555,20 +748,35 @@ in §16-17 (the `decision_evaluations` table and
 `decision_evaluation_records.decision_evaluation_id` column) on its own
 authority, per the CDD-008/009/012 precedent (§17) — this is not a canonical
 change and is explicitly distinguished from RFC-017's scope (§17's
-canonical-vs-runtime distinction). It does not authorize implementation; F2
-is document drafting only.
+canonical-vs-runtime distinction). **F5.1 addition**: §31-35 above are this
+CDD's exhaustive CDD Template v2.2 artifact-authorization records — no
+artifact outside those records may be created, modified, or deleted under
+this CDD's authority (Template v2.2 §18-19, "omission grants no
+permission"). It does not modify `domain/governance_engine/model.py`'s
+`GovernanceOutcome` enum (Product Owner Gate F F5.1 Decision 3). It does not
+authorize implementation; F5.1 remains architecture/governance remediation
+only — no code may be written under this authorization until a separate,
+explicit Product Owner implementation-planning authorization is given
+(unchanged from §32/F4).
 
-## 32. Authorization
+## 37. Authorization
 
 Authorized by CTEC Product Owner Manoj Nair on 2026-08-18: this Work Order's
-capability contract (§1-31) as the governing architecture for Gate F
+capability contract (§1-30, §36) as the governing architecture for Gate F
 ("Governed Supply Chain Impact & Mitigation Decision"), following Gate F F0
 through F3 architecture review and the Gate F F3 release-candidate
 consistency and dependency verification; publication alongside RFC-017 and
 PAD-003 as part of architecture baseline v1.11 (this authorization).
+**Amended by Product Owner authorization, Gate F F5.1 governance
+remediation, 2026-08-18**: the exhaustive CDD Template v2.2 artifact
+authorization records in §31-35 (closing the F5-identified template
+compliance gap); the read/evaluate operation split in §18, §21, §25, §28
+(closing the F5-identified authorization-model gap, per PAD-003's parallel
+amendment); and the `REQUIRES_REVIEW` → `HUMAN_APPROVAL_REQUIRED` mapping
+clarification in §12 (Product Owner Gate F F5.1 Decisions 1-3).
 **This authorization covers the architecture contract only.** CDD Gate:
 FROZEN; Implementation State: NOT STARTED (per `architecture/INDEX.md`).
 No implementation, migration, seed, scope, API, or frontend work is
 authorized by this document — a separate, explicit Product Owner
 implementation-planning authorization is required before any such work
-begins, consistent with §31's non-claims.
+begins, consistent with §36's non-claims.

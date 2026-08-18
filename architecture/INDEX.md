@@ -250,7 +250,7 @@ The Architecture Release Manifest is the authoritative integrity register for it
 
 | Baseline | Status | Manifest | Manifest SHA-256 |
 |---|---|---|---|
-| v1.11 | CURRENT | [RELEASE-MANIFEST-v1.11.xlsx](released/v1.11/RELEASE-MANIFEST-v1.11.xlsx) | `8726289cf83648bdaf23299086e1498f31ee23c11ddc852844fd0a8a66b6493e` |
+| v1.11 | CURRENT | [RELEASE-MANIFEST-v1.11.xlsx](released/v1.11/RELEASE-MANIFEST-v1.11.xlsx) | `ffa555afcda7d73fa39ec9459d94f691ca094e0a1560ca773550eace41ea7ddd` |
 | v1.10 | HISTORICAL | [RELEASE-MANIFEST-v1.10.xlsx](released/v1.10/RELEASE-MANIFEST-v1.10.xlsx) | `da039e6401907b1962166a369633cd5100af339e60cc41286b8be1901c39bee4` |
 | v1.9 | HISTORICAL | [RELEASE-MANIFEST-v1.9.xlsx](released/v1.9/RELEASE-MANIFEST-v1.9.xlsx) | `4036e7d96e738189cbe69f97756ea3a54ef804ce5a60d4f61ef62d67d4293c7d` |
 | v1.8 | HISTORICAL | [RELEASE-MANIFEST-v1.8.xlsx](released/v1.8/RELEASE-MANIFEST-v1.8.xlsx) | `e8e947af8f2bee7fe2b064e3976a937aab4a181a22321efe4b6a67fdc01153f4` |

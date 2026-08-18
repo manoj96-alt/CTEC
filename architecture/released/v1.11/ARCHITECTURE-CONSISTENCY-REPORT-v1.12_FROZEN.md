@@ -16,6 +16,14 @@ updates. Gate F introduces no schema, canonical entity/attribute/relationship,
 or Protocol Version change; the ECOM Physical Data Model remains v1.7,
 unchanged from baseline v1.10.
 
+**This report is itself updated by Gate F F5.1 governance remediation**,
+correcting PAD-003 and CDD-015 in place within this same v1.11 baseline
+before its first push, PR, or merge (see "Read/evaluate authorization-model
+gap" and "CDD Template v2.2 compliance" findings below) — this baseline had
+not yet reached any shared/authoritative state outside this local repository
+at the time of correction, so the correction is applied directly rather than
+by advancing to a new baseline version.
+
 ## Consistency findings
 
 - **No canonical or physical-model impact.** RFC-017 authorizes new
@@ -91,20 +99,63 @@ unchanged from baseline v1.10.
   the script's registry-governance and dependency checks, as confirmed for
   every existing `docs/cdd/`-located CDD entry), so it introduces no
   verification risk; it is recorded here for human governance clarity.
-- **CDD Template v2.2 compliance not verified.** `docs/cdd/README.md`
-  states CDD Template v2.2 is mandatory for every new or revised CDD, with
-  five exhaustive authorization categories. CDD-015 was structured to match
-  the Gate F F0-F3 governance process's own outline (32 sections), not
-  independently verified against CDD Template v2.2's exact section
-  structure during this publication. This is recorded as a known
-  publication-format gap (see the Gate F F4 report), not silently resolved
-  or ignored, and does not affect this report's other findings.
+- **CDD Template v2.2 compliance — remediated by Gate F F5.1 (was a known
+  gap at F4; closed before this baseline's first push/PR/merge).** Gate F F5
+  (Implementation Planning) found CDD-015 as originally published lacked
+  CDD Template v2.2's mandatory exhaustive per-artifact authorization
+  records (`CDD_TEMPLATE_v2.2_FROZEN.docx` §7-11: Business Artifacts,
+  External Contracts, Persistence Artifacts, Configuration Artifacts, Test
+  Artifacts — "omission grants no permission"). CDD-015 §31-35 now contain
+  these records, in the exact compact table format CDD-011 (this
+  repository's own working precedent) established, authorizing only the
+  specific artifacts the approved Gate F implementation plan actually
+  requires. Verified: every category is present; every artifact entry names
+  an exact repository path, a permitted action (CREATE/MODIFY/READ-ONLY), a
+  governing authority, a purpose, explicit exclusions, and required
+  validation evidence, per the template's seven required fields (name+path
+  combined into one column, matching CDD-011's own established compression).
+- **Read/evaluate authorization-model gap — remediated by Gate F F5.1 (was a
+  known gap at F5; closed before this baseline's first push/PR/merge).**
+  Gate F F5 found PAD-003's original single-scope model and CDD-015's
+  "read-only API" claim conflated *retrieving* existing Gate F output with
+  *creating* a new, persisted Decision Evaluation — a write/persist
+  operation by CDD-015 §16's own design, which this repository's own
+  `supplier-risk:submit`-vs-`:read` precedent (CDD-013) never folds into a
+  `:read` scope. PAD-003 now defines two independent, non-compositional
+  scopes (§2a-§4a): `supply-chain-impact:read` (retrieval) and
+  `supply-chain-impact:evaluate` (governed computation — explicitly not
+  human decision authority, not execution authority, not canonical-master-data
+  mutation). CDD-015 §12, §18, §21, §25, §28 were corrected to match
+  precisely, distinguishing READ endpoints from the GOVERNED EVALUATION
+  operation throughout, per direct Product Owner authorization (Gate F F5.1
+  Decision 2). No conflict with any existing FROZEN authority was found
+  during this verification.
+- **GRM outcome mapping clarified — remediated by Gate F F5.1.** CDD-015
+  §12 now explicitly states that Gate F reuses the existing, unmodified
+  `GovernanceOutcome.REQUIRES_REVIEW` value as GRM's persisted internal
+  outcome (`domain/governance_engine/model.py` is unchanged by this
+  release — confirmed, zero diff) and applies a deterministic, Gate
+  F-specific, non-shared presentation-layer projection to
+  `HUMAN_APPROVAL_REQUIRED` for Gate F's own API/business semantics only
+  (Product Owner Gate F F5.1 Decision 3). This is compatible with
+  `governance_evaluation_records`' existing schema and CDD-015's
+  one-governance-record-per-Decision-Evaluation invariant (§16 item 5) —
+  no schema change, no shared enum change.
 - **No historical FROZEN artifact modified.** `RFC-010`, `RFC-015`,
   `RFC-016`, `PAD-001`, `PAD-002`, `CDD-013`, and every other previously
   FROZEN artifact are unchanged by this release; only `architecture/INDEX.md`
   (registry), `scripts/verify_architecture_release.py` (baseline pointer
   constants), `docs/cdd/CDD-015-Governed-Supply-Chain-Impact-and-Mitigation-Decision.md`
-  (new work order), and this new `released/v1.11/` directory were touched.
+  (work order), and this `released/v1.11/` directory were touched by Gate F
+  F4/F5.1 combined. **Gate F F5.1 specifically** (correcting v1.11 in place
+  before its first push) touched only: `PAD-003-Gate-F-Impact-Mitigation-Access-Boundary_v1.0_FROZEN.md`
+  (§2a-§4a evaluate scope added, §5-§14 corrected for the two-scope model),
+  `docs/cdd/CDD-015-Governed-Supply-Chain-Impact-and-Mitigation-Decision.md`
+  (§31-35 authorization records added, §12/§18/§21/§25/§28 corrected), this
+  report, `released/v1.11/README.md`, `RELEASE-MANIFEST-v1.11.xlsx`
+  (regenerated — content checksums changed), and `architecture/INDEX.md`
+  (manifest checksum row only). `RFC-017` is byte-for-byte unchanged by
+  F5.1 — verified, no semantic vocabulary drift.
 
 ## Verification
 
