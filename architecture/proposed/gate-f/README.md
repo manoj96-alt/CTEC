@@ -5,7 +5,8 @@ AUTHORITY.** Nothing in this directory is registered in
 `architecture/INDEX.md` and nothing here may be cited as architecture
 authority. It exists for Product Owner review only, produced by Gate F F2
 (Proposed Architecture Package Drafting) following Gate F F0 (Discovery) and
-F1 (Decision Analysis).
+F1 (Decision Analysis), and verified/corrected by Gate F F2.1 (Architecture
+Evidence & Persistence Verification).
 
 ## Contents
 
@@ -44,7 +45,12 @@ Requirements, Decision Readiness).
 
 ## Status of open questions
 
-See `GATE-F-ARCHITECTURE-DECISION-TRACE.md`'s final section. None are
-blocking for Product Owner review; both are explicitly deferred to
-implementation time or to a real business-requirements input this package
-does not have.
+F2.1 closed the two evidence questions the Product Owner required before
+architecture finalization: RFC-010's primary text was read directly and
+confirms (does not merely support by inference) RFC-017's approach, and the
+Gate F decision-time persistence contract was proven against a realistic
+multi-material/multi-candidate case — CDD-015's persistence sections were
+corrected to specify the exact mechanism required (see
+`GATE-F-ARCHITECTURE-DECISION-TRACE.md`'s "F2.1 verification outcomes").
+Remaining open items are listed in that document's final section; none are
+blocking for Product Owner review.

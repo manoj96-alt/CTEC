@@ -142,36 +142,75 @@ respected: no FK column is added anywhere by this RFC.
 **No physical schema change is required.** `entity_types`, `relationship_types`,
 and `institutional_concepts` already exist as tables (RFC-010/CDD-003
 lineage, confirmed structurally unchanged since ECOM Physical Data Model
-v1.3). This RFC authorizes new **data rows** in `relationship_types` (§3) —
-reference/taxonomy-level authorization, consistent with RFC-016 §1a/§1b's own
-characterization of `relationship_types` as "a pure reference table" carrying
-lighter-weight governance than canonical business-entity data such as
-`institutional_relationships` itself. No canonical entity is added (all ten
-concepts in §1 already exist); no canonical attribute is added or changed on
-any existing entity.
+v1.3). This RFC authorizes new **data rows** in `relationship_types` (§3). No
+canonical entity is added (all ten concepts in §1 already exist); no
+canonical attribute is added or changed on any existing entity.
 
-*Evidentiary caveat*: this characterization of `relationship_types`' RFC-010
-lineage rests on RFC-016's own quotation of RFC-010 (RFC-010 is a `.docx`
-file not machine-readable by the tooling used to prepare this RFC). If, on
-direct review, RFC-010's primary text does not support this reading, this
-RFC's authorization in §3 should be treated as resting on RFC-016's
-characterization alone pending that direct review, not withdrawn — RFC-016
-is itself AUTHORITATIVE and FROZEN, and its characterization of
-`relationship_types` is binding regardless of RFC-010's original wording.
+**RFC-010 primary-text verification (F2.1, closes the F2 evidentiary
+caveat)**: RFC-010 ("Canonical Enterprise Ontology Boundary," v1.0, FROZEN,
+`architecture/released/v1.1/` and `v1.2/`) was read directly, read-only
+(extracted from its `.docx` primary text; no repository file was altered or
+added — see the Gate F F2.1 report for method). §4 ("Canonical Enterprise
+Ontology") lists "Relationship Type" as one of seven Foundation-package
+entities, alongside Institutional Concept and Entity Type — confirming
+RFC-016 §1a's characterization directly, not merely by inference from
+RFC-016's quotation of it. §10 ("Architectural Constraints") states,
+verbatim: *"Cognitive capabilities shall not introduce canonical entities,
+attributes, relationships or lifecycle changes. Such changes require a new
+RFC and updates to the Logical Model, Physical Model and EAD-001."* This is
+a **direct, explicit requirement** that new canonical relationship types be
+authorized by RFC — stronger confirmation than this RFC's earlier
+"lightweight reference-table" framing suggested, not weaker. This RFC's use
+of RFC-level authorization for §3's three new relationship types, and for
+§6's ratification, is therefore fully and directly supported by RFC-010's
+primary text, with no remaining evidentiary gap.
+
+**Residual open item (not blocking, flagged for the architecture owner)**:
+RFC-010 §10's requirement literally reads "a new RFC **and** updates to the
+Logical Model, Physical Model and EAD-001." RFC-015 and RFC-016 — the only
+existing precedents — both paired their RFC with a regenerated physical
+model release and EAD-001 update (RFC-016 §3). Neither precedent involved a
+*data-only* taxonomy addition with no structural schema change, so there is
+no clean precedent for whether §10's "and updates to..." clause applies to a
+pure data-row addition (this RFC's case) or only to structural changes.
+This RFC's position is that no Logical/Physical Model/EAD-001 update is
+needed here because neither document's content changes (no new table,
+column, or attribute — EAD-001 tracks attributes/columns, not taxonomy
+values, per RFC-016 §3's own description of what it updated). This
+interpretation is not certain and should be explicitly confirmed by the
+architecture owner at authorization time, alongside the rest of this
+package.
 
 ## 6. SUPPLIER-RISK-ONTOLOGY-V1 governance-trail resolution
 
-Per Gate F F1 Decision 5 (§9) and the Product Owner's explicit instruction
-not to treat that precedent as justification for new vocabulary: this RFC
-does not rely on Increment 2A as authority for anything. Instead, this RFC
-retroactively and explicitly ratifies, on its own authority, the ten
-concepts and seven relationship types listed in §1 exactly as currently
-implemented in `ontology_seed.py` (no renaming, no redefinition, no
-behavior change) — closing the governance gap Gate F F1 identified, rather
-than building Gate F on top of an ungoverned foundation. This ratification
-is retroactive-in-effect only; it does not assert that Increment 2A was
-properly governed at the time, and it does not ratify any process used to
-introduce it (see §8).
+Per Gate F F1 Decision 5 (§9), the Product Owner's Gate F F1 instruction not
+to treat that precedent as justification for new vocabulary, and the Product
+Owner's Gate F F2.1 Decision B (approved narrowly): this RFC does not rely
+on Increment 2A as authority for anything, and does not claim Increment 2A
+was properly governed. RFC-010 §10 (verified above) states plainly that
+"cognitive capabilities shall not introduce canonical entities, attributes,
+relationships or lifecycle changes" without a new RFC — Increment 2A's
+commit (`8887b93`, 2026-08-12, three days before RFC-016/PAD-001 were even
+authorized) did exactly what §10 prohibits, without the RFC §10 requires.
+This was not merely an undocumented process gap; it was a specific,
+identifiable action inconsistent with an already-standing constitutional
+constraint.
+
+This RFC prospectively/formally authorizes, from the Gate F architecture
+release forward only, exactly and only the ten concepts and seven
+relationship types enumerated in §1 — no more — exactly as currently
+implemented in `ontology_seed.py` (no renaming, no redefinition, no behavior
+change). **This is not a blanket ratification of historical ontology
+content, Increment 2A's commit, or any other content that commit or any
+other ungoverned change may have introduced beyond the specific items listed
+in §1.** Any other vocabulary Increment 2A or any later ungoverned change may
+have touched, if any exists outside the ten concepts/seven relationship
+types identified by F0/F1/F2 as Gate F's semantic foundation, remains
+unratified and outside this RFC's scope — a separate governance question,
+not resolved here. This ratification is retroactive-in-effect only for the
+listed items; it does not assert that Increment 2A's original introduction
+of them was properly governed at the time, and it does not ratify any
+process used to introduce them (see §8).
 
 The curated concept/relationship definitions remain MVP-curated metadata, not
 a database-governed field (the physical model carries no free-text
