@@ -271,6 +271,15 @@ AUTHORIZED_CHANGED_PATHS = {
     # working tree throughout Gate E and therefore visible to this
     # tracked+untracked union check.
     "architecture/proposed/gate-e/PAD-002-Local-Development-Identity-Provider-and-Demo-Persona-Authorization-Boundary_v1.0_RELEASE_CANDIDATE.md",
+    # Gate F F-I1 -- Decision Evaluation persistence and semantic foundation
+    # (RFC-017 / PAD-003 / CDD-015 §33, architecture/released/v1.11/).
+    "backend/app/infrastructure/persistence/migrations/versions/0013_decision_evaluation_group.py",
+    "backend/app/infrastructure/persistence/models/decision_evaluation.py",
+    "backend/app/domain/decision_engine/model.py",
+    "backend/app/domain/decision_engine/__init__.py",
+    "backend/app/infrastructure/persistence/decision_repository.py",
+    "backend/app/application/decision_engine.py",
+    "backend/app/tests/test_gate_f_semantic_foundation.py",
 }
 
 

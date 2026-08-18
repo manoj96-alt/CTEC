@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.domain.decision_engine import (
     DecisionConfidence,
     DecisionConfidenceLevel,
+    DecisionEvaluationGroupModel,
     DecisionEvaluationModel,
     DecisionEvaluationRecord,
     DecisionExplanation,
@@ -20,7 +21,10 @@ from app.domain.decision_engine import (
     SupportingKnowledgeReference,
 )
 from app.domain.shared.exceptions import ValidationException
-from app.infrastructure.persistence.models.decision_evaluation import DecisionEvaluationORM
+from app.infrastructure.persistence.models.decision_evaluation import (
+    DecisionEvaluationGroupORM,
+    DecisionEvaluationORM,
+)
 from app.infrastructure.persistence.models.knowledge_evaluation import (
     KnowledgeEvaluationRecordModel,
 )
@@ -71,6 +75,26 @@ class DecisionEvaluationRepository(Protocol):
 
     def policy_trace(self, policy_reference: str, policy_version: str) -> tuple[UUID, ...]: ...
 
+    def create_group(self, group: DecisionEvaluationGroupModel) -> None:
+        """Persist a new `decision_evaluations` group row (CDD-015 §16 item 1)."""
+        ...
+
+    def group_by_id(
+        self, decision_evaluation_id: UUID, *, tenant_id: str
+    ) -> DecisionEvaluationGroupModel | None:
+        """Tenant-scoped lookup. Returns None for a cross-tenant identifier,
+        never distinguishing "does not exist" from "belongs to another
+        tenant" (CDD-015 §33 tenant isolation requirement)."""
+        ...
+
+    def records_for_group(
+        self, decision_evaluation_id: UUID, *, tenant_id: str
+    ) -> tuple[DecisionEvaluationRecord, ...]:
+        """Records belonging to one group, tenant-scoped through the group
+        itself. Returns an empty tuple if the group does not exist or does
+        not belong to `tenant_id`."""
+        ...
+
 
 class DecisionEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
@@ -112,6 +136,43 @@ class DecisionEvaluationRepositoryImpl:
         )
         return tuple(self.session.scalars(statement))
 
+    def create_group(self, group: DecisionEvaluationGroupModel) -> None:
+        self.session.add(
+            DecisionEvaluationGroupORM(
+                decision_evaluation_id=group.decision_evaluation_id,
+                tenant_id=group.tenant_id,
+                logical_execution_id=group.logical_execution_id,
+                created_at=group.created_at,
+            )
+        )
+
+    def group_by_id(
+        self, decision_evaluation_id: UUID, *, tenant_id: str
+    ) -> DecisionEvaluationGroupModel | None:
+        statement = select(DecisionEvaluationGroupORM).where(
+            DecisionEvaluationGroupORM.decision_evaluation_id == decision_evaluation_id,
+            DecisionEvaluationGroupORM.tenant_id == tenant_id,
+        )
+        model = self.session.scalars(statement).first()
+        if model is None:
+            return None
+        return DecisionEvaluationGroupModel(
+            decision_evaluation_id=model.decision_evaluation_id,
+            tenant_id=model.tenant_id,
+            created_at=model.created_at,
+            logical_execution_id=model.logical_execution_id,
+        )
+
+    def records_for_group(
+        self, decision_evaluation_id: UUID, *, tenant_id: str
+    ) -> tuple[DecisionEvaluationRecord, ...]:
+        if self.group_by_id(decision_evaluation_id, tenant_id=tenant_id) is None:
+            return ()
+        statement = select(DecisionEvaluationORM).where(
+            DecisionEvaluationORM.decision_evaluation_id == decision_evaluation_id
+        )
+        return tuple(self._to_domain(model) for model in self.session.scalars(statement))
+
     @staticmethod
     def _ordered_statement(identity_key: str) -> Select[tuple[DecisionEvaluationORM]]:
         return (
@@ -150,6 +211,11 @@ class DecisionEvaluationRepositoryImpl:
                 item.value for item in model.enterprise_constraint_references
             ],
             policy_satisfied=persistence.policy_satisfied,
+            decision_evaluation_id=(
+                model.decision_evaluation_id.value
+                if model.decision_evaluation_id is not None
+                else None
+            ),
         )
 
     @staticmethod

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.decision_engine.configuration import DecisionConfigurationSchema
 from app.domain.decision_engine.model import (
     BusinessContextReference,
+    DecisionEvaluationGroupReference,
     DecisionEvaluationModel,
     EnterpriseConstraintReference,
     EvaluationOutcome,
@@ -42,6 +43,7 @@ class DecisionEvaluationRequest(BaseModel):
     produced_timestamp: datetime
     business_context_reference: UUID | None = None
     enterprise_constraint_references: tuple[str, ...] = ()
+    decision_evaluation_id: UUID | None = None
 
 
 class DecisionEvaluationResponse(BaseModel):
@@ -147,6 +149,11 @@ class DecisionApplicationService:
             enterprise_constraint_references=tuple(
                 EnterpriseConstraintReference(value)
                 for value in request.enterprise_constraint_references
+            ),
+            decision_evaluation_id=(
+                DecisionEvaluationGroupReference(request.decision_evaluation_id)
+                if request.decision_evaluation_id is not None
+                else None
             ),
         )
         self.repository.append(DecisionPersistenceModel(evaluation, request.policy_satisfied))
