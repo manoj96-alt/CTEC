@@ -1,13 +1,12 @@
 # CDD-015 — Governed Supply Chain Impact and Mitigation Decision
 
-Version: 1.0 (DRAFT)
-Status: PROPOSED
+Version: 1.0 DRAFT
+Status: RELEASE CANDIDATE — PENDING PRODUCT OWNER AUTHORIZATION
 Current: NO
-Authority: NON-AUTHORITATIVE
-Approval: PENDING Product Owner review — not yet authorized
-Governing authorities: RFC-017 (PROPOSED, semantic vocabulary), PAD-003
-(PROPOSED, `supply-chain-impact:read` scope), plus already-FROZEN CDD-004
-through CDD-013, PAD-001, RFC-015, RFC-016
+Authority: NON-AUTHORITATIVE — PENDING REGISTRY PUBLICATION
+Governing authorities: RFC-017 (RELEASE CANDIDATE, semantic vocabulary),
+PAD-003 (RELEASE CANDIDATE, `supply-chain-impact:read` scope), plus
+already-FROZEN CDD-004 through CDD-013, PAD-001, RFC-015, RFC-016
 
 ## 1. Purpose
 
@@ -217,7 +216,8 @@ replay-stability behavior is the model this design follows).
 1. **`decision_evaluations`** (new, noncanonical, CDD-015-governed — same
    governance tier as `decision_evaluation_records`/`governance_evaluation_records`
    themselves, CDD-008/CDD-009-authorized, and `runtime_executions`,
-   CDD-012-authorized; not a canonical entity, no RFC implication — see §33):
+   CDD-012-authorized; not a canonical entity, no RFC implication — see §17
+   below):
    one row per governed Gate F decision evaluation. Carries its own direct,
    DB-constrained `tenant_id` (following the `institutional_relationships`/
    `runtime_executions` pattern for tables new enough to get this right from
@@ -480,7 +480,7 @@ cites PAD-003; it does not itself authorize a scope).
    traversal result persisted as a new canonical artifact.
 2. Alternate-supplier qualification/capacity/lead-time/cost are represented
    as `assertions` attached to per-(candidate, material) `institutional_relationships`
-   instances via `institutional_relationship_assertions` (§9, §16 item 1) —
+   instances via `institutional_relationship_assertions` (§9, §16 item 3) —
    not as caller-supplied request fields, and not as unscoped `assertions`
    that could collide across materials/candidates.
 3. One `decision_evaluations` row is created per governed Gate F evaluation;
@@ -552,6 +552,8 @@ is document drafting only.
 
 ## 32. Authorization
 
-**PENDING.** This CDD is proposed and non-authoritative. It requires explicit
-Product Owner authorization, and authorization of RFC-017 and PAD-003, before
-any implementation may begin.
+**RELEASE CANDIDATE — PENDING PRODUCT OWNER AUTHORIZATION.** This CDD has
+passed Gate F F3 architecture consistency and dependency verification (see
+`GATE-F-ARCHITECTURE-CONSISTENCY-REPORT_RELEASE_CANDIDATE.md`) but remains
+non-authoritative. It requires explicit Product Owner authorization, and
+authorization of RFC-017 and PAD-003, before any implementation may begin.

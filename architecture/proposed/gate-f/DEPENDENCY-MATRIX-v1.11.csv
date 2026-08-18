@@ -1,0 +1,21 @@
+Dependent Identifier,Dependent Version,Dependency Identifier,Dependency Version,Dependency Status,Relationship,Semantic Compatibility,Approval Reference
+CDD-010,1.5,EIC-001,1.3,FROZEN,Runtime invocation authority,Compatible,Trusted admission remediation
+CDD-010,1.5,CDD-012,1.3,FROZEN,Durable admission authority,Compatible,Trusted admission remediation
+PAS-001,1.2,CDD-010,1.5,FROZEN,Trusted admission contract,Compatible,Trusted admission remediation
+PAS-001,1.2,IDP-001,1.0,FROZEN,Authentication boundary,Compatible,Trusted admission remediation
+PAS-001,1.2,RFC-014,1.3,FROZEN,Timestamp and provenance authority,Compatible,Trusted admission remediation
+ECOM Physical Data Model,1.7,RFC-015,1.0,FROZEN,Tenant ownership authorization (source_systems/source_objects/enterprise_entities),Compatible,Product Owner authorization Increment 3A-0
+ECOM Physical Data Model,1.7,RFC-016,1.0,FROZEN,Institutional Relationship canonical authorization and tenant ownership,Compatible,Product Owner authorization Gate D0/D1
+RFC-017,1.0,RFC-010,1.0,FROZEN,Canonical relationship-type authorization requirement (RFC-010 Section 10),Compatible,Foundational ECOM authority (RFC-010 v1.0 released v1.1)
+RFC-017,1.0,RFC-016,1.0,FROZEN,Institutional Relationship instantiation and tenant-ownership mechanism reuse for new relationship-type instances,Compatible,Product Owner authorization Gate D0/D1
+PAD-003,1.0,PAD-002,1.0,FROZEN,Scope-contract authority precedent and least-privilege demo-persona pattern,Compatible,Product Owner authorization Gate E
+PAD-003,1.0,CDD-013 Supplier Risk Application API and Security Boundary,1.0,FROZEN,Command/read scope-matrix design-pattern precedent,Compatible,CDD-013 closure (Closure Gate 4)
+CDD-015,1.0,RFC-017,1.0,PROPOSED,Canonical semantic vocabulary authority for Gate F relationship types and ratified vocabulary,Compatible,Gate F F3 release candidate — pending Product Owner authorization
+CDD-015,1.0,PAD-003,1.0,PROPOSED,Access-scope authority (supply-chain-impact:read),Compatible,Gate F F3 release candidate — pending Product Owner authorization
+CDD-015,1.0,RFC-016,1.0,FROZEN,institutional_relationships instance mechanism reuse for assembledAt/coveredBy/candidateFor relationship instances,Compatible,Product Owner authorization Gate D0/D1
+CDD-015,1.0,CDD-010 Cognitive Engine Runtime Shell,1.3,FROZEN,Six-stage cognitive-engine runtime shell reused unmodified; no seventh stage introduced,Compatible,CDD-010 implementation evidence
+CDD-015,1.0,CDD-011 Supplier-Risk Capability Integration,1.0,FROZEN,Bounded production-adapter integration pattern reused as the template for Gate F's new adapters,Compatible,Closure Gate 2
+CDD-015,1.0,CDD-008 implementation record (DRM-001),1.1,FROZEN,decision_evaluation_records persistence precedent for the noncanonical decision_evaluations extension,Compatible,CDD-008 implementation record
+CDD-015,1.0,CDD-009 Governance Engine,1.1,FROZEN,governance_evaluation_records persistence precedent and polymorphic governed-record reference mechanism reuse,Compatible,CDD-009 authorization
+CDD-015,1.0,CDD-012 Durable Execution Persistence and Recovery,1.2,FROZEN,Durable execution/replay model reuse; runtime_executions/logical_execution_id precedent for the Decision Evaluation lifecycle design,Compatible,Closure Gate 3
+CDD-015,1.0,PAD-001,1.0,FROZEN,Product-Internal Deterministic Capability Boundary — Ask CTEC traversal reuse bounded to fact-reporting only,Compatible,Product Owner authorization Gate D0/D1

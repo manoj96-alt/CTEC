@@ -1,9 +1,9 @@
 # Gate F — Architecture Decision Trace
 
-Status: PROPOSED / NON-AUTHORITATIVE. Maps each Product Owner Gate F F1
-decision to where it lands in the proposed package
-(`RFC-017`, `PAD-003`, `CDD-015`), the implementation implication, and the
-future-gate implication.
+Status: **RELEASE CANDIDATE / NON-AUTHORITATIVE / NOT RELEASED / NOT
+IMPLEMENTATION AUTHORITY.** Maps each Product Owner Gate F F1 decision to
+where it lands in the release-candidate package (`RFC-017`, `PAD-003`,
+`CDD-015`), the implementation implication, and the future-gate implication.
 
 | # | Product Owner F1 Decision | RFC-017 | PAD-003 | CDD-015 | Implementation implication | Future-gate implication |
 |---|---|---|---|---|---|---|

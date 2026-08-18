@@ -1,10 +1,9 @@
 # PAD-003 v1.0 — Gate F Impact & Mitigation Access Boundary
 
-Version: 1.0 (DRAFT)
-Status: PROPOSED
+Version: 1.0 DRAFT
+Status: RELEASE CANDIDATE — PENDING PRODUCT OWNER AUTHORIZATION
 Current: NO
-Authority: NON-AUTHORITATIVE
-Approval: PENDING Product Owner review — not yet authorized
+Authority: NON-AUTHORITATIVE — PENDING REGISTRY PUBLICATION
 
 ## 0. Purpose
 
@@ -174,7 +173,10 @@ exactly one new read scope (§2) and its boundary (§3).
 
 ## 14. Authorization
 
-**PENDING.** This PAD is proposed and non-authoritative. It requires explicit
-Product Owner authorization, including final confirmation of the scope name
-in §2, before any implementation may reference it or grant the scope to any
-principal, and before `architecture/INDEX.md` may be updated to register it.
+**RELEASE CANDIDATE — PENDING PRODUCT OWNER AUTHORIZATION.** This PAD has
+passed Gate F F3 architecture consistency and dependency verification (see
+`GATE-F-ARCHITECTURE-CONSISTENCY-REPORT_RELEASE_CANDIDATE.md`) but remains
+non-authoritative. It requires explicit Product Owner authorization,
+including final confirmation of the scope name in §2, before any
+implementation may reference it or grant the scope to any principal, and
+before `architecture/INDEX.md` may be updated to register it.

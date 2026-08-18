@@ -1,11 +1,10 @@
 # RFC-017 — Gate F Supply Chain Semantic Vocabulary Authorization
 
-Version: 1.0 (DRAFT)
-Status: PROPOSED
+Version: 1.0 DRAFT
+Status: RELEASE CANDIDATE — PENDING PRODUCT OWNER AUTHORIZATION
 Current: NO
-Authority: NON-AUTHORITATIVE
+Authority: NON-AUTHORITATIVE — PENDING REGISTRY PUBLICATION
 Supersedes: — (new authority)
-Approval: PENDING Product Owner review — not yet authorized
 Scope: minimal canonical concept/relationship-type authorization required for
 Gate F ("Governed Supply Chain Impact & Mitigation Decision"), plus
 retroactive ratification of the pre-existing `SUPPLIER-RISK-ONTOLOGY-V1`
@@ -122,6 +121,14 @@ candidate indistinguishable from an actual live source of supply.
 
 Curated definition: *"An Alternate Supplier's candidacy to cover a Material,
 pending qualification, capacity, lead-time, and cost evaluation."*
+
+This RFC authorizes only the relationship type itself. The contextual
+qualification/capacity/lead-time/cost facts evaluated for a given
+`candidateFor` instance are attached to that specific
+`institutional_relationships` row via the existing
+`institutional_relationship_assertions` junction table, governed entirely by
+CDD-015 (§9), not by this RFC — this RFC does not authorize, and takes no
+position on, how those contextual facts are persisted or associated.
 
 ## 4. Institutional Relationship mechanism (unchanged)
 
@@ -295,6 +302,9 @@ concepts (ratified, unchanged), seven pre-existing relationship types
 
 ## 9. Authorization
 
-**PENDING.** This RFC is proposed and non-authoritative. It requires explicit
-Product Owner authorization before any implementation may reference it, and
-before `architecture/INDEX.md` may be updated to register it.
+**RELEASE CANDIDATE — PENDING PRODUCT OWNER AUTHORIZATION.** This RFC has
+passed Gate F F3 architecture consistency and dependency verification (see
+`GATE-F-ARCHITECTURE-CONSISTENCY-REPORT_RELEASE_CANDIDATE.md`) but remains
+non-authoritative. It requires explicit Product Owner authorization before
+any implementation may reference it, and before `architecture/INDEX.md` may
+be updated to register it.
