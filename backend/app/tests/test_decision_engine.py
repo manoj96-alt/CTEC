@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine, text
+from sqlalchemy.orm import sessionmaker
 
 from app.application.decision_engine import DecisionApplicationService, DecisionEvaluationRequest
 from app.core.config import Settings
@@ -16,6 +17,8 @@ from app.domain.decision_engine import (
     DecisionConfidence,
     DecisionConfidenceClassificationService,
     DecisionConfidenceLevel,
+    DecisionEvaluationGroupModel,
+    DecisionEvaluationGroupReference,
     DecisionEvaluationModel,
     DecisionEvaluationRecord,
     DecisionEvaluationService,
@@ -196,7 +199,12 @@ class _FakeSession:
         return _ScalarResult(self.values)
 
 
-def _orm(record: DecisionEvaluationRecord, identity_key: str) -> DecisionEvaluationORM:
+def _orm(
+    record: DecisionEvaluationRecord,
+    identity_key: str,
+    *,
+    decision_evaluation_id: UUID | None = None,
+) -> DecisionEvaluationORM:
     return DecisionEvaluationORM(
         record_identifier=record.record_identifier,
         knowledge_references=[str(value.value) for value in record.knowledge_references],
@@ -213,6 +221,7 @@ def _orm(record: DecisionEvaluationRecord, identity_key: str) -> DecisionEvaluat
         business_context_reference=None,
         enterprise_constraint_references=[],
         policy_satisfied=True,
+        decision_evaluation_id=decision_evaluation_id,
     )
 
 
@@ -295,5 +304,125 @@ def test_decision_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'decision_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0012_ir_tenant_ownership"
+    assert revision == "0013_decision_evaluation_group"
     assert trigger_count == 1
+
+
+def test_to_orm_populates_decision_evaluation_group_reference() -> None:
+    group_id = uuid4()
+    persistence = DecisionPersistenceModel(
+        DecisionEvaluationModel(
+            _record(), decision_evaluation_id=DecisionEvaluationGroupReference(group_id)
+        ),
+        True,
+    )
+    session = _FakeSession()
+    DecisionEvaluationRepositoryImpl(cast(Any, session)).append(persistence)
+    assert session.added[0].decision_evaluation_id == group_id
+
+
+def test_decision_evaluation_group_migration_schema(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        columns = {
+            row[0]
+            for row in connection.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'decision_evaluations'"
+                )
+            )
+        }
+        fk_count = connection.execute(
+            text(
+                "SELECT count(*) FROM information_schema.table_constraints "
+                "WHERE table_name = 'decision_evaluation_records' "
+                "AND constraint_name = 'fk_decision_evaluation_records_decision_evaluation_id' "
+                "AND constraint_type = 'FOREIGN KEY'"
+            )
+        ).scalar_one()
+    assert columns == {"decision_evaluation_id", "tenant_id", "logical_execution_id", "created_at"}
+    assert fk_count == 1
+
+
+def test_decision_evaluation_group_persistence_and_child_association(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    tenant_id = f"tenant-{uuid4()}"
+    group_id = uuid4()
+    first = _record(knowledge_id=uuid4())
+    second = _record(knowledge_id=uuid4())
+
+    with factory() as session:
+        DecisionEvaluationRepositoryImpl(session).create_group(
+            DecisionEvaluationGroupModel(
+                decision_evaluation_id=group_id, tenant_id=tenant_id, created_at=NOW
+            )
+        )
+        session.commit()
+
+    with factory() as session:
+        session.add(_orm(first, f"identity-first-{uuid4()}", decision_evaluation_id=group_id))
+        session.add(_orm(second, f"identity-second-{uuid4()}", decision_evaluation_id=group_id))
+        session.commit()
+
+    with factory() as session:
+        repository = DecisionEvaluationRepositoryImpl(session)
+        loaded_group = repository.group_by_id(group_id, tenant_id=tenant_id)
+        records = repository.records_for_group(group_id, tenant_id=tenant_id)
+
+    assert loaded_group is not None
+    assert loaded_group.tenant_id == tenant_id
+    assert loaded_group.decision_evaluation_id == group_id
+    assert {record.record_identifier for record in records} == {
+        first.record_identifier,
+        second.record_identifier,
+    }
+
+
+def test_decision_evaluation_group_tenant_isolation(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine)
+    tenant_a = f"tenant-a-{uuid4()}"
+    tenant_b = f"tenant-b-{uuid4()}"
+    group_id = uuid4()
+
+    with factory() as session:
+        DecisionEvaluationRepositoryImpl(session).create_group(
+            DecisionEvaluationGroupModel(
+                decision_evaluation_id=group_id, tenant_id=tenant_a, created_at=NOW
+            )
+        )
+        session.commit()
+
+    with factory() as session:
+        session.add(
+            _orm(
+                _record(knowledge_id=uuid4()),
+                f"identity-a-{uuid4()}",
+                decision_evaluation_id=group_id,
+            )
+        )
+        session.commit()
+
+    with factory() as session:
+        repository = DecisionEvaluationRepositoryImpl(session)
+        assert repository.group_by_id(group_id, tenant_id=tenant_b) is None
+        assert repository.records_for_group(group_id, tenant_id=tenant_b) == ()
+        assert repository.group_by_id(group_id, tenant_id=tenant_a) is not None
+        assert len(repository.records_for_group(group_id, tenant_id=tenant_a)) == 1
+
+
+def test_existing_ungrouped_decision_records_remain_valid(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine)
+    record = _record(knowledge_id=uuid4())
+    identity_key = f"identity-ungrouped-{uuid4()}"
+
+    with factory() as session:
+        session.add(_orm(record, identity_key))
+        session.commit()
+
+    with factory() as session:
+        repository = DecisionEvaluationRepositoryImpl(session)
+        history = repository.history(identity_key)
+
+    assert history.records[0].record_identifier == record.record_identifier

@@ -59,6 +59,10 @@ REQUIRED_RELATIONSHIPS: tuple[tuple[str, str, str], ...] = (
     ("locatedIn", "Supplier", "Region"),
     ("exposedTo", "Region", "Risk Event"),
     ("boundBy", "Supplier", "Contract"),
+    # Gate F / RFC-017 Gate F Supply Chain Semantic Vocabulary Authorization.
+    ("assembledAt", "Product", "Facility"),
+    ("coveredBy", "Material", "Contract"),
+    ("candidateFor", "Alternate Supplier", "Material"),
 )
 
 

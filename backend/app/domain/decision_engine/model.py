@@ -72,6 +72,36 @@ class BusinessContextReference:
 
 
 @dataclass(frozen=True, slots=True)
+class DecisionEvaluationGroupReference:
+    """References the `decision_evaluations` group (Gate F F-I1 / CDD-015 §16
+    item 2) this record belongs to. Distinct from `BusinessContextReference`,
+    which carries CIM-001's own, unrelated "canonical Context reference"
+    meaning -- see CDD-015 §16 (F2.2/F5.1 correction)."""
+
+    value: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionEvaluationGroupModel:
+    """The `decision_evaluations` group row itself (Gate F F-I1 / CDD-015 §16
+    item 1): the stable identity of one governed decision evaluation whose
+    result may require multiple persisted `DecisionEvaluationRecord`s.
+    `logical_execution_id` is a plain, non-FK audit-trail reference -- see
+    CDD-015 §20 for why it is deliberately not a foreign key to
+    `runtime_executions`."""
+
+    decision_evaluation_id: UUID
+    tenant_id: str
+    created_at: datetime
+    logical_execution_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        _required(self.tenant_id, "Decision Evaluation Group tenant_id")
+        if self.created_at.tzinfo is None:
+            raise ValidationException("Decision Evaluation Group created_at must be timezone-aware")
+
+
+@dataclass(frozen=True, slots=True)
 class EnterpriseConstraintReference:
     value: str
 
@@ -117,3 +147,4 @@ class DecisionEvaluationModel:
     record: DecisionEvaluationRecord
     business_context_reference: BusinessContextReference | None = None
     enterprise_constraint_references: tuple[EnterpriseConstraintReference, ...] = ()
+    decision_evaluation_id: DecisionEvaluationGroupReference | None = None
