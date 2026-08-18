@@ -6,11 +6,11 @@ This file is the sole authoritative registry for released CTEC architecture. Eng
 
 | Registry Version | Status | Current | Authority | Approval |
 |---:|---|---|---|---|
-| 1.8 | FROZEN | YES | AUTHORITATIVE | Gate E architecture release (PAD-002) |
+| 1.9 | FROZEN | YES | AUTHORITATIVE | Gate F architecture release (RFC-017 / PAD-003 / CDD-015) |
 
 ## Release policy
 
-- `architecture/released/v1.10/` is the current bounded amendment baseline and inherits unchanged authorities from v1.9.
+- `architecture/released/v1.11/` is the current bounded amendment baseline and inherits unchanged authorities from v1.10.
 - `architecture/released/v1.0/` and `architecture/released/v1.1/` are retained for historical traceability only.
 - A document is authoritative only when it appears in the Authoritative artifacts table with lifecycle status `FROZEN` and authority `AUTHORITATIVE`.
 - Superseded documents must not be used for implementation.
@@ -44,6 +44,7 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | RFC-014 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.4/RFC-014_Cognitive_Capability_Integration_Handoff_and_Transaction_Policy_v1.3_FROZEN.md) |
 | RFC-015 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.8/RFC-015_Tenant_Ownership_Physical_Model_Authorization_v1.0_FROZEN.md) |
 | RFC-016 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/RFC-016_Institutional_Relationship_Canonical_Authorization_and_Tenant_Ownership_v1.0_FROZEN.md) |
+| RFC-017 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.11/RFC-017-Gate-F-Supply-Chain-Semantic-Vocabulary-Authorization_v1.0_FROZEN.md) |
 | RSP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.3/RSP-001_Runtime_Security_Retention_and_Replay_Authority_v1.0_FROZEN.md) |
 | CIM-001 | 1.1 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CIM-001-Cognitive-Integration-Contract-Model-v1.1_FROZEN.md) |
 | CVR-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CVR-001_Supplier_Risk_Canonical_Vocabulary_Clarification_v1.0_FROZEN.docx) |
@@ -51,13 +52,14 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | PAD-EIC Compatibility Clarification | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/PAD-EIC-Legacy-Invocation-Compatibility-Clarification-v1.0_FROZEN.md) |
 | Product-Internal Deterministic Capability Boundary Clarification (PAD-001) | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.9/PAD-001-Product-Internal-Deterministic-Capability-Boundary-Clarification-v1.0_FROZEN.md) |
 | Local Development Identity Provider and Demo Persona Authorization Boundary (PAD-002) | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.10/PAD-002-Local-Development-Identity-Provider-and-Demo-Persona-Authorization-Boundary_v1.0_FROZEN.md) |
+| Gate F Impact and Mitigation Access Boundary (PAD-003) | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.11/PAD-003-Gate-F-Impact-Mitigation-Access-Boundary_v1.0_FROZEN.md) |
 | CDD-010 | 1.5 | 1.4 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/CDD-010_Trusted_Admission_Identity_Clarification_v1.5_FROZEN.md) |
 | CDD-012 | 1.3 | 1.2 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/CDD-012_Authenticated_Replay_Clarification_v1.3_FROZEN.md) |
 | RCP-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.5/RCP-001_Authenticated_Replay_Execution_Contract_v1.0_FROZEN.md) |
 | CAM-001 | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CAM-001_Canonical_Projection_Model_v1.2_FROZEN.docx) |
 | Architecture Glossary | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-GLOSSARY-v1.2_FROZEN.md) |
 | Baseline Record | 1.9 | Baseline Record v1.8 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/BASELINE-RECORD-v1.9_FROZEN.md) |
-| Architecture Consistency Report | 1.11 | 1.10 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.10/ARCHITECTURE-CONSISTENCY-REPORT-v1.11_FROZEN.md) |
+| Architecture Consistency Report | 1.12 | 1.11 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.11/ARCHITECTURE-CONSISTENCY-REPORT-v1.12_FROZEN.md) |
 | Architecture Drift Report | 1.8 | 1.7 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/ARCHITECTURE-DRIFT-REPORT-v1.8_FROZEN.md) |
 | Architecture Remediation Report | 1.2 | 1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/ARCHITECTURE-REMEDIATION-REPORT-v1.2_FROZEN.md) |
 | Release Readiness Report | 1.8 | 1.7 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.7/RELEASE-READINESS-REPORT-v1.8_FROZEN.md) |
@@ -86,7 +88,7 @@ The official capability term is **Business Capability Specification (BCS)**. Bus
 | CDD Template | 2.2 | CDD Template v2.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD_TEMPLATE_v2.2_FROZEN.docx) |
 | CDD Authorization Gap Review | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/CDD-AUTHORIZATION-GAP-REVIEW-v1.1_FROZEN.md) |
 | Dependency Resolution Report | 1.1 | 1.0 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/DEPENDENCY-RESOLUTION-REPORT-v1.1_FROZEN.md) |
-| Architecture Dependency Matrix | 1.10 | 1.9 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.10/DEPENDENCY-MATRIX-v1.10.csv) |
+| Architecture Dependency Matrix | 1.11 | 1.10 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.11/DEPENDENCY-MATRIX-v1.11.csv) |
 | RND-001 | 1.0 | — | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/RND-001_Architecture_Registry_Normalization_v1.0_FROZEN.md) |
 | RELEASE-README | v1.2 | v1.1 | FROZEN | YES | AUTHORITATIVE | [Document](released/v1.2/README.md) |
 
@@ -114,6 +116,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-012 Durable Execution Persistence and Recovery | 1.2 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-012-Durable-Execution-Persistence-and-Recovery.md) · [Gate report](../docs/cdd/CDD-012-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-012-IMPLEMENTATION-EVIDENCE.md) · [Closure report](../docs/cdd/Closure-Gate-3-CDD-012-Durable-Persistence-and-Recovery-Report.md) |
 | CDD-013 Supplier Risk Application API and Security Boundary | 1.0 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-013-Supplier-Risk-Application-API-and-Security-Boundary.md) · [Gate report](../docs/cdd/CDD-013-PREIMPLEMENTATION-GATE-REPORT.md) · [Evidence](../docs/cdd/CDD-013-IMPLEMENTATION-EVIDENCE.md) · [Closure report](../docs/cdd/Closure-Gate-4-CDD-013-Application-API-and-Security-Boundary-Implementation-Report.md) |
 | CDD-014 Supplier Risk Business Workflow and User Experience | 1.0 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-014-Supplier-Risk-Business-Workflow-and-User-Experience-DRAFT.md) · [Gate report](../docs/cdd/CDD-014-PREIMPLEMENTATION-GATE-REPORT.md) · [Closure report](../docs/cdd/Closure-Gate-5-CDD-014-Supplier-Risk-Business-Workflow-and-User-Experience-Implementation-Report.md) |
+| CDD-015 Governed Supply Chain Impact and Mitigation Decision | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-015-Governed-Supply-Chain-Impact-and-Mitigation-Decision.md) |
 
 ## Historical review artifacts
 
@@ -227,6 +230,8 @@ All documents below are `SUPERSEDED` and retained only for audit history.
 | Architecture Dependency Matrix | 1.8 | Architecture Dependency Matrix v1.9 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.8/DEPENDENCY-MATRIX-v1.8.csv) |
 | Architecture Consistency Report | 1.10 | Architecture Consistency Report v1.11 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.9/ARCHITECTURE-CONSISTENCY-REPORT-v1.10_FROZEN.md) |
 | Architecture Dependency Matrix | 1.9 | Architecture Dependency Matrix v1.10 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.9/DEPENDENCY-MATRIX-v1.9.csv) |
+| Architecture Consistency Report | 1.11 | Architecture Consistency Report v1.12 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.10/ARCHITECTURE-CONSISTENCY-REPORT-v1.11_FROZEN.md) |
+| Architecture Dependency Matrix | 1.10 | Architecture Dependency Matrix v1.11 | SUPERSEDED | NO | NON-AUTHORITATIVE | [Document](released/v1.10/DEPENDENCY-MATRIX-v1.10.csv) |
 
 ## Runtime dependency chain
 
@@ -245,7 +250,8 @@ The Architecture Release Manifest is the authoritative integrity register for it
 
 | Baseline | Status | Manifest | Manifest SHA-256 |
 |---|---|---|---|
-| v1.10 | CURRENT | [RELEASE-MANIFEST-v1.10.xlsx](released/v1.10/RELEASE-MANIFEST-v1.10.xlsx) | `da039e6401907b1962166a369633cd5100af339e60cc41286b8be1901c39bee4` |
+| v1.11 | CURRENT | [RELEASE-MANIFEST-v1.11.xlsx](released/v1.11/RELEASE-MANIFEST-v1.11.xlsx) | `8726289cf83648bdaf23299086e1498f31ee23c11ddc852844fd0a8a66b6493e` |
+| v1.10 | HISTORICAL | [RELEASE-MANIFEST-v1.10.xlsx](released/v1.10/RELEASE-MANIFEST-v1.10.xlsx) | `da039e6401907b1962166a369633cd5100af339e60cc41286b8be1901c39bee4` |
 | v1.9 | HISTORICAL | [RELEASE-MANIFEST-v1.9.xlsx](released/v1.9/RELEASE-MANIFEST-v1.9.xlsx) | `4036e7d96e738189cbe69f97756ea3a54ef804ce5a60d4f61ef62d67d4293c7d` |
 | v1.8 | HISTORICAL | [RELEASE-MANIFEST-v1.8.xlsx](released/v1.8/RELEASE-MANIFEST-v1.8.xlsx) | `e8e947af8f2bee7fe2b064e3976a937aab4a181a22321efe4b6a67fdc01153f4` |
 | v1.7 | HISTORICAL | [RELEASE-MANIFEST-v1.7.xlsx](released/v1.7/RELEASE-MANIFEST-v1.7.xlsx) | `a589d5aa471b2338277439801e60a62be7f35e4ee2169b8c626e40e283ee5566` |

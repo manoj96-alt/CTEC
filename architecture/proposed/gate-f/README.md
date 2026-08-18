@@ -1,6 +1,23 @@
-# Gate F — Architecture Release Candidate Package
+# Gate F — Architecture Release Candidate Package (HISTORICAL REVIEW TRAIL)
 
-Status: **RELEASE CANDIDATE / NON-AUTHORITATIVE / NOT RELEASED / NOT
+**PUBLISHED.** Gate F architecture was published by F4 as part of baseline
+**v1.11** on 2026-08-18. The authoritative documents are now:
+
+- `architecture/released/v1.11/RFC-017-Gate-F-Supply-Chain-Semantic-Vocabulary-Authorization_v1.0_FROZEN.md`
+- `architecture/released/v1.11/PAD-003-Gate-F-Impact-Mitigation-Access-Boundary_v1.0_FROZEN.md`
+- `docs/cdd/CDD-015-Governed-Supply-Chain-Impact-and-Mitigation-Decision.md`
+  (CDD Gate: FROZEN, Implementation State: NOT STARTED)
+
+**Everything in this `architecture/proposed/gate-f/` directory is now
+NON-AUTHORITATIVE HISTORICAL REVIEW-TRAIL MATERIAL**, preserved for audit
+traceability of the F0-F3 process only. Do not cite it as architecture
+authority — cite the `architecture/released/v1.11/` and `docs/cdd/`
+documents above instead.
+
+---
+
+Status (as of F3, prior to publication — retained below for historical
+context): **RELEASE CANDIDATE / NON-AUTHORITATIVE / NOT RELEASED / NOT
 IMPLEMENTATION AUTHORITY.** Nothing in this directory is registered in
 `architecture/INDEX.md` and nothing here may be cited as architecture
 authority until separately published. It exists for Product Owner

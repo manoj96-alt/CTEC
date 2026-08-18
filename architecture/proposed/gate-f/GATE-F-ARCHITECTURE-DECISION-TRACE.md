@@ -1,6 +1,13 @@
-# Gate F — Architecture Decision Trace
+# Gate F — Architecture Decision Trace (HISTORICAL REVIEW TRAIL)
 
-Status: **RELEASE CANDIDATE / NON-AUTHORITATIVE / NOT RELEASED / NOT
+**PUBLISHED as architecture baseline v1.11 on 2026-08-18** — see
+`architecture/released/v1.11/` and
+`docs/cdd/CDD-015-Governed-Supply-Chain-Impact-and-Mitigation-Decision.md`
+for the authoritative documents. This file is now NON-AUTHORITATIVE
+historical review-trail material.
+
+Status (as of F3, prior to publication — retained below for historical
+context): **RELEASE CANDIDATE / NON-AUTHORITATIVE / NOT RELEASED / NOT
 IMPLEMENTATION AUTHORITY.** Maps each Product Owner Gate F F1 decision to
 where it lands in the release-candidate package (`RFC-017`, `PAD-003`,
 `CDD-015`), the implementation implication, and the future-gate implication.
