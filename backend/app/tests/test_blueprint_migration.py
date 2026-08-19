@@ -9,8 +9,11 @@ the pre-existing `lifecyclestate_t`/`governancestatus_t` types) cannot be
 meaningfully exercised against SQLite.
 """
 
+# isort: skip_file
 from importlib import import_module
 
+import alembic.command
+from alembic.config import Config
 from sqlalchemy import Engine, inspect
 
 migration = import_module(
@@ -26,7 +29,7 @@ _NEW_TABLES = (
 
 
 def test_migration_module_identity() -> None:
-    assert migration.revision == "0014_blueprint_requirement_contract"
+    assert migration.revision == "0014_blueprint_requirement"
     assert migration.down_revision == "0013_decision_evaluation_group"
 
 
@@ -65,12 +68,41 @@ def test_upgrade_does_not_alter_any_existing_table(migrated_engine: Engine) -> N
     # Pre-existing tables retain exactly their pre-Gate-G shape.
     assert "blueprint_id" not in entity_type_columns
     assert "blueprint_id" not in relationship_type_columns
-    # Downgrade correctness is proven by the shared `migrated_engine` fixture
-    # itself: its teardown runs `alembic.command.downgrade(config, "base")`
-    # for the whole migration chain (this migration included) every time
-    # this test module is exercised -- a raising `downgrade()` here would
-    # fail that teardown visibly, for every test in the session, not just
-    # this one. Calling `migration.downgrade()`/`migration.upgrade()`
-    # directly from a test (bypassing the Alembic command machinery that
-    # binds `op` to a real `MigrationContext`) is not a valid way to
-    # exercise them in isolation and is deliberately not attempted here.
+
+
+def test_downgrade_removes_exactly_the_new_tables_and_preserves_existing_schema(
+    migrated_engine: Engine, test_database_url: str
+) -> None:
+    """Explicit, directly observable downgrade evidence (CDD-017 §17/§19 G2
+    companion Purpose: "Migration correctness; upgrade/downgrade..."),
+    exercised through the same Alembic command machinery
+    `conftest.py`'s own `migrated_engine` fixture uses -- not by calling
+    `migration.downgrade()`/`migration.upgrade()` directly, which would
+    bypass the real `MigrationContext`. `migrated_engine` is requested only
+    to guarantee the database is already at "head" (this migration
+    included) before this test steps one migration back and forward again,
+    restoring head state for every other test sharing the session-scoped
+    engine."""
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", test_database_url)
+
+    inspector = inspect(migrated_engine)
+    for table_name in _NEW_TABLES:
+        assert table_name in set(inspector.get_table_names())
+
+    try:
+        alembic.command.downgrade(config, "0013_decision_evaluation_group")
+        inspector = inspect(migrated_engine)
+        remaining_tables = set(inspector.get_table_names())
+        for table_name in _NEW_TABLES:
+            assert table_name not in remaining_tables
+        # Pre-existing schema remains valid after this migration is reverted.
+        assert "entity_types" in remaining_tables
+        assert "relationship_types" in remaining_tables
+    finally:
+        alembic.command.upgrade(config, "head")
+
+    inspector = inspect(migrated_engine)
+    restored_tables = set(inspector.get_table_names())
+    for table_name in _NEW_TABLES:
+        assert table_name in restored_tables
