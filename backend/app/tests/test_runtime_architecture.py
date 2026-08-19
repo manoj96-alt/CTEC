@@ -366,6 +366,14 @@ AUTHORIZED_CHANGED_PATHS = {
     # no HTTP surface; no tenant_id.
     "backend/app/application/blueprint_service.py",
     "backend/app/tests/test_blueprint_service.py",
+    # Gate G G3.5 (CDD-017 §3, §13; G3.5 Canonical Blueprint Seed Artifact
+    # Authorization companion). Canonical content only, resolved by name
+    # against the already-governed ontology: no new EntityType/
+    # RelationshipType, no repository/domain/ORM/migration change, no
+    # conformance, no HTTP surface, no tenant_id. docker-entrypoint.sh is
+    # already authorized above.
+    "backend/app/infrastructure/persistence/blueprint_seed.py",
+    "backend/app/tests/test_blueprint_seed.py",
 }
 
 
