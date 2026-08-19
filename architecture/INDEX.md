@@ -118,6 +118,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-014 Supplier Risk Business Workflow and User Experience | 1.0 | FROZEN | IMPLEMENTED / VERIFIED | [Work order](../docs/cdd/CDD-014-Supplier-Risk-Business-Workflow-and-User-Experience-DRAFT.md) · [Gate report](../docs/cdd/CDD-014-PREIMPLEMENTATION-GATE-REPORT.md) · [Closure report](../docs/cdd/Closure-Gate-5-CDD-014-Supplier-Risk-Business-Workflow-and-User-Experience-Implementation-Report.md) |
 | CDD-015 Governed Supply Chain Impact and Mitigation Decision | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-015-Governed-Supply-Chain-Impact-and-Mitigation-Decision.md) · [Resolved clarification](../docs/cdd/CDD-015-Governed-Impact-Decision-Policy-Clarification-and-Remediation-Report.md) · [Runtime composition clarification](../docs/cdd/CDD-015-Runtime-Composition-Clarification-and-Remediation-Report.md) · [Demo data and read-projection clarification](../docs/cdd/CDD-015-Deterministic-Demo-Data-and-Read-Projection-Clarification-and-Remediation-Report.md) |
 | CDD-016 Governed Supplier-Risk Frontend Experience | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-016-Governed-Supplier-Risk-Frontend-Experience.md) |
+| CDD-017 Canonical Supply Chain Blueprint Requirement Contract | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-017-Canonical-Supply-Chain-Blueprint-Requirement-Contract.md) |
 
 ## Historical review artifacts
 
