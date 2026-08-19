@@ -1,5 +1,6 @@
 """Internal Blueprint application service (Gate G G3; CDD-017 §3, §14; G3
-Internal Blueprint Application Service Artifact Authorization). Provides the
+Internal Blueprint Application Service Artifact Authorization; Gate G G4,
+CDD-018 §13, G4 Blueprint Conformance Artifact Authorization). Provides the
 governed internal application/use-case read boundary over the existing G2
 Blueprint persistence capability -- the "future, separately-implemented
 backend read *service* (not a public API)" CDD-017 §3 describes. Performs no
@@ -19,3 +20,6 @@ class BlueprintApplicationService:
 
     def get_by_id(self, blueprint_id: UUID) -> Blueprint | None:
         return self.repository.get_by_id(blueprint_id)
+
+    def get_approved_by_name(self, blueprint_name: str) -> Blueprint | None:
+        return self.repository.get_approved_by_name(blueprint_name)

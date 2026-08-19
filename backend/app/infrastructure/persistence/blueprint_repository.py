@@ -1,9 +1,10 @@
-"""Blueprint persistence repository (Gate G G2; CDD-017 §6, §14). Global,
-product-owned -- no tenant scoping. Minimal by design: `create()` and
-`get_by_id()` only (G2 Persistence and Domain Artifact Authorization
-companion, `blueprint_repository.py` row exclusions -- no `get_by_name`,
-no "list all," no "create new version from existing"/re-parenting method,
-no HTTP surface, no conformance/scoring method)."""
+"""Blueprint persistence repository (Gate G G2; CDD-017 §6, §14; G4 Blueprint
+Conformance Artifact Authorization, CDD-018 §13). Global, product-owned --
+no tenant scoping. Minimal by design: `create()`, `get_by_id()`, and (as of
+G4) `get_approved_by_name()` only (G2 Persistence and Domain Artifact
+Authorization companion, `blueprint_repository.py` row exclusions -- no
+"list all," no "create new version from existing"/re-parenting method, no
+HTTP surface, no conformance/scoring method)."""
 
 from typing import Protocol
 from uuid import UUID
@@ -19,6 +20,7 @@ from app.domain.blueprint import (
     RelationshipRequirement,
 )
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
+from app.domain.shared.exceptions import ValidationException
 from app.domain.shared.value_objects import CanonicalName, Description, Identifier
 from app.infrastructure.persistence.models.blueprint import (
     BlueprintORM,
@@ -35,6 +37,15 @@ class BlueprintRepository(Protocol):
         ...
 
     def get_by_id(self, blueprint_id: UUID) -> Blueprint | None: ...
+
+    def get_approved_by_name(self, blueprint_name: str) -> Blueprint | None:
+        """CDD-018 §13's governed Blueprint version-selection rule: resolve
+        by `blueprint_name` plus `governance_status = Approved` filtering.
+        Returns `None` on zero matches; raises `ValidationException` if more
+        than one `Approved` row shares the name (CDD-018 §13's own
+        "Precision clarification" -- explicit failure, no arbitrary
+        selection)."""
+        ...
 
 
 class BlueprintRepositoryImpl:
@@ -94,6 +105,21 @@ class BlueprintRepositoryImpl:
                         obligation=element.obligation.value,
                     )
                 )
+
+    def get_approved_by_name(self, blueprint_name: str) -> Blueprint | None:
+        matches = self.session.scalars(
+            select(BlueprintORM).where(
+                BlueprintORM.blueprint_name == blueprint_name,
+                BlueprintORM.governance_status == GovernanceStatus.APPROVED.value,
+            )
+        ).all()
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise ValidationException(
+                f"Multiple Approved Blueprint rows found for name: {blueprint_name}"
+            )
+        return self.get_by_id(matches[0].blueprint_id)
 
     def get_by_id(self, blueprint_id: UUID) -> Blueprint | None:
         model = self.session.get(BlueprintORM, blueprint_id)

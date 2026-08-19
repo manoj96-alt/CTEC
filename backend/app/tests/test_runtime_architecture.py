@@ -374,6 +374,18 @@ AUTHORIZED_CHANGED_PATHS = {
     # already authorized above.
     "backend/app/infrastructure/persistence/blueprint_seed.py",
     "backend/app/tests/test_blueprint_seed.py",
+    # Gate G G4 (CDD-018 §6-16; G4 Blueprint Conformance Artifact
+    # Authorization companion). Structural conformance evaluation only,
+    # read-only against tenant-scoped enterprise_entities/
+    # institutional_relationships: no persistence, migration, or ORM
+    # change; no InformationElementRequirement evaluation; no source
+    # mapping; no HTTP surface; no BlueprintSeeder runtime dependency.
+    # blueprint_repository.py, application/blueprint_service.py,
+    # test_blueprint_service.py, and test_blueprint_persistence_postgres.py
+    # are already authorized above.
+    "backend/app/infrastructure/persistence/blueprint_conformance_context_store.py",
+    "backend/app/application/blueprint_conformance.py",
+    "backend/app/tests/test_blueprint_conformance.py",
 }
 
 
