@@ -48,3 +48,41 @@ class DecisionConfigurationLoader:
         )
         DecisionConfigurationValidator().validate(configuration)
         return configuration
+
+
+# Gate F (CDD-015 §11, §23, §34; remediated per the merged Gate F Governed
+# Impact Decision Policy Clarification and Remediation Report, PR #69): the
+# governed four-condition binary policy's materiality threshold, verified
+# directly against the frontend prototype source
+# (`frontend/lib/demo/decision-rules.ts:11`): $10,000,000, applied to
+# annual revenue exposure. Deliberately NOT sourced from `Settings`/the
+# environment (no `core/config.py` change is authorized) -- a fixed,
+# explicit, testable domain-layer policy constant is itself "a governed
+# configuration value" (§34's own phrasing), distinct from CDD-011's
+# existing, unmodified `DecisionConfigurationSchema`. No lead-time or
+# candidate-cost threshold is authorized (merged clarification Amendments
+# E/F) -- neither appears here.
+GATE_F_MATERIALITY_THRESHOLD_USD = 10_000_000.0
+GATE_F_POLICY_REFERENCE = "CDD-015-Gate-F-Mitigation-Policy"
+GATE_F_POLICY_VERSION = "2.0"
+
+
+@dataclass(frozen=True, slots=True)
+class GateFPolicyConfiguration:
+    policy_reference: str = GATE_F_POLICY_REFERENCE
+    policy_version: str = GATE_F_POLICY_VERSION
+    materiality_threshold_usd: float = GATE_F_MATERIALITY_THRESHOLD_USD
+
+
+class GateFPolicyConfigurationValidator:
+    def validate(self, configuration: GateFPolicyConfiguration) -> None:
+        if not configuration.policy_reference.strip() or not configuration.policy_version.strip():
+            raise ValueError("Gate F policy reference and version are required")
+        if configuration.materiality_threshold_usd < 0:
+            raise ValueError("Gate F materiality threshold must be non-negative")
+
+
+def load_gate_f_policy_configuration() -> GateFPolicyConfiguration:
+    configuration = GateFPolicyConfiguration()
+    GateFPolicyConfigurationValidator().validate(configuration)
+    return configuration

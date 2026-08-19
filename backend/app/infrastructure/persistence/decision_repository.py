@@ -95,6 +95,27 @@ class DecisionEvaluationRepository(Protocol):
         not belong to `tenant_id`."""
         ...
 
+    def group_by_logical_execution_id(
+        self, logical_execution_id: UUID, *, tenant_id: str
+    ) -> DecisionEvaluationGroupModel | None:
+        """Tenant-scoped lookup by the audit-trail `logical_execution_id`
+        column (CDD-015 §20 F2.2 addition): a future replay/resume caller
+        must look up and reuse the same `decision_evaluation_id` for a
+        logical decision rather than minting a new one."""
+        ...
+
+    def append_group_member(self, persistence: DecisionPersistenceModel) -> None:
+        """Persist a `decision_evaluation_records` row belonging to a
+        `decision_evaluations` group (CDD-015 §16 item 4), through this
+        repository's PUBLIC contract. Distinct from `append()`: Gate F's
+        `knowledge_references` point directly at governed
+        `assertions`/`institutional_relationships` (CDD-015 §15), not at
+        CDD-011's Institutional-Knowledge pipeline, so `append()`'s
+        Institutional-Knowledge gate does not apply -- this method requires
+        `decision_evaluation_id` to be set instead, and fails closed if the
+        referenced group does not exist."""
+        ...
+
 
 class DecisionEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
@@ -154,14 +175,7 @@ class DecisionEvaluationRepositoryImpl:
             DecisionEvaluationGroupORM.tenant_id == tenant_id,
         )
         model = self.session.scalars(statement).first()
-        if model is None:
-            return None
-        return DecisionEvaluationGroupModel(
-            decision_evaluation_id=model.decision_evaluation_id,
-            tenant_id=model.tenant_id,
-            created_at=model.created_at,
-            logical_execution_id=model.logical_execution_id,
-        )
+        return self._group_to_domain(model) if model is not None else None
 
     def records_for_group(
         self, decision_evaluation_id: UUID, *, tenant_id: str
@@ -172,6 +186,33 @@ class DecisionEvaluationRepositoryImpl:
             DecisionEvaluationORM.decision_evaluation_id == decision_evaluation_id
         )
         return tuple(self._to_domain(model) for model in self.session.scalars(statement))
+
+    def group_by_logical_execution_id(
+        self, logical_execution_id: UUID, *, tenant_id: str
+    ) -> DecisionEvaluationGroupModel | None:
+        statement = select(DecisionEvaluationGroupORM).where(
+            DecisionEvaluationGroupORM.logical_execution_id == logical_execution_id,
+            DecisionEvaluationGroupORM.tenant_id == tenant_id,
+        )
+        model = self.session.scalars(statement).first()
+        return self._group_to_domain(model) if model is not None else None
+
+    def append_group_member(self, persistence: DecisionPersistenceModel) -> None:
+        model = persistence.evaluation
+        if model.decision_evaluation_id is None:
+            raise ValidationException("append_group_member requires a decision_evaluation_id")
+        if self.session.get(DecisionEvaluationGroupORM, model.decision_evaluation_id.value) is None:
+            raise ValidationException("Governed Record Reference does not exist")
+        self.session.add(self._to_orm(persistence))
+
+    @staticmethod
+    def _group_to_domain(model: DecisionEvaluationGroupORM) -> DecisionEvaluationGroupModel:
+        return DecisionEvaluationGroupModel(
+            decision_evaluation_id=model.decision_evaluation_id,
+            tenant_id=model.tenant_id,
+            created_at=model.created_at,
+            logical_execution_id=model.logical_execution_id,
+        )
 
     @staticmethod
     def _ordered_statement(identity_key: str) -> Select[tuple[DecisionEvaluationORM]]:
