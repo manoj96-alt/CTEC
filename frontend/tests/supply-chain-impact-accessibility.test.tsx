@@ -26,7 +26,9 @@ const candidate: CandidateOutcome = {
   outcome: "Recommended",
   reason: "All four governed conditions are satisfied",
   decision_record_identifier: "22222222-2222-2222-2222-222222222222",
-  structured_reasons: ["Recommended: all four governed conditions are satisfied"],
+  structured_reasons: [
+    "Recommended: all four governed conditions are satisfied",
+  ],
   narrative: "Gate F governed four-condition mitigation policy.",
   confidence: "High",
   evidence,
@@ -43,7 +45,12 @@ const material: MaterialEvaluationResult = {
 const impact: ImpactSummary = {
   supplier_entity_id: "44444444-4444-4444-4444-444444444444",
   supplier_name: "Demo Supplier",
-  materials: [{ material_entity_id: material.material_entity_id, material_name: "Demo Material" }],
+  materials: [
+    {
+      material_entity_id: material.material_entity_id,
+      material_name: "Demo Material",
+    },
+  ],
   products: [{ entity_id: "5", entity_name: "Demo Product" }],
   facilities: [{ entity_id: "6", entity_name: "Demo Facility" }],
   revenue_exposures: [{ entity_id: "7", entity_name: "Demo Revenue Exposure" }],
@@ -52,7 +59,11 @@ const impact: ImpactSummary = {
 test("governed supplier-risk panels have no automated accessibility violations", async () => {
   const { container } = render(
     <main>
-      <RiskSignalPanel supplierName={impact.supplier_name} material={material} evidence={evidence} />
+      <RiskSignalPanel
+        supplierName={impact.supplier_name}
+        material={material}
+        evidence={evidence}
+      />
       <BusinessImpactPanel
         impact={impact}
         singleSourceExposure={material.single_source_exposure}
@@ -61,7 +72,11 @@ test("governed supplier-risk panels have no automated accessibility violations",
       />
       <EvidencePanel evidence={evidence} />
       <AlternativesPanel candidates={material.candidates} />
-      <RecommendationPanel candidate={candidate} policyReference="CDD-015-Gate-F-Mitigation-Policy" policyVersion="2.0" />
+      <RecommendationPanel
+        candidate={candidate}
+        policyReference="CDD-015-Gate-F-Mitigation-Policy"
+        policyVersion="2.0"
+      />
       <HumanAuthorityBanner governanceStanding="HUMAN_APPROVAL_REQUIRED" />
     </main>,
   );

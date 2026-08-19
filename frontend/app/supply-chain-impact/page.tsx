@@ -23,19 +23,22 @@ const DEMO_SCENARIOS = [
   {
     key: "recommended",
     label: "High-risk supplier, qualified alternative",
-    description: "Single-sourced, high-severity disruption, revenue exposure above the materiality threshold, one qualified and capable alternate supplier.",
+    description:
+      "Single-sourced, high-severity disruption, revenue exposure above the materiality threshold, one qualified and capable alternate supplier.",
     supplierEntityId: "5d98f421-ef60-5463-9c4e-f81b8bc63da1",
   },
   {
     key: "unknown",
     label: "Missing governed evidence",
-    description: "Required disruption-severity evidence is genuinely unavailable. CTEC does not guess.",
+    description:
+      "Required disruption-severity evidence is genuinely unavailable. CTEC does not guess.",
     supplierEntityId: "8b2833c6-e347-5b98-925d-bbb0a8a71e12",
   },
   {
     key: "rejected",
     label: "Below the materiality threshold",
-    description: "Revenue exposure is asserted but does not exceed the governed $10,000,000 threshold.",
+    description:
+      "Revenue exposure is asserted but does not exceed the governed $10,000,000 threshold.",
     supplierEntityId: "dbd7299c-04a4-57b1-a506-43e4d3a172ff",
   },
 ] as const;
@@ -84,9 +87,10 @@ export default function SupplyChainImpactPage() {
           <span className="eyebrow">Supply chain impact</span>
           <h1>Governed supplier risk</h1>
           <p>
-            A deterministic, governed walkthrough of the Gate F supply-chain impact and
-            mitigation capability. Every fact and conclusion below comes from the
-            authenticated Gate F API -- no business decision is made in this browser.
+            A deterministic, governed walkthrough of the Gate F supply-chain
+            impact and mitigation capability. Every fact and conclusion below
+            comes from the authenticated Gate F API -- no business decision is
+            made in this browser.
           </p>
         </div>
       </div>
@@ -140,9 +144,11 @@ export default function SupplyChainImpactPage() {
         <section className="panel" role="status">
           <h2>Additional authority required</h2>
           <p>
-            Your account does not hold the <code>supply-chain-impact:evaluate</code> scope
-            required to initiate a governed evaluation. You may still be able to view a
-            previously-created evaluation if you hold <code>supply-chain-impact:read</code>.
+            Your account does not hold the{" "}
+            <code>supply-chain-impact:evaluate</code> scope required to initiate
+            a governed evaluation. You may still be able to view a
+            previously-created evaluation if you hold{" "}
+            <code>supply-chain-impact:read</code>.
           </p>
         </section>
       )}
@@ -150,7 +156,10 @@ export default function SupplyChainImpactPage() {
       {state.status === "unavailable" && (
         <section className="panel" role="status">
           <h2>Gate F is unavailable</h2>
-          <p>The governed backend could not complete this request ({state.message}).</p>
+          <p>
+            The governed backend could not complete this request (
+            {state.message}).
+          </p>
         </section>
       )}
 
@@ -174,7 +183,9 @@ export default function SupplyChainImpactPage() {
             policyReference={result.policy_reference}
             policyVersion={result.policy_version}
           />
-          <HumanAuthorityBanner governanceStanding={result.governance_standing} />
+          <HumanAuthorityBanner
+            governanceStanding={result.governance_standing}
+          />
         </>
       )}
     </div>

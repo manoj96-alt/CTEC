@@ -1,15 +1,24 @@
-import type { EvidenceItem, ImpactSummary } from "@/lib/supply-chain-impact/contracts";
+import type {
+  EvidenceItem,
+  ImpactSummary,
+} from "@/lib/supply-chain-impact/contracts";
 
 function currency(value: string | undefined): string {
   if (!value) return "unknown";
   const amount = Number(value);
   if (Number.isNaN(amount)) return value;
-  return amount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return amount.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 function materialityLabel(revenueMateriality: boolean | null): string {
   if (revenueMateriality === null) return "Unknown";
-  return revenueMateriality ? "Exceeds materiality threshold" : "Below materiality threshold";
+  return revenueMateriality
+    ? "Exceeds materiality threshold"
+    : "Below materiality threshold";
 }
 
 function singleSourceLabel(singleSourceExposure: boolean | null): string {
@@ -31,7 +40,9 @@ export function BusinessImpactPanel({
   revenueMateriality: boolean | null;
   evidence: EvidenceItem[];
 }) {
-  const revenueEvidence = evidence.find((item) => item.predicate === "annualRevenueUsd");
+  const revenueEvidence = evidence.find(
+    (item) => item.predicate === "annualRevenueUsd",
+  );
   return (
     <section className="panel" aria-label="Business impact">
       <div className="eyebrow">Business impact</div>

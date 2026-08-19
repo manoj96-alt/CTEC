@@ -9,11 +9,21 @@ function candidateLabel(alternateSupplierEntityId: string | null): string {
   return `Alternate Supplier (…${alternateSupplierEntityId.slice(-8)})`;
 }
 
-function evidenceValue(candidate: CandidateOutcome, predicate: string): string | null {
-  return candidate.evidence.find((item) => item.predicate === predicate)?.value ?? null;
+function evidenceValue(
+  candidate: CandidateOutcome,
+  predicate: string,
+): string | null {
+  return (
+    candidate.evidence.find((item) => item.predicate === predicate)?.value ??
+    null
+  );
 }
 
-export function AlternativesPanel({ candidates }: { candidates: CandidateOutcome[] }) {
+export function AlternativesPanel({
+  candidates,
+}: {
+  candidates: CandidateOutcome[];
+}) {
   return (
     <section className="panel" aria-label="Alternatives">
       <div className="eyebrow">Alternatives</div>
@@ -24,10 +34,14 @@ export function AlternativesPanel({ candidates }: { candidates: CandidateOutcome
         <ul className="record-list">
           {candidates.map((candidate, index) => (
             <li key={candidate.alternate_supplier_entity_id ?? index}>
-              <strong>{candidateLabel(candidate.alternate_supplier_entity_id)}</strong>
+              <strong>
+                {candidateLabel(candidate.alternate_supplier_entity_id)}
+              </strong>
               <dl className="status-grid">
                 <dt>Qualification</dt>
-                <dd>{evidenceValue(candidate, "qualification") ?? "Unknown"}</dd>
+                <dd>
+                  {evidenceValue(candidate, "qualification") ?? "Unknown"}
+                </dd>
                 <dt>Capacity</dt>
                 <dd>{evidenceValue(candidate, "capacity") ?? "Unknown"}</dd>
                 <dt>Lead time</dt>

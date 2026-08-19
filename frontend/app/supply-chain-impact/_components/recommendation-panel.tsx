@@ -17,8 +17,9 @@ export function RecommendationPanel({
         <div className="eyebrow">CTEC recommendation</div>
         <h2>Insufficient governed evidence</h2>
         <p>
-          CTEC cannot safely recommend an action because required governed evidence is
-          unavailable. This is not a rejection -- it means CTEC does not guess.
+          CTEC cannot safely recommend an action because required governed
+          evidence is unavailable. This is not a rejection -- it means CTEC does
+          not guess.
         </p>
         <p className="eyebrow" style={{ marginTop: "0.5rem" }}>
           Policy: {policyReference} v{policyVersion}
