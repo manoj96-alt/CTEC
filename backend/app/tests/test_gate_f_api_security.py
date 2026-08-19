@@ -135,19 +135,23 @@ def _fake_client(
     app_container: Container,
     service: FakeSupplyChainImpactApiService,
     authenticated: TrustedPrincipal,
+    *,
+    sessions: "sessionmaker[Session] | None" = None,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[principal] = lambda: authenticated
     app.dependency_overrides[container] = lambda: app_container
     app.dependency_overrides[supply_chain_impact_api_service] = lambda: service
-    # The read route's session dependency is resolved before the route body
+    # The read route's session dependency, and the evaluate route's F-I4
+    # post-evaluate re-read dependency, are resolved before the route body
     # runs its own _authorize() check (ordinary FastAPI dependency
     # resolution order, identical to how api_service/steward_api_service
     # already behave elsewhere in this codebase) -- override it directly so
     # authorization-boundary tests exercise _authorize() itself rather than
     # failing earlier on an unconfigured session factory the fake container
-    # never needs to actually open.
-    app.dependency_overrides[supply_chain_impact_sessions] = lambda: None
+    # never needs to actually open. Tests that reach a real evaluate() call
+    # pass a real sessionmaker so the F-I4 re-read has something to query.
+    app.dependency_overrides[supply_chain_impact_sessions] = lambda: sessions
     return TestClient(app)
 
 
@@ -199,13 +203,17 @@ def test_no_scope_principal_denied_both_operations() -> None:
     assert evaluate_response.status_code == 403
 
 
-def test_evaluate_authorized_reaches_service_with_trusted_principal() -> None:
+def test_evaluate_authorized_reaches_service_with_trusted_principal(
+    migrated_engine: Engine,
+) -> None:
     decision_evaluation_id = uuid4()
     service = FakeSupplyChainImpactApiService(
         result=_fake_result(decision_evaluation_id, "tenant-a")
     )
     authenticated = _principal(tenant_id="tenant-a", scopes=("supply-chain-impact:evaluate",))
-    client = _fake_client(_fake_container(), service, authenticated)
+    client = _fake_client(
+        _fake_container(), service, authenticated, sessions=sessionmaker(migrated_engine)
+    )
     supplier_entity_id = uuid4()
     response = client.post(EVALUATIONS_PATH, json={"supplier_entity_id": str(supplier_entity_id)})
     assert response.status_code == 201
@@ -527,6 +535,20 @@ def test_evaluate_and_read_round_trip_recommended(migrated_engine: Engine) -> No
     [material] = evaluate_body["materials"]
     [candidate] = material["candidates"]
     assert candidate["outcome"] == "Recommended"
+    # F-I4 Item B: evaluate response carries the same explanation richness
+    # the read response already has, from a re-read of records this same
+    # call just persisted -- not a second evaluation.
+    assert candidate["confidence"] == "High"
+    assert candidate["narrative"]
+    assert candidate["structured_reasons"]
+    # F-I4 Item C: per-condition evidence detail, dereferenced from the
+    # already-persisted governed assertions.
+    evidence_predicates = {item["predicate"] for item in candidate["evidence"]}
+    assert {"severity", "annualRevenueUsd", "qualification", "capacity"} <= evidence_predicates
+    for item in candidate["evidence"]:
+        assert item["source_system_name"]
+        assert item["value"]
+        assert item["asserted_on"]
     decision_evaluation_id = evaluate_body["decision_evaluation_id"]
 
     read_response = client.get(f"{EVALUATIONS_PATH}/{decision_evaluation_id}")
@@ -537,8 +559,39 @@ def test_evaluate_and_read_round_trip_recommended(migrated_engine: Engine) -> No
     assert record["outcome"] == "Recommended"
     assert record["policy_reference"] == "CDD-015-Gate-F-Mitigation-Policy"
     assert record["policy_version"] == "2.0"
+    assert {item["predicate"] for item in record["evidence"]} == evidence_predicates
     assert read_body["governance"]["human_approval_required"] is True
     assert read_body["governance"]["governance_outcome"] == "Requires Review"
+
+
+def test_evaluate_projection_does_not_change_authorization_or_tenant_boundary(
+    migrated_engine: Engine,
+) -> None:
+    """The two F-I4 projections are read-only: they must not weaken scope
+    enforcement or the tenant boundary the underlying evaluate/read
+    operations already require."""
+    tenant_id = _tenant("projection-boundary")
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        OntologySeeder(session).load()
+        scenario = _build_scenario(session, tenant_id)
+
+    no_evaluate_scope_client = _real_client(
+        migrated_engine, _principal(tenant_id=tenant_id, scopes=("supply-chain-impact:read",))
+    )
+    denied = no_evaluate_scope_client.post(
+        EVALUATIONS_PATH, json={"supplier_entity_id": str(scenario["supplier"])}
+    )
+    assert denied.status_code == 403
+
+    other_tenant_client = _real_client(
+        migrated_engine,
+        _principal(tenant_id=_tenant("other"), scopes=("supply-chain-impact:evaluate",)),
+    )
+    cross_tenant = other_tenant_client.post(
+        EVALUATIONS_PATH, json={"supplier_entity_id": str(scenario["supplier"])}
+    )
+    assert cross_tenant.status_code == 404
 
 
 def test_evaluate_missing_severity_evidence_stays_unknown_not_rejected(
@@ -561,6 +614,12 @@ def test_evaluate_missing_severity_evidence_stays_unknown_not_rejected(
     assert candidate["outcome"] is None
     assert candidate["reason"] is None
     assert candidate["decision_record_identifier"] is None
+    # No record was persisted for this (material, candidate) pair -- the
+    # F-I4 projections must stay empty/None, never fabricated.
+    assert candidate["structured_reasons"] == []
+    assert candidate["narrative"] is None
+    assert candidate["confidence"] is None
+    assert candidate["evidence"] == []
 
 
 def test_evaluate_zero_alternates_is_known_rejected(migrated_engine: Engine) -> None:

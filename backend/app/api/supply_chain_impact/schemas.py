@@ -10,7 +10,13 @@ authoritative for a governed business fact (candidate qualification,
 capacity, lead time, cost, disruption severity, sourcing concentration,
 recommendation, or governance outcome) -- the evaluate request identifies
 only the evaluation target (CDD-015 §25; merged Governed Impact Decision
-Policy Clarification and Remediation Report, Amendment R)."""
+Policy Clarification and Remediation Report, Amendment R).
+
+`structured_reasons`/`narrative`/`confidence`/`evidence` on the evaluate
+response (F-I4, merged CDD-015 Deterministic Demo Data and
+Read-Projection Clarification and Remediation Report, Items B-C) are
+read-only projections of state the same evaluate call already persisted
+-- never a second evaluation, never new business logic."""
 
 from uuid import UUID
 
@@ -51,11 +57,28 @@ class ImpactSummaryResponse(BaseModel):
     revenue_exposures: list[ImpactedEntityResponse]
 
 
+class EvidenceItemResponse(BaseModel):
+    """One governed literal assertion backing a condition or a candidate
+    fact -- a read-only projection of an already-persisted `assertions`
+    row (predicate/value/source/timestamp), never a new derivation
+    (CDD-015 Deterministic Demo Data and Read-Projection Clarification,
+    Item C)."""
+
+    source_system_name: str
+    predicate: str
+    value: str
+    asserted_on: str
+
+
 class CandidateOutcomeResponse(BaseModel):
     alternate_supplier_entity_id: UUID | None
     outcome: str | None
     reason: str | None
     decision_record_identifier: UUID | None
+    structured_reasons: list[str]
+    narrative: str | None
+    confidence: str | None
+    evidence: list[EvidenceItemResponse]
 
 
 class MaterialEvaluationResultResponse(BaseModel):
@@ -88,6 +111,7 @@ class DecisionEvaluationRecordResponse(BaseModel):
     structured_reasons: list[str]
     narrative: str
     knowledge_references: list[UUID]
+    evidence: list[EvidenceItemResponse]
     policy_reference: str
     policy_version: str
     effective_from: str

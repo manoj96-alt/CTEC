@@ -25,6 +25,7 @@ conversion directly from outside those repositories, and it never re-runs
 the F-I2 evaluation: a read returns exactly the persisted, decision-time
 result (CDD-015 §20)."""
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -43,6 +44,7 @@ from app.api.supply_chain_impact.dependencies import (
 from app.api.supply_chain_impact.schemas import (
     CandidateOutcomeResponse,
     DecisionEvaluationRecordResponse,
+    EvidenceItemResponse,
     GovernanceEvaluationRecordResponse,
     ImpactedEntityResponse,
     ImpactedMaterialResponse,
@@ -57,10 +59,13 @@ from app.domain.decision_engine.configuration import (
     GATE_F_POLICY_REFERENCE,
     GATE_F_POLICY_VERSION,
 )
+from app.domain.decision_engine.model import DecisionEvaluationRecord
 from app.domain.governance_engine import GovernanceOutcome
 from app.domain.shared.exceptions import ValidationException
 from app.infrastructure.persistence.decision_repository import DecisionEvaluationRepositoryImpl
 from app.infrastructure.persistence.governance_repository import GovernanceEvaluationRepositoryImpl
+from app.infrastructure.persistence.models.assertion import Assertion
+from app.infrastructure.persistence.models.source_system import SourceSystem
 
 router = APIRouter(prefix="/api/v1/supply-chain-impact", tags=["supply-chain-impact"])
 
@@ -78,6 +83,7 @@ def evaluate(
     service: Annotated[
         gate_f_service.SupplyChainImpactApiService, Depends(supply_chain_impact_api_service)
     ],
+    sessions: Annotated["sessionmaker[Session]", Depends(supply_chain_impact_sessions)],
     dependencies: Annotated[Container, Depends(container)],
     correlation: Annotated[UUID, Depends(correlation_id)],
 ) -> SupplyChainImpactEvaluateResponse:
@@ -121,6 +127,20 @@ def evaluate(
         execution_id=result.decision_evaluation_id,
         endpoint_classification=_ENDPOINT_CLASSIFICATION,
     )
+    # Read-only projection of state this same call already persisted (F-I4
+    # Item B) -- a re-read through the existing public
+    # records_for_group() contract, not a second evaluation.
+    with sessions() as session:
+        records_by_id = {
+            record.record_identifier: record
+            for record in DecisionEvaluationRepositoryImpl(session).records_for_group(
+                result.decision_evaluation_id, tenant_id=authenticated.tenant_id
+            )
+        }
+        candidate_projections: dict[UUID | None, _CandidateProjection] = {
+            record_identifier: _record_projection(session, record)
+            for record_identifier, record in records_by_id.items()
+        }
     return SupplyChainImpactEvaluateResponse(
         decision_evaluation_id=result.decision_evaluation_id,
         impact=ImpactSummaryResponse(
@@ -153,12 +173,7 @@ def evaluate(
                 single_source_exposure=material.single_source_exposure,
                 revenue_materiality=material.revenue_materiality,
                 candidates=[
-                    CandidateOutcomeResponse(
-                        alternate_supplier_entity_id=candidate.alternate_supplier_entity_id,
-                        outcome=candidate.outcome,
-                        reason=candidate.reason,
-                        decision_record_identifier=candidate.decision_record_identifier,
-                    )
+                    _candidate_response(candidate, candidate_projections)
                     for candidate in material.candidates
                 ],
             )
@@ -200,6 +215,12 @@ def get_evaluation(
         governance_projection = GovernanceEvaluationRepositoryImpl(session).current(
             decision_evaluation_id, GATE_F_POLICY_REFERENCE, as_of=datetime.now(UTC)
         )
+        record_evidence = {
+            record.record_identifier: _evidence_items(
+                session, (item.value for item in record.knowledge_references)
+            )
+            for record in records
+        }
     _audit_disclosure(dependencies, authenticated, correlation, decision_evaluation_id)
     governance_record = governance_projection.record
     return SupplyChainImpactReadResponse(
@@ -214,6 +235,7 @@ def get_evaluation(
                 structured_reasons=list(record.decision_explanation.structured_reasons),
                 narrative=record.decision_explanation.narrative,
                 knowledge_references=[item.value for item in record.knowledge_references],
+                evidence=record_evidence[record.record_identifier],
                 policy_reference=record.governing_policy_reference.value,
                 policy_version=record.policy_version.value,
                 effective_from=record.effective_from.isoformat(),
@@ -237,6 +259,72 @@ def get_evaluation(
             else None
         ),
     )
+
+
+_CandidateProjection = tuple[list[str], str | None, str | None, list[EvidenceItemResponse]]
+
+
+def _record_projection(session: Session, record: DecisionEvaluationRecord) -> _CandidateProjection:
+    return (
+        list(record.decision_explanation.structured_reasons),
+        record.decision_explanation.narrative,
+        record.decision_confidence.level.value,
+        _evidence_items(session, (item.value for item in record.knowledge_references)),
+    )
+
+
+def _candidate_response(
+    candidate: "gate_f_service.CandidateOutcome",
+    projections: dict[UUID | None, _CandidateProjection],
+) -> CandidateOutcomeResponse:
+    structured_reasons, narrative, confidence, evidence = projections.get(
+        candidate.decision_record_identifier, ([], None, None, [])
+    )
+    return CandidateOutcomeResponse(
+        alternate_supplier_entity_id=candidate.alternate_supplier_entity_id,
+        outcome=candidate.outcome,
+        reason=candidate.reason,
+        decision_record_identifier=candidate.decision_record_identifier,
+        structured_reasons=structured_reasons,
+        narrative=narrative,
+        confidence=confidence,
+        evidence=evidence,
+    )
+
+
+def _evidence_items(
+    session: Session, knowledge_references: Iterable[UUID]
+) -> list[EvidenceItemResponse]:
+    """Dereferences each already-persisted knowledge reference to its
+    underlying governed assertion, where it resolves to one -- a read-only
+    primary-key lookup, not a new derivation (F-I4 Item C). Some knowledge
+    references are not assertions (a candidateFor institutional_relationship
+    id, or a material id used as a last-resort fallback -- see
+    GateFDecisionAdapter._knowledge_references); those are silently
+    skipped rather than treated as an error."""
+    items: list[EvidenceItemResponse] = []
+    for reference in knowledge_references:
+        assertion = session.get(Assertion, reference)
+        if assertion is None or assertion.predicate is None:
+            continue
+        source_system = (
+            session.get(SourceSystem, assertion.source_system_id)
+            if assertion.source_system_id is not None
+            else None
+        )
+        items.append(
+            EvidenceItemResponse(
+                source_system_name=(
+                    source_system.source_system_name
+                    if source_system is not None
+                    else "Unknown source"
+                ),
+                predicate=assertion.predicate,
+                value=assertion.object_value or "",
+                asserted_on=(assertion.asserted_on or assertion.effective_from).isoformat(),
+            )
+        )
+    return items
 
 
 def _required_audit(dependencies: Container) -> SecurityAuditService:
