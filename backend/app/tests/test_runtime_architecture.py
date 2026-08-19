@@ -319,6 +319,14 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/api/supply_chain_impact/schemas.py",
     "backend/app/api/supply_chain_impact/dependencies.py",
     "backend/app/tests/test_gate_f_api_security.py",
+    # Gate F F-I4 -- deterministic governed demo data and two additive
+    # read-only API projections (CDD-015 Deterministic Demo Data and
+    # Read-Projection Clarification and Remediation Report, PR #73). No
+    # F-I2 business-policy change, no ontology vocabulary, no Keycloak
+    # change, no runtime-composition change, no frontend.
+    "backend/app/infrastructure/persistence/demo_gate_f_seeder.py",
+    "backend/app/tests/test_demo_gate_f_seeder.py",
+    "backend/app/tests/test_demo_gate_f_seeder_postgres.py",
 }
 
 
