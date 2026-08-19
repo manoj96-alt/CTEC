@@ -345,6 +345,20 @@ AUTHORIZED_CHANGED_PATHS = {
     "frontend/tests/supply-chain-impact-api-client.test.ts",
     "frontend/tests/supply-chain-impact-accessibility.test.tsx",
     "frontend/tests/supply-chain-impact-workspace.test.tsx",
+    # Gate G G2 -- CDD-017 canonical Supply Chain Blueprint requirement
+    # contract persistence/domain substrate (CDD-017 §6-9; G2 Persistence
+    # and Domain Artifact Authorization companion). Declarative only: no
+    # runtime enforcement, no tenant_id, no API, no frontend, no
+    # production seed. References existing entity_types/relationship_types
+    # by ID only -- no parallel ontology vocabulary.
+    "backend/app/infrastructure/persistence/migrations/versions/0014_blueprint_requirement_contract.py",
+    "backend/app/infrastructure/persistence/models/blueprint.py",
+    "backend/app/domain/blueprint/__init__.py",
+    "backend/app/domain/blueprint/model.py",
+    "backend/app/infrastructure/persistence/blueprint_repository.py",
+    "backend/app/tests/test_blueprint_migration.py",
+    "backend/app/tests/test_blueprint_persistence.py",
+    "backend/app/tests/test_blueprint_persistence_postgres.py",
 }
 
 
