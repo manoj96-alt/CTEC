@@ -15,6 +15,7 @@ from app.api.health.router import router as health_router
 from app.api.ontology.router import router as ontology_router
 from app.api.ontology_copilot.router import router as ontology_copilot_router
 from app.api.supplier_risk.router import router as supplier_risk_router
+from app.api.supply_chain_impact.router import router as supply_chain_impact_router
 from app.api.version.router import router as version_router
 from app.core.constants import API_PREFIX, APP_NAME, APP_VERSION, REQUEST_ID_HEADER
 from app.core.dependency_container import build_container
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(ontology_router)
     app.include_router(entity_resolution_router)
     app.include_router(ontology_copilot_router)
+    app.include_router(supply_chain_impact_router)
     return app
 
 

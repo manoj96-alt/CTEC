@@ -27,7 +27,9 @@
         "ctec-identity",
         "supplier-risk:read",
         "entity-resolution:read",
-        "ontology-copilot:ask"
+        "ontology-copilot:ask",
+        "supply-chain-impact:read",
+        "supply-chain-impact:evaluate"
       ],
       "optionalClientScopes": [
         "supplier-risk:submit",
@@ -179,6 +181,24 @@
       "name": "ontology-copilot:ask",
       "protocol": "openid-connect",
       "description": "PAD-002 canonical scope -- Ask CTEC.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "supply-chain-impact:read",
+      "protocol": "openid-connect",
+      "description": "PAD-003 SS2a canonical scope -- Gate F Supply Chain Impact read access (granted to the primary demo persona, PAD-003 SS9).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "supply-chain-impact:evaluate",
+      "protocol": "openid-connect",
+      "description": "PAD-003 SS2b canonical scope -- Gate F governed evaluation (granted to the primary demo persona, PAD-003 SS9 F5.1 correction; not approval or execution authority).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"

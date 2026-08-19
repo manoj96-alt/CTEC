@@ -308,6 +308,17 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_gate_f_replay_recovery.py",
     "backend/app/tests/test_gate_f_repository_contracts.py",
     "backend/app/tests/test_integration_architecture.py",
+    # Gate F F-I3 -- authenticated Supply Chain Impact API (CDD-015 §16,
+    # §21, §32; PAD-003 §2a-§4a), plus the narrow F-I3.1 runtime-composition
+    # authorization (PR #71: main.py router registration only,
+    # dependency_container.py SupplyChainImpactApiService wiring only --
+    # both files already present in this allowlist above). No F-I2
+    # business-policy change, no frontend, no approval/execution endpoint.
+    "backend/app/api/supply_chain_impact/__init__.py",
+    "backend/app/api/supply_chain_impact/router.py",
+    "backend/app/api/supply_chain_impact/schemas.py",
+    "backend/app/api/supply_chain_impact/dependencies.py",
+    "backend/app/tests/test_gate_f_api_security.py",
 }
 
 
