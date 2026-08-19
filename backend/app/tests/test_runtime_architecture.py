@@ -359,6 +359,13 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_blueprint_migration.py",
     "backend/app/tests/test_blueprint_persistence.py",
     "backend/app/tests/test_blueprint_persistence_postgres.py",
+    # Gate G G3 (CDD-017 §3, §14; G3 Internal Blueprint Application Service
+    # Artifact Authorization companion). Internal application-layer read
+    # boundary over the unmodified G2 BlueprintRepository: no persistence,
+    # domain, ORM, or migration change; no canonical seed; no conformance;
+    # no HTTP surface; no tenant_id.
+    "backend/app/application/blueprint_service.py",
+    "backend/app/tests/test_blueprint_service.py",
 }
 
 
