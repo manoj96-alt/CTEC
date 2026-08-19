@@ -50,9 +50,7 @@ def test_obligation_is_a_closed_three_value_vocabulary() -> None:
 
 def test_blueprint_requires_timezone_aware_created_on() -> None:
     with pytest.raises(ValidationException):
-        _blueprint(
-            created_on=datetime(2026, 1, 1)
-        )  # noqa: DTZ001 - deliberately naive negative fixture
+        _blueprint(created_on=datetime(2026, 1, 1))  # noqa: DTZ001
 
 
 def test_blueprint_requires_a_canonical_name() -> None:
