@@ -327,6 +327,24 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/demo_gate_f_seeder.py",
     "backend/app/tests/test_demo_gate_f_seeder.py",
     "backend/app/tests/test_demo_gate_f_seeder_postgres.py",
+    # Gate F F-I5 -- governed supplier-risk frontend experience (CDD-016,
+    # PR #75). Presentation only: every rendered fact/conclusion is a
+    # direct projection of the existing, unmodified F-I3/F-I4 API
+    # response. No backend, Keycloak, business-policy, persistence, or
+    # ontology change; no approval/execution control;
+    # `/demo/supplier-risk` unmodified.
+    "frontend/app/supply-chain-impact/page.tsx",
+    "frontend/app/supply-chain-impact/_components/risk-signal-panel.tsx",
+    "frontend/app/supply-chain-impact/_components/business-impact-panel.tsx",
+    "frontend/app/supply-chain-impact/_components/evidence-panel.tsx",
+    "frontend/app/supply-chain-impact/_components/alternatives-panel.tsx",
+    "frontend/app/supply-chain-impact/_components/recommendation-panel.tsx",
+    "frontend/app/supply-chain-impact/_components/human-authority-banner.tsx",
+    "frontend/lib/supply-chain-impact/api-client.ts",
+    "frontend/lib/supply-chain-impact/contracts.ts",
+    "frontend/tests/supply-chain-impact-api-client.test.ts",
+    "frontend/tests/supply-chain-impact-accessibility.test.tsx",
+    "frontend/tests/supply-chain-impact-workspace.test.tsx",
 }
 
 
