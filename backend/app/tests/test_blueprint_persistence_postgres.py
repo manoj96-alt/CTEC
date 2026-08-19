@@ -1,6 +1,7 @@
 """Postgres-backed persistence tests for the CDD-017 Blueprint requirement
 contract (Gate G G2; CDD-017 §6-9, G2 Persistence and Domain Artifact
-Authorization companion). Proves real FK constraint enforcement against
+Authorization companion; Gate G G4, CDD-018 §13, G4 Blueprint Conformance
+Artifact Authorization). Proves real FK constraint enforcement against
 the existing governed ontology vocabulary -- single-version scope only
 (the version re-parenting question CDD-017 §8 leaves open is out of scope
 for G2, see the companion's "Remaining risks").
@@ -23,6 +24,7 @@ from app.domain.blueprint import (
     RelationshipRequirement,
 )
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
+from app.domain.shared.exceptions import ValidationException
 from app.domain.shared.value_objects import CanonicalName, Description, Identifier
 from app.infrastructure.persistence.blueprint_repository import BlueprintRepositoryImpl
 from app.infrastructure.persistence.models.entity_type import EntityType
@@ -200,3 +202,82 @@ def test_get_by_id_returns_none_for_a_nonexistent_blueprint(migrated_engine: Eng
     with factory() as session:
         repository = BlueprintRepositoryImpl(session)
         assert repository.get_by_id(uuid4()) is None
+
+
+def test_get_approved_by_name_returns_the_matching_approved_blueprint(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    blueprint_name = f"G4 Resolution Test Blueprint {uuid4()}"
+    with factory() as session:
+        blueprint = Blueprint(
+            blueprint_id=Identifier(uuid4()),
+            blueprint_name=CanonicalName(blueprint_name),
+            lifecycle_state=LifecycleState.ACTIVE,
+            governance_status=GovernanceStatus.APPROVED,
+            created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+            created_on=NOW,
+        )
+        repository = BlueprintRepositoryImpl(session)
+        repository.create(blueprint)
+        session.commit()
+
+        result = repository.get_approved_by_name(blueprint_name)
+
+    assert result is not None
+    assert result.blueprint_id == blueprint.blueprint_id
+    assert result.blueprint_name.value == blueprint_name
+    assert result.governance_status is GovernanceStatus.APPROVED
+
+
+def test_get_approved_by_name_returns_none_when_no_approved_match_exists(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    blueprint_name = f"G4 Nonexistent Blueprint {uuid4()}"
+    with factory() as session:
+        repository = BlueprintRepositoryImpl(session)
+        assert repository.get_approved_by_name(blueprint_name) is None
+
+
+def test_get_approved_by_name_ignores_non_approved_rows(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine)
+    blueprint_name = f"G4 Draft Blueprint {uuid4()}"
+    with factory() as session:
+        blueprint = Blueprint(
+            blueprint_id=Identifier(uuid4()),
+            blueprint_name=CanonicalName(blueprint_name),
+            lifecycle_state=LifecycleState.DRAFT,
+            governance_status=GovernanceStatus.PROPOSED,
+            created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+            created_on=NOW,
+        )
+        repository = BlueprintRepositoryImpl(session)
+        repository.create(blueprint)
+        session.commit()
+
+        assert repository.get_approved_by_name(blueprint_name) is None
+
+
+def test_get_approved_by_name_raises_when_multiple_approved_matches_exist(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    blueprint_name = f"G4 Ambiguous Blueprint {uuid4()}"
+    with factory() as session:
+        repository = BlueprintRepositoryImpl(session)
+        for _ in range(2):
+            repository.create(
+                Blueprint(
+                    blueprint_id=Identifier(uuid4()),
+                    blueprint_name=CanonicalName(blueprint_name),
+                    lifecycle_state=LifecycleState.ACTIVE,
+                    governance_status=GovernanceStatus.APPROVED,
+                    created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                    created_on=NOW,
+                )
+            )
+        session.commit()
+
+        with pytest.raises(ValidationException, match="Multiple Approved Blueprint rows found"):
+            repository.get_approved_by_name(blueprint_name)
