@@ -66,9 +66,10 @@ def test_blueprint_with_concept_relationship_and_information_element_requirement
 
         blueprint_id = Identifier(uuid4())
         concept_requirement_id = Identifier(uuid4())
+        blueprint_name = f"G2 Blueprint Round-Trip Test Blueprint {uuid4()}"
         blueprint = Blueprint(
             blueprint_id=blueprint_id,
-            blueprint_name=CanonicalName("CTEC Semiconductor Supply Chain Blueprint"),
+            blueprint_name=CanonicalName(blueprint_name),
             lifecycle_state=LifecycleState.ACTIVE,
             governance_status=GovernanceStatus.APPROVED,
             created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
@@ -109,7 +110,7 @@ def test_blueprint_with_concept_relationship_and_information_element_requirement
         loaded = repository.get_by_id(blueprint.blueprint_id.value)
 
     assert loaded is not None
-    assert loaded.blueprint_name.value == "CTEC Semiconductor Supply Chain Blueprint"
+    assert loaded.blueprint_name.value == blueprint_name
     assert len(loaded.concept_requirements) == 1
     concept = loaded.concept_requirements[0]
     assert concept.entity_type_id == supplier_type_id
