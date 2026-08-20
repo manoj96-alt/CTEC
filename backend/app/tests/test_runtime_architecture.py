@@ -386,6 +386,30 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/blueprint_conformance_context_store.py",
     "backend/app/application/blueprint_conformance.py",
     "backend/app/tests/test_blueprint_conformance.py",
+    # Gate H H1 (CDD-019 §7, §8, §11; H1 Source Field / Semantic Mapping
+    # Artifact Authorization companion). SourceField/SemanticMapping
+    # domain/persistence foundation only: no H2 resolution service, no H3
+    # demo seeder, no H4 conformance integration; no Blueprint modification;
+    # InformationElementRequirement remains NOT_EVALUATED.
+    "backend/app/domain/integration/source_field.py",
+    "backend/app/domain/integration/__init__.py",
+    "backend/app/domain/semantic_mapping/__init__.py",
+    "backend/app/domain/semantic_mapping/model.py",
+    "backend/app/infrastructure/persistence/models/source_field.py",
+    "backend/app/infrastructure/persistence/models/semantic_mapping.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0015_source_field_semantic_mapping.py",
+    "backend/app/infrastructure/persistence/source_field_repository.py",
+    "backend/app/infrastructure/persistence/semantic_mapping_repository.py",
+    "backend/app/tests/test_source_field_persistence.py",
+    "backend/app/tests/test_source_field_persistence_postgres.py",
+    "backend/app/tests/test_semantic_mapping_persistence.py",
+    "backend/app/tests/test_semantic_mapping_persistence_postgres.py",
+    # H1 companion remediation (row 19): test_domain_foundation.py's
+    # declared_classes exact-set assertion required "SourceField" once row 1
+    # placed it in domain/integration/ (one of the five canonical domain
+    # roots that test enumerates) -- authorized narrowly, one string, one
+    # set, one test function only.
+    "backend/app/tests/test_domain_foundation.py",
 }
 
 
