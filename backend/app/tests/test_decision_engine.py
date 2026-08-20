@@ -304,7 +304,7 @@ def test_decision_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'decision_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0014_blueprint_requirement"
+    assert revision == "0015_source_field_semantic"
     assert trigger_count == 1
 
 
