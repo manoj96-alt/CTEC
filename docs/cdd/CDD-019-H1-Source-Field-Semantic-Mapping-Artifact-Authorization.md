@@ -20,7 +20,15 @@ two P1 findings (SourceField physical-identity uniqueness was unspecified; the S
 repository surface was insufficiently restricted against H2 leakage) and two P2 findings (migration
 reversibility not made explicit; the partial-unique-index mechanism's novelty not flagged for explicit
 evidence); a remediation pass closing all four; and a final revalidation confirming P0 = 0, P1 = 0,
-P2 = 0. No implementation exists yet.
+P2 = 0.
+
+**Post-approval artifact-authorization-gap remediation (this revision)**: implementation against the
+original 18-artifact allowlist below surfaced a genuine, narrow gap during self-review — see the final
+Discovery finding, below — closed by adding exactly one artifact (row 19). No other row in this
+document was altered by this remediation; the 18 originally authorized artifacts, and every binding
+requirement in every other section, are unchanged. No implementation exists yet — the implementation
+branch remains uncommitted and frozen pending this remediation's own Product Owner review, governance
+commit, PR, CI, and merge.
 
 ## Discovery findings (binding, restated for the record)
 
@@ -50,6 +58,20 @@ P2 = 0. No implementation exists yet.
   closure evidence for this specific index **must** be a real-PostgreSQL test exercising its rejection
   behavior directly — an ORM-level or ambiguity-check-only unit test is not sufficient to close this
   criterion.
+- **`test_domain_foundation.py` exact-set staleness (post-approval gap, closed by row 19 below)**:
+  `test_domain_has_no_forbidden_dependencies_or_artifact_classes` asserts an exact, hardcoded set of
+  every class declared across five "canonical domain roots" (`foundation`, `integration`, `operational`,
+  `semantic`, `shared`), discovered via `ast.walk` over each root's `.py` files. `domain/integration/`
+  is one of those five roots, and row 1's authorized `SourceField` class is placed there (per CDD-019
+  §7's own framing, alongside the already-listed `SourceSystem`/`SourceObject`). The moment
+  `source_field.py` exists, this pre-existing assertion becomes factually false — not new/optional
+  coverage, but a stale snapshot the authorized placement mechanically falsifies, identical in kind to
+  the migration-head staleness the four `1df0024`-precedent rows below already correct. Repository
+  history confirms this exact set was last updated the only other time a canonical-root class was
+  introduced (`SourceSystem`/`SourceObject` themselves) — this is the established, narrow mechanism for
+  keeping that file accurate, not a general invitation to modify it. No other authorized artifact's
+  published purpose covers this repo-wide, cross-cutting inventory assertion; the correction can only be
+  made in the one file where the false assertion lives.
 
 ## Authorized artifacts
 
@@ -73,6 +95,7 @@ P2 = 0. No implementation exists yet.
 | `backend/app/tests/test_governance_engine.py` | MODIFY | Precedent commit `1df0024` | Update pinned `revision` string only, in `test_governance_migration_and_immutability`. | No other assertion changed. | Direct test execution. |
 | `backend/app/tests/test_decision_engine.py` | MODIFY | Precedent commit `1df0024` | Update pinned `revision` string only, in `test_decision_migration_and_immutability`. | No other assertion changed. | Direct test execution. |
 | `backend/app/tests/test_runtime_architecture.py` | MODIFY | CDD-010/CDD-012 (mechanism origin), reused by every prior Gate G/H phase | Extend `AUTHORIZED_CHANGED_PATHS` with exactly the genuinely new paths in this table. | No assertion weakened. No wildcard path. No existing authorized path removed. | Direct test execution. |
+| `backend/app/tests/test_domain_foundation.py` | MODIFY | CDD-019 §7 (Discovery findings, above) | In `test_domain_has_no_forbidden_dependencies_or_artifact_classes` only: add exactly the string `"SourceField"` to the existing `declared_classes == {...}` set literal, so the assertion correctly reflects the authorized `SourceField` class row 1 places in `domain/integration/`. | No other assertion, string, or line in this file may change — not the `forbidden_imports` set, not any other entry in `declared_classes`, not the forbidden-imports check, not `canonical_domain_roots`, not any test function other than the one named above. No new test function. No refactor. No authorization for any future or unrelated change to this file — this row authorizes exactly one string addition, once. | Direct test execution: the pre-existing test must pass unmodified in every other respect, with only `"SourceField"` added to the set. |
 
 No other repository path is authorized. All unlisted paths are READ-ONLY under this report. In
 particular: `models/__init__.py`, `repositories/__init__.py`, and `unit_of_work.py` are **not**
@@ -162,6 +185,10 @@ findings, above); the `SemanticMapping` target-side application-layer check's ac
 cross-tenant independence (equivalent mappings in two different tenants, both succeeding); and Draft/
 Retired-plus-Approved history coexistence. Migration `upgrade()` correctness is required; `downgrade()`
 presence and structural correctness is required, execution is not (matching established local precedent).
+`test_domain_has_no_forbidden_dependencies_or_artifact_classes` (row 19) must pass unmodified in every
+respect other than the single authorized string addition — this is required evidence that the
+domain-purity/class-inventory boundary remains intact and accurate, not merely that `SourceField` was
+added to it.
 
 ## Regression obligations
 
@@ -184,7 +211,7 @@ evaluation remains exactly `NOT_EVALUATED`, unchanged, for the full duration of 
 
 ## Implementation stop conditions (binding)
 
-Implementation MUST NOT expand beyond the eighteen artifact paths authorized above without new Product
+Implementation MUST NOT expand beyond the nineteen artifact paths authorized above without new Product
 Owner authorization. If implementation discovers that any authorized artifact's Exclusions column cannot
 be satisfied without touching an unlisted path (in particular: `models/__init__.py`,
 `repositories/__init__.py`, `unit_of_work.py`, any Blueprint artifact, any H2/H3/H4 concern, or any public
@@ -196,7 +223,9 @@ silently expanding scope.
 Authorized by CTEC Product Owner Manoj Nair: this artifact-authorization record satisfies CDD-019 §25's
 binding implementation precondition for exactly the H1 — SourceField & SemanticMapping Domain/Persistence
 Foundation scope listed above, per the Gate H1 artifact discovery, Product Owner governance review (P1×2,
-P2×2 findings), remediation, and final revalidation (P0=0, P1=0, P2=0). CDD-019 remains unchanged. No
+P2×2 findings), remediation, and final revalidation (P0=0, P1=0, P2=0), and — for row 19 only — a
+subsequent, narrow artifact-authorization-gap review and remediation confirming the gap was real, no
+existing authorized artifact could hold it, and exactly one row closes it. CDD-019 remains unchanged. No
 implementation exists yet — a separate, subsequent Product Owner authorization is required before any
 file listed above is created or modified. H2, H3, and H4 remain entirely outside this report's authority
 and each requires its own, separate, future artifact-authorization companion (H2, H3) or CDD (H4).
