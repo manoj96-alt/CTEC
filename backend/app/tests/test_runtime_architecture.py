@@ -414,6 +414,11 @@ AUTHORIZED_CHANGED_PATHS = {
     # and its unit tests (new file). Neither existed before H2.
     "backend/app/application/semantic_mapping_resolution.py",
     "backend/app/tests/test_semantic_mapping_resolution.py",
+    # H3 companion: DemoSemanticMappingSeeder (new file) and its unit +
+    # Postgres tests (new files). None existed before H3.
+    "backend/app/infrastructure/persistence/demo_semantic_mapping_seeder.py",
+    "backend/app/tests/test_demo_semantic_mapping_seeder.py",
+    "backend/app/tests/test_demo_semantic_mapping_seeder_postgres.py",
 }
 
 
