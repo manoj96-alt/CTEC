@@ -419,6 +419,11 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/demo_semantic_mapping_seeder.py",
     "backend/app/tests/test_demo_semantic_mapping_seeder.py",
     "backend/app/tests/test_demo_semantic_mapping_seeder_postgres.py",
+    # Gate I I1 companion: SemanticCoverageEvaluationApplicationService (new
+    # file) and its unit + Postgres tests (new files). None existed before I1.
+    "backend/app/application/semantic_coverage_evaluation.py",
+    "backend/app/tests/test_semantic_coverage_evaluation.py",
+    "backend/app/tests/test_semantic_coverage_evaluation_postgres.py",
 }
 
 
