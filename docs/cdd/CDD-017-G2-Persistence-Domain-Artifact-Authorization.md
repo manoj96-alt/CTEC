@@ -23,6 +23,14 @@ traces to CDD-017's already-authorized §6-9 domain model. G2 implements persist
 objects only — no read API, no seed of canonical production content, no frontend, no UI, matching
 CDD-017 §14's explicit read-surface deferral and §13's explicit seeding deferral.
 
+**Post-approval artifact-authorization-gap remediation (this revision)**: implementation against the
+original 8-artifact table below surfaced a real, narrow test-fixture collision during downstream
+CDD-019 H3 PostgreSQL integration evidence — see the final Discovery finding, below — closed by adding
+exactly one MODIFY row for an already-authorized file. No other row in this document was altered by
+this remediation; the original 8 artifacts, and every binding requirement in every other section, are
+unchanged. No implementation exists yet under this revision — a separate, subsequent Product Owner
+authorization is required before the newly authorized file is modified.
+
 ## Authorized artifacts
 
 | Artifact and path | Action | Authority | Purpose | Exclusions | Evidence |
@@ -35,6 +43,7 @@ CDD-017 §14's explicit read-surface deferral and §13's explicit seeding deferr
 | `backend/app/tests/test_blueprint_migration.py` | CREATE | CDD-011/CDD-012 migration-test precedent, applied to this schema | Migration correctness; upgrade/downgrade; confirms no existing table/column altered. | — | Direct test execution. |
 | `backend/app/tests/test_blueprint_persistence.py` | CREATE | CDD-017 §6-9 | Unit-level tests: ontology-reference validation (real `entity_type_id`/`relationship_type_id` required), no `tenant_id` anywhere, requirement-ID field presence, no naive name-uniqueness constraint. | No multi-version/re-parenting test (open question — out of scope until resolved). | Direct test execution. |
 | `backend/app/tests/test_blueprint_persistence_postgres.py` | CREATE | CDD-017 §6-9 | Postgres-backed: real FK constraint enforcement (invalid ontology reference rejected at the DB layer). | Same exclusion as above — single-version scope only. | Direct test execution (requires `CTEC_TEST_DATABASE_URL`). |
+| `backend/app/tests/test_blueprint_persistence_postgres.py` (row 9, this revision) | MODIFY | CDD-017 §6-9 (unchanged); remediation discovered via CDD-019 H3 downstream PostgreSQL evidence | In `test_blueprint_with_concept_relationship_and_information_element_requirements_round_trips` only: replace the synthetic test Blueprint's `blueprint_name` literal — currently the production canonical name `"CTEC Semiconductor Supply Chain Blueprint"` — with a randomized, collision-free, clearly-non-canonical test name generated exactly as `f"G2 Blueprint Round-Trip Test Blueprint {uuid4()}"` — mandatory: matching this same file's own established `get_approved_by_name`-safe convention already used by every G4-authored test in this file; a fixed/static literal is NOT authorized. The generated value must be stored in a local variable and the corresponding assertion updated to compare against that same stored value. | No other line, assertion, or test function in this file may change. No change to `BlueprintSeeder`, `BlueprintApplicationService`, `BlueprintRepositoryImpl`, the `Blueprint` domain model, the `Blueprint` ORM model, any migration, any constraint, or `get_approved_by_name(...)`. No change to the production canonical Blueprint's identity or name. No weakening of `test_get_approved_by_name_raises_when_multiple_approved_matches_exist` or any other ambiguity-protection test in this file. | Direct test execution: the corrected test must pass unmodified in every other respect; `test_blueprint_seed.py`, `test_blueprint_service.py`, and every other G3/G3.5/G4 Blueprint test must continue passing unaffected; the remediation PR's own CI logs must be directly inspected (not inferred from an overall green check) to positively confirm zero occurrences of the `"Multiple Approved Blueprint rows found"` error anywhere in that run; and the full backend suite, including every CDD-019 H1/H2 test, must be independently re-confirmed passing in that same CI run — proving the corrected fixture coexists safely with the real, canonically-seeded Blueprint in the cumulative PostgreSQL environment, not merely that the isolated G2 test itself passes in the abstract. |
 | `backend/app/tests/test_runtime_architecture.py` | MODIFY | CDD-010/CDD-012 (mechanism origin) + CDD-015 §35 (extension precedent — not CDD-017 directly) | Extend `AUTHORIZED_CHANGED_PATHS` with the exact paths in this table, registering them under the existing architecture-drift guardrail. | No assertion weakened. No wildcard path. No existing authorized path removed. No bypass of architecture checks. | Direct test execution. |
 
 No other repository path is authorized. All unlisted paths are READ-ONLY under this report.
@@ -51,6 +60,26 @@ No other repository path is authorized. All unlisted paths are READ-ONLY under t
 - **No production seed**: no canonical production Blueprint content is inserted by any artifact in this table (CDD-017 §13). Test fixtures created by the test files above are explicitly test data, not canonical seed content.
 - **No runtime behavior change**: no modification to Gate F's DRM/GRM, `runtime/orchestration.py`, `runtime/recovery.py`, Ask CTEC's traversal code, Entity Resolution, authentication, or authorization (CDD-017 §4, §22).
 
+## Discovery finding — test-fixture collision remediation (this revision)
+
+Discovered via downstream evidence, not a G2 defect. `test_blueprint_with_concept_relationship_and_information_element_requirements_round_trips`
+persists a synthetic, non-canonical Blueprint using the exact literal production canonical Blueprint
+name (`"CTEC Semiconductor Supply Chain Blueprint"`) with a random `uuid4()` identifier, committed to
+the shared, session-scoped PostgreSQL CI database. This was harmless at G2's own authorization time —
+no code path queried Blueprint by name. Gate H's H2 companion (CDD-019) later introduced
+`BlueprintApplicationService.get_approved_by_name`, and every one of *that* companion's own new
+Postgres tests correctly used randomized, collision-free names — but this pre-existing G2 test's
+literal name was never revisited, since G2 itself never called `get_approved_by_name`. CDD-019's H3
+companion is the first-ever caller of `get_approved_by_name` with the literal canonical name against
+the full, cumulative CI database (its own governed, correct, unmodified use of the mechanism the
+H2/H3 companions mandate), and correctly surfaces the resulting ambiguity — proving
+`get_approved_by_name`'s ambiguity protection works exactly as CDD-018 §13 requires, not a defect in
+it. **H3 exposed this pre-existing G2 gap; H3 does not own, and is not authorized to perform, this
+remediation** — H3's implementation PR remains entirely unmodified by this amendment, and no
+workaround of any kind is authorized within H3's own artifacts for this collision. This amendment
+authorizes exactly one corrective change (row 9, above), closing the gap without altering G2's,
+CDD-017's, or CDD-019's architecture in any way.
+
 ## Remaining risks (recorded, not resolved by this report)
 
 **P1 — version re-parenting.** CDD-017 §8 states child `*_requirement_id` values are "preserved across a Blueprint row's version chain," without specifying whether this means in-place FK re-pointing on the same physical row or another mechanism, when a second `Blueprint` version is minted. This report deliberately excludes any "supersede"/re-parenting capability from G2's authorized scope (see Exclusions column above), so the open question does not block this authorization. It must be resolved by explicit Product Owner/architecture decision before any future phase mints a second Blueprint version.
@@ -62,4 +91,9 @@ Authorized by CTEC Product Owner Manoj Nair: this artifact-authorization record 
 per the Gate G G1.5 Artifact Authorization Traceability Review (final recommendation: A — ARTIFACT
 SCOPE READY FOR PRODUCT OWNER APPROVAL). CDD-017 itself remains unchanged. No implementation exists
 yet — a separate, subsequent Product Owner authorization is required before any file listed above is
-created or modified.
+created or modified. **For row 9 only** (this revision): authorized per a dedicated governance
+discovery, a Product Owner content review (P1×2 findings), a remediation closing both P1s, and a
+final Product Owner re-review confirming P0 = 0, P1 = 0, P2 = 1 (accepted as-is) — narrowly closing a
+test-fixture-collision gap discovered via CDD-019 H3 downstream evidence. No other row in this
+document was altered by this revision. CDD-019 and its H1/H2/H3 companions remain entirely unchanged
+and do not own this remediation.
