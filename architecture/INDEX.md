@@ -120,7 +120,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-016 Governed Supplier-Risk Frontend Experience | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-016-Governed-Supplier-Risk-Frontend-Experience.md) |
 | CDD-017 Canonical Supply Chain Blueprint Requirement Contract | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-017-Canonical-Supply-Chain-Blueprint-Requirement-Contract.md) · [G2 persistence/domain artifact authorization](../docs/cdd/CDD-017-G2-Persistence-Domain-Artifact-Authorization.md) · [G3 internal application service artifact authorization](../docs/cdd/CDD-017-G3-Internal-Application-Service-Artifact-Authorization.md) · [G3.5 canonical Blueprint seed artifact authorization](../docs/cdd/CDD-017-G3.5-Canonical-Blueprint-Seed-Artifact-Authorization.md) |
 | CDD-018 Blueprint Conformance Evaluation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-018-Blueprint-Conformance-Evaluation.md) · [G4 artifact authorization](../docs/cdd/CDD-018-G4-Blueprint-Conformance-Artifact-Authorization.md) |
-| CDD-019 Source-to-Blueprint Semantic Mapping (H1-H3) | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-019-Source-to-Blueprint-Semantic-Mapping.md) · [H1 artifact authorization](../docs/cdd/CDD-019-H1-Source-Field-Semantic-Mapping-Artifact-Authorization.md) |
+| CDD-019 Source-to-Blueprint Semantic Mapping (H1-H3) | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-019-Source-to-Blueprint-Semantic-Mapping.md) · [H1 artifact authorization](../docs/cdd/CDD-019-H1-Source-Field-Semantic-Mapping-Artifact-Authorization.md) · [H2 artifact authorization](../docs/cdd/CDD-019-H2-Semantic-Mapping-Resolution-Artifact-Authorization.md) |
 
 ## Historical review artifacts
 
