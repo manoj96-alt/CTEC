@@ -15,6 +15,9 @@ from app.domain.shared.enums import GovernanceStatus, LifecycleState
 from app.domain.shared.exceptions import ValidationException
 from app.domain.shared.value_objects import Identifier
 from app.infrastructure.persistence.models.semantic_mapping import SemanticMappingORM
+from app.infrastructure.persistence.semantic_mapping_repository import (
+    SemanticMappingResolution,
+)
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -122,3 +125,18 @@ def test_semantic_mapping_orm_has_approved_only_partial_unique_index_on_source_f
     assert index.unique is True
     assert {column.name for column in index.columns} == {"source_field_id"}
     assert index.dialect_options["postgresql"]["where"] is not None
+
+
+def test_semantic_mapping_resolution_carries_exactly_the_authorized_fields() -> None:
+    field_names = set(SemanticMappingResolution.__dataclass_fields__)
+    assert field_names == {
+        "semantic_mapping_id",
+        "source_field_id",
+        "source_object_id",
+        "source_system_id",
+        "information_element_requirement_id",
+        "created_by",
+        "created_on",
+        "modified_by",
+        "modified_on",
+    }
