@@ -30,6 +30,7 @@ from app.domain.shared.value_objects import CanonicalName, Description, Identifi
 from app.infrastructure.persistence.blueprint_repository import BlueprintRepositoryImpl
 from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.semantic_mapping import SemanticMappingORM
+from app.infrastructure.persistence.models.source_object import SourceObject as SourceObjectORM
 from app.infrastructure.persistence.ontology_seed import OntologySeeder
 from app.infrastructure.persistence.semantic_mapping_repository import (
     SemanticMappingRepositoryImpl,
@@ -387,3 +388,204 @@ def test_source_side_partial_index_rejects_a_second_approved_row_at_the_database
         with pytest.raises(IntegrityError):
             session.commit()
         session.rollback()
+
+
+def test_approved_mapping_resolves_with_correct_provenance(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_id = f"tenant-{uuid4()}"
+        object_id = _seed_source_object(session, tenant_id=tenant_id)
+        source_system_id = session.scalar(
+            select(SourceObjectORM.source_system_id).where(
+                SourceObjectORM.source_object_id == object_id
+            )
+        )
+        field = _source_field(source_object_id=object_id, field_label="LFA1-NAME1")
+        SourceFieldRepositoryImpl(session).create(field)
+        element_id = _seed_information_element_requirement(session, element_name="Resolution A")
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        mapping = _semantic_mapping(
+            source_field_id=field.source_field_id.value,
+            information_element_requirement_id=element_id,
+        )
+        repository.create(mapping)
+        session.commit()
+
+        result = repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+
+    assert result is not None
+    assert result.semantic_mapping_id == mapping.semantic_mapping_id.value
+    assert result.source_field_id == field.source_field_id.value
+    assert result.source_object_id == object_id
+    assert result.source_system_id == source_system_id
+    assert result.information_element_requirement_id == element_id
+    assert result.created_by == BOOTSTRAP_SYSTEM_ENTITY_ID
+
+
+def test_resolution_returns_none_when_only_a_draft_mapping_exists(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_id = f"tenant-{uuid4()}"
+        object_id = _seed_source_object(session, tenant_id=tenant_id)
+        field = _source_field(source_object_id=object_id, field_label="LFA1-NAME1")
+        SourceFieldRepositoryImpl(session).create(field)
+        element_id = _seed_information_element_requirement(session, element_name="Resolution B")
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        repository.create(
+            _semantic_mapping(
+                source_field_id=field.source_field_id.value,
+                information_element_requirement_id=element_id,
+                governance_status=GovernanceStatus.PROPOSED,
+            )
+        )
+        session.commit()
+
+        result = repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+
+    assert result is None
+
+
+def test_resolution_returns_none_when_only_a_retired_mapping_exists(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_id = f"tenant-{uuid4()}"
+        object_id = _seed_source_object(session, tenant_id=tenant_id)
+        field = _source_field(source_object_id=object_id, field_label="LFA1-NAME1")
+        SourceFieldRepositoryImpl(session).create(field)
+        element_id = _seed_information_element_requirement(session, element_name="Resolution C")
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        repository.create(
+            _semantic_mapping(
+                source_field_id=field.source_field_id.value,
+                information_element_requirement_id=element_id,
+                governance_status=GovernanceStatus.RETIRED,
+            )
+        )
+        session.commit()
+
+        result = repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+
+    assert result is None
+
+
+def test_resolution_returns_none_when_no_mapping_exists_for_the_requirement(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_id = f"tenant-{uuid4()}"
+        element_id = _seed_information_element_requirement(session, element_name="Resolution D")
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        result = repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+
+    assert result is None
+
+
+def test_resolution_does_not_cross_tenant_boundaries(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_a = f"tenant-a-{uuid4()}"
+        tenant_b = f"tenant-b-{uuid4()}"
+        object_id = _seed_source_object(session, tenant_id=tenant_a)
+        field = _source_field(source_object_id=object_id, field_label="LFA1-NAME1")
+        SourceFieldRepositoryImpl(session).create(field)
+        element_id = _seed_information_element_requirement(session, element_name="Resolution E")
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        repository.create(
+            _semantic_mapping(
+                source_field_id=field.source_field_id.value,
+                information_element_requirement_id=element_id,
+            )
+        )
+        session.commit()
+
+        result = repository.get_approved_by_information_element_requirement(element_id, tenant_b)
+
+    assert result is None
+
+
+def test_resolution_raises_on_ambiguous_approved_rows(migrated_engine: Engine) -> None:
+    """Bypasses SemanticMappingRepositoryImpl.create()'s own application-
+    layer target-side check entirely, inserting two raw ORM rows for two
+    different SourceFields both Approved for the same
+    information_element_requirement_id within the same tenant -- the one
+    invariant H1 has no database backstop for (CDD-019 §11: tenant is
+    join-derived, not a stored column) -- to prove the resolution query
+    itself raises defensively rather than silently selecting either row."""
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_id = f"tenant-{uuid4()}"
+        object_id = _seed_source_object(session, tenant_id=tenant_id)
+        field_a = _source_field(source_object_id=object_id, field_label="LFA1-NAME1")
+        field_b = _source_field(source_object_id=object_id, field_label="LFA1-NAME2")
+        SourceFieldRepositoryImpl(session).create(field_a)
+        SourceFieldRepositoryImpl(session).create(field_b)
+        element_id = _seed_information_element_requirement(session, element_name="Resolution F")
+        session.commit()
+
+        session.add(
+            SemanticMappingORM(
+                semantic_mapping_id=uuid4(),
+                source_field_id=field_a.source_field_id.value,
+                information_element_requirement_id=element_id,
+                lifecycle_state="Active",
+                governance_status="Approved",
+                created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                created_on=NOW,
+            )
+        )
+        session.add(
+            SemanticMappingORM(
+                semantic_mapping_id=uuid4(),
+                source_field_id=field_b.source_field_id.value,
+                information_element_requirement_id=element_id,
+                lifecycle_state="Active",
+                governance_status="Approved",
+                created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                created_on=NOW,
+            )
+        )
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        with pytest.raises(ValidationException, match="Ambiguous Approved SemanticMapping"):
+            repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+
+
+def test_resolution_is_deterministic_across_repeated_calls(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine)
+    with factory() as session:
+        tenant_id = f"tenant-{uuid4()}"
+        object_id = _seed_source_object(session, tenant_id=tenant_id)
+        field = _source_field(source_object_id=object_id, field_label="LFA1-NAME1")
+        SourceFieldRepositoryImpl(session).create(field)
+        element_id = _seed_information_element_requirement(session, element_name="Resolution G")
+        session.commit()
+
+        repository = SemanticMappingRepositoryImpl(session)
+        repository.create(
+            _semantic_mapping(
+                source_field_id=field.source_field_id.value,
+                information_element_requirement_id=element_id,
+            )
+        )
+        session.commit()
+
+        first = repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+        second = repository.get_approved_by_information_element_requirement(element_id, tenant_id)
+
+    assert first == second

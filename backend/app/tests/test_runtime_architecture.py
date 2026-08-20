@@ -410,6 +410,10 @@ AUTHORIZED_CHANGED_PATHS = {
     # roots that test enumerates) -- authorized narrowly, one string, one
     # set, one test function only.
     "backend/app/tests/test_domain_foundation.py",
+    # H2 companion: SemanticMappingResolutionApplicationService (new file)
+    # and its unit tests (new file). Neither existed before H2.
+    "backend/app/application/semantic_mapping_resolution.py",
+    "backend/app/tests/test_semantic_mapping_resolution.py",
 }
 
 
