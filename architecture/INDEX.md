@@ -122,6 +122,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-018 Blueprint Conformance Evaluation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-018-Blueprint-Conformance-Evaluation.md) · [G4 artifact authorization](../docs/cdd/CDD-018-G4-Blueprint-Conformance-Artifact-Authorization.md) |
 | CDD-019 Source-to-Blueprint Semantic Mapping (H1-H3) | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-019-Source-to-Blueprint-Semantic-Mapping.md) · [H1 artifact authorization](../docs/cdd/CDD-019-H1-Source-Field-Semantic-Mapping-Artifact-Authorization.md) · [H2 artifact authorization](../docs/cdd/CDD-019-H2-Semantic-Mapping-Resolution-Artifact-Authorization.md) · [H3 artifact authorization](../docs/cdd/CDD-019-H3-Deterministic-Mapping-Demonstration-Artifact-Authorization.md) |
 | CDD-020 Blueprint Information-Element Semantic Coverage Evaluation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-020-Blueprint-Information-Element-Semantic-Coverage-Evaluation.md) · [I1 artifact authorization](../docs/cdd/CDD-020-I1-Semantic-Coverage-Evaluation-Artifact-Authorization.md) |
+| CDD-021 Blueprint Semantic Gap Impact Context and Remediation Recommendation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-021-Blueprint-Semantic-Gap-Impact-Context-and-Remediation-Recommendation.md) · [J1/J2 artifact authorization](../docs/cdd/CDD-021-J1-J2-Gap-Impact-Context-and-Remediation-Artifact-Authorization.md) |
 
 ## Historical review artifacts
 
