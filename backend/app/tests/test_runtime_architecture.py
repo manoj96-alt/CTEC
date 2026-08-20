@@ -424,6 +424,11 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/semantic_coverage_evaluation.py",
     "backend/app/tests/test_semantic_coverage_evaluation.py",
     "backend/app/tests/test_semantic_coverage_evaluation_postgres.py",
+    # Gate J J1/J2 companion: GapImpactRemediationApplicationService (new
+    # file) and its unit + Postgres tests (new files). None existed before J1/J2.
+    "backend/app/application/gap_impact_remediation.py",
+    "backend/app/tests/test_gap_impact_remediation.py",
+    "backend/app/tests/test_gap_impact_remediation_postgres.py",
 }
 
 
