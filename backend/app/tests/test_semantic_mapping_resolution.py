@@ -16,6 +16,7 @@ import pytest
 from app.application.semantic_mapping_resolution import (
     SemanticMappingResolutionApplicationService,
 )
+from app.domain.semantic_mapping import SemanticMapping
 from app.domain.shared.exceptions import ValidationException
 from app.infrastructure.persistence.semantic_mapping_repository import (
     SemanticMappingResolution,
@@ -49,10 +50,10 @@ class _FakeSemanticMappingRepository:
         self.error = error
         self.requested_arguments: list[tuple[UUID, str]] = []
 
-    def create(self, semantic_mapping: object) -> None:
+    def create(self, semantic_mapping: SemanticMapping) -> None:
         raise NotImplementedError
 
-    def get_by_id(self, semantic_mapping_id: UUID) -> object | None:
+    def get_by_id(self, semantic_mapping_id: UUID) -> SemanticMapping | None:
         raise NotImplementedError
 
     def get_approved_by_information_element_requirement(
