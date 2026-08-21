@@ -124,6 +124,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-020 Blueprint Information-Element Semantic Coverage Evaluation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-020-Blueprint-Information-Element-Semantic-Coverage-Evaluation.md) · [I1 artifact authorization](../docs/cdd/CDD-020-I1-Semantic-Coverage-Evaluation-Artifact-Authorization.md) |
 | CDD-021 Blueprint Semantic Gap Impact Context and Remediation Recommendation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-021-Blueprint-Semantic-Gap-Impact-Context-and-Remediation-Recommendation.md) · [J1/J2 artifact authorization](../docs/cdd/CDD-021-J1-J2-Gap-Impact-Context-and-Remediation-Artifact-Authorization.md) |
 | CDD-022 Governed Source Field-Value Evidence | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-022-Governed-Source-Field-Value-Evidence.md) · [Artifact authorization](../docs/cdd/CDD-022-Field-Value-Evidence-Artifact-Authorization.md) |
+| CDD-023 Blueprint Information-Element Evidence Availability Evaluation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-023-Blueprint-Information-Element-Evidence-Availability-Evaluation.md) |
 
 ## Historical review artifacts
 
