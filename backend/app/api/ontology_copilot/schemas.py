@@ -30,6 +30,23 @@ class EvidenceStepResponse(BaseModel):
     relationship_name: str | None
 
 
+class InformationElementContextExplanationResponse(BaseModel):
+    """Gate P (CDD-025 §11): the closed, typed result contract. Every
+    identity/context field is `None` unless its own resolution step
+    succeeded -- `coverage_status`/`evidence_availability_status` are `None`
+    for every non-ANSWERED status."""
+
+    status: str
+    blueprint_id: str | None
+    blueprint_version_number: int | None
+    information_element_requirement_id: str | None
+    information_element_name: str | None
+    obligation: str | None
+    coverage_status: str | None
+    evidence_availability_status: str | None
+    reason: str | None
+
+
 class AskResponse(BaseModel):
     status: str
     intent: str | None
@@ -38,3 +55,4 @@ class AskResponse(BaseModel):
     result_names: list[str]
     evidence: list[list[EvidenceStepResponse]]
     reason: str | None = None
+    context_explanation: InformationElementContextExplanationResponse | None = None

@@ -41,3 +41,45 @@ def compose_products_depending_on_supplier_answer(
         listed = "\n".join(f"- {name}" for name in product_names)
         answer = f"{count} products depend on {supplier_name}:\n{listed}"
     return AnsweredResult(answer=answer, product_names=product_names)
+
+
+def compose_information_element_context_explanation_answer(
+    *,
+    blueprint_name: str,
+    information_element_name: str,
+    coverage_status: str,
+    evidence_availability_status: str | None,
+) -> str:
+    """Gate P (CDD-025 §12): template-only rendering of an already-composed
+    Gate N (coverage_status, evidence_availability_status) pair. Every
+    sentence below is the exact, frozen vocabulary CDD-025 §12 binds -- no
+    word here may be swapped for a trust/confidence/freshness/correctness/
+    quality/readiness/satisfaction claim.
+    """
+    if coverage_status == "MAPPED":
+        coverage_sentence = "CTEC has an Approved semantic mapping for this requirement."
+    else:
+        coverage_sentence = (
+            "CTEC does not currently have an Approved semantic mapping for this requirement."
+        )
+
+    if evidence_availability_status is None:
+        evidence_sentence = (
+            "Evidence availability is not applicable, since no mapping exists to resolve a "
+            "SourceField from."
+        )
+    elif evidence_availability_status == "EVIDENCE_PRESENT":
+        evidence_sentence = (
+            "Governed non-empty evidence has been observed for the resolved SourceField."
+        )
+    elif evidence_availability_status == "EVIDENCE_EMPTY":
+        evidence_sentence = (
+            "Governed evidence has been observed for the resolved SourceField, but it is empty."
+        )
+    else:
+        evidence_sentence = "No governed evidence has been observed for the resolved SourceField."
+
+    return (
+        f"{information_element_name!r} in the {blueprint_name} Blueprint: "
+        f"{coverage_sentence} {evidence_sentence}"
+    )
