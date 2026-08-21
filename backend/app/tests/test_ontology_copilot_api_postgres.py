@@ -2,17 +2,47 @@
 entity resolution (unique/no-match/ambiguous, fail-closed), ontology
 traversal against real institutional_relationships rows, tenant isolation,
 deterministic repeated results, and the read-only guarantee.
+
+Also proves Gate P (CDD-025; Context Explanation Artifact Authorization):
+real Blueprint -> Gate I -> H4 -> Gate N orchestration against the existing
+H3/CDD-022/H4 demo fixture, no new seeder.
 """
 
+import ast
+import inspect
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import Engine, func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.supplier_risk.authentication import TrustedPrincipal
-from app.application.ontology_copilot_api import AskStatus, OntologyCopilotApiService
-from app.core.bootstrap import BOOTSTRAP_BUSINESS_DOMAIN_ID, BOOTSTRAP_SYSTEM_ENTITY_ID
+from app.application import ontology_copilot_api as ontology_copilot_api_module
+from app.application.information_element_evidence_availability import EvidenceAvailabilityStatus
+from app.application.ontology_copilot_api import (
+    AskStatus,
+    GatePAskStatus,
+    OntologyCopilotApiService,
+)
+from app.application.semantic_coverage_evaluation import CoverageStatus
+from app.core.bootstrap import (
+    BOOTSTRAP_BUSINESS_DOMAIN_ID,
+    BOOTSTRAP_DEMO_TENANT_ID,
+    BOOTSTRAP_SYSTEM_ENTITY_ID,
+)
+from app.domain.blueprint import (
+    Blueprint,
+    ConceptRequirement,
+    InformationElementRequirement,
+    Obligation,
+)
+from app.domain.shared.enums import GovernanceStatus, LifecycleState
+from app.domain.shared.value_objects import CanonicalName, Description, Identifier
+from app.infrastructure.persistence.blueprint_repository import BlueprintRepositoryImpl
+from app.infrastructure.persistence.blueprint_seed import CANONICAL_BLUEPRINT_NAME
+from app.infrastructure.persistence.demo_field_value_evidence_seeder import (
+    DemoFieldValueEvidenceSeeder,
+)
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
 from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.institutional_relationship import (
@@ -416,3 +446,337 @@ def test_ask_endpoint_is_read_only_no_row_counts_change(migrated_engine: Engine)
         after = _counts(session)
 
     assert before == after
+
+
+# ---------------------------------------------------------------------------
+# Gate P (CDD-025): Blueprint -> Gate I -> H4 -> Gate N orchestration
+# ---------------------------------------------------------------------------
+
+
+def _seed_h4_fixture(factory: sessionmaker[Session]) -> None:
+    with factory() as session:
+        DemoFieldValueEvidenceSeeder(session).seed()
+        session.commit()
+
+
+def test_gate_p_supplier_legal_name_answered_mapped_evidence_present(
+    migrated_engine: Engine,
+) -> None:
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    result = service.ask(
+        _principal(BOOTSTRAP_DEMO_TENANT_ID),
+        f"What is the evidence status of Supplier Legal Name in {CANONICAL_BLUEPRINT_NAME}?",
+    )
+
+    assert result.status == AskStatus.ANSWERED
+    assert result.context_explanation is not None
+    assert result.context_explanation.status == GatePAskStatus.ANSWERED
+    assert result.context_explanation.coverage_status == CoverageStatus.MAPPED
+    assert (
+        result.context_explanation.evidence_availability_status
+        == EvidenceAvailabilityStatus.EVIDENCE_PRESENT
+    )
+    assert result.context_explanation.obligation is not None
+    assert "Supplier Legal Name" in result.answer
+    assert "CTEC has an Approved semantic mapping for this requirement." in result.answer
+
+
+def test_gate_p_risk_event_severity_answered_unmapped_evidence_status_none(
+    migrated_engine: Engine,
+) -> None:
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    result = service.ask(
+        _principal(BOOTSTRAP_DEMO_TENANT_ID),
+        f"What is the evidence status of Risk Event Severity in {CANONICAL_BLUEPRINT_NAME}?",
+    )
+
+    assert result.status == AskStatus.ANSWERED
+    assert result.context_explanation is not None
+    assert result.context_explanation.status == GatePAskStatus.ANSWERED
+    assert result.context_explanation.coverage_status == CoverageStatus.UNMAPPED
+    assert result.context_explanation.evidence_availability_status is None
+    assert (
+        "CTEC does not currently have an Approved semantic mapping for this requirement."
+        in result.answer
+    )
+    assert (
+        "Evidence availability is not applicable, since no mapping exists to resolve a "
+        "SourceField from." in result.answer
+    )
+
+
+def test_gate_p_blueprint_not_found(migrated_engine: Engine) -> None:
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    result = service.ask(
+        _principal(BOOTSTRAP_DEMO_TENANT_ID),
+        f"What is the evidence status of X in Nonexistent-Blueprint-{uuid4()}?",
+    )
+
+    assert result.status == AskStatus.NO_MATCH
+    assert result.context_explanation is not None
+    assert result.context_explanation.status == GatePAskStatus.BLUEPRINT_NOT_FOUND
+    assert result.context_explanation.coverage_status is None
+    assert result.context_explanation.evidence_availability_status is None
+    assert result.reason == "BLUEPRINT_NOT_FOUND"
+
+
+def test_gate_p_information_element_not_found(migrated_engine: Engine) -> None:
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    result = service.ask(
+        _principal(BOOTSTRAP_DEMO_TENANT_ID),
+        f"What is the evidence status of Nonexistent-Element-{uuid4()} in {CANONICAL_BLUEPRINT_NAME}?",
+    )
+
+    assert result.status == AskStatus.NO_MATCH
+    assert result.context_explanation is not None
+    assert result.context_explanation.status == GatePAskStatus.INFORMATION_ELEMENT_NOT_FOUND
+    assert result.context_explanation.coverage_status is None
+    assert result.context_explanation.evidence_availability_status is None
+    assert result.reason == "INFORMATION_ELEMENT_NOT_FOUND"
+
+
+def test_gate_p_information_element_ambiguous_never_a_first_match(
+    migrated_engine: Engine,
+) -> None:
+    factory = create_session_factory(migrated_engine)
+    blueprint_name = f"Ambiguous-Element-Blueprint-{uuid4()}"
+    shared_element_name = f"Shared Element Name {uuid4()}"
+
+    with Session(migrated_engine) as session, session.begin():
+        entity_type_id_value = session.scalar(
+            select(EntityType.entity_type_id).where(EntityType.entity_type_name == "Supplier")
+        )
+        assert entity_type_id_value is not None
+        entity_type_id = Identifier(entity_type_id_value)
+        blueprint_id = Identifier(uuid4())
+        concept_a_id = Identifier(uuid4())
+        concept_b_id = Identifier(uuid4())
+        blueprint = Blueprint(
+            blueprint_id=blueprint_id,
+            blueprint_name=CanonicalName(blueprint_name),
+            lifecycle_state=LifecycleState.ACTIVE,
+            governance_status=GovernanceStatus.APPROVED,
+            created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+            created_on=NOW,
+            concept_requirements=(
+                ConceptRequirement(
+                    concept_requirement_id=concept_a_id,
+                    blueprint_id=blueprint_id,
+                    entity_type_id=entity_type_id,
+                    obligation=Obligation.REQUIRED,
+                    information_element_requirements=(
+                        InformationElementRequirement(
+                            information_element_requirement_id=Identifier(uuid4()),
+                            concept_requirement_id=concept_a_id,
+                            element_name=CanonicalName(shared_element_name),
+                            description=Description("First of two ambiguous elements."),
+                            obligation=Obligation.REQUIRED,
+                        ),
+                    ),
+                ),
+                ConceptRequirement(
+                    concept_requirement_id=concept_b_id,
+                    blueprint_id=blueprint_id,
+                    entity_type_id=entity_type_id,
+                    obligation=Obligation.REQUIRED,
+                    information_element_requirements=(
+                        InformationElementRequirement(
+                            information_element_requirement_id=Identifier(uuid4()),
+                            concept_requirement_id=concept_b_id,
+                            element_name=CanonicalName(shared_element_name),
+                            description=Description("Second of two ambiguous elements."),
+                            obligation=Obligation.REQUIRED,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        BlueprintRepositoryImpl(session).create(blueprint)
+
+    service = OntologyCopilotApiService(factory)
+    result = service.ask(
+        _principal(BOOTSTRAP_DEMO_TENANT_ID),
+        f"What is the evidence status of {shared_element_name} in {blueprint_name}?",
+    )
+
+    assert result.status == AskStatus.AMBIGUOUS_MATCH
+    assert result.context_explanation is not None
+    assert result.context_explanation.status == GatePAskStatus.INFORMATION_ELEMENT_AMBIGUOUS
+    assert result.context_explanation.information_element_requirement_id is None
+    assert result.context_explanation.coverage_status is None
+    assert result.reason == "INFORMATION_ELEMENT_AMBIGUOUS"
+
+
+def test_gate_p_upstream_integrity_failure_for_ambiguous_blueprint_name_never_a_semantic_status(
+    migrated_engine: Engine,
+) -> None:
+    # Two Approved Blueprints sharing one name is a governed-data integrity
+    # violation (BlueprintRepositoryImpl.get_approved_by_name's own
+    # contract) -- proves UPSTREAM_INTEGRITY_FAILURE never collapses into
+    # BLUEPRINT_NOT_FOUND or any other status.
+    factory = create_session_factory(migrated_engine)
+    blueprint_name = f"Duplicate-Blueprint-{uuid4()}"
+
+    with Session(migrated_engine) as session, session.begin():
+        entity_type_id_value = session.scalar(
+            select(EntityType.entity_type_id).where(EntityType.entity_type_name == "Supplier")
+        )
+        assert entity_type_id_value is not None
+        entity_type_id = Identifier(entity_type_id_value)
+        repository = BlueprintRepositoryImpl(session)
+        for _ in range(2):
+            blueprint_id = Identifier(uuid4())
+            concept_id = Identifier(uuid4())
+            repository.create(
+                Blueprint(
+                    blueprint_id=blueprint_id,
+                    blueprint_name=CanonicalName(blueprint_name),
+                    lifecycle_state=LifecycleState.ACTIVE,
+                    governance_status=GovernanceStatus.APPROVED,
+                    created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                    created_on=NOW,
+                    concept_requirements=(
+                        ConceptRequirement(
+                            concept_requirement_id=concept_id,
+                            blueprint_id=blueprint_id,
+                            entity_type_id=entity_type_id,
+                            obligation=Obligation.REQUIRED,
+                        ),
+                    ),
+                )
+            )
+
+    service = OntologyCopilotApiService(factory)
+    result = service.ask(
+        _principal(BOOTSTRAP_DEMO_TENANT_ID),
+        f"What is the evidence status of X in {blueprint_name}?",
+    )
+
+    assert result.status == AskStatus.NO_MATCH
+    assert result.context_explanation is not None
+    assert result.context_explanation.status == GatePAskStatus.UPSTREAM_INTEGRITY_FAILURE
+    assert result.context_explanation.coverage_status is None
+    assert result.context_explanation.evidence_availability_status is None
+    assert result.reason == "UPSTREAM_INTEGRITY_FAILURE"
+
+
+def test_gate_p_repeated_identical_request_is_deterministic(migrated_engine: Engine) -> None:
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    question = f"What is the evidence status of Supplier Legal Name in {CANONICAL_BLUEPRINT_NAME}?"
+
+    first = service.ask(_principal(BOOTSTRAP_DEMO_TENANT_ID), question)
+    second = service.ask(_principal(BOOTSTRAP_DEMO_TENANT_ID), question)
+
+    assert first.context_explanation is not None
+    assert second.context_explanation is not None
+    assert first.context_explanation.coverage_status == second.context_explanation.coverage_status
+    assert (
+        first.context_explanation.evidence_availability_status
+        == second.context_explanation.evidence_availability_status
+    )
+    assert first.answer == second.answer
+
+
+def test_gate_p_wrong_tenant_never_observes_the_demo_tenants_mapping(
+    migrated_engine: Engine,
+) -> None:
+    # Blueprint itself is tenant-independent, but SemanticMapping/FieldValueEvidence
+    # are tenant-scoped -- a different tenant asking about the identical governed
+    # Information Element must see UNMAPPED, never the demo tenant's MAPPED result.
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    other_tenant_id = _tenant("gate-p-isolation-tenant")
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    result = service.ask(
+        _principal(other_tenant_id),
+        f"What is the evidence status of Supplier Legal Name in {CANONICAL_BLUEPRINT_NAME}?",
+    )
+
+    assert result.status == AskStatus.ANSWERED
+    assert result.context_explanation is not None
+    assert result.context_explanation.coverage_status == CoverageStatus.UNMAPPED
+    assert result.context_explanation.evidence_availability_status is None
+
+
+def test_gate_p_request_tenant_cannot_override_the_trusted_principal(
+    migrated_engine: Engine,
+) -> None:
+    # No tenant field exists anywhere in the parsed Gate P intent or the
+    # question text itself -- tenant identity can only ever come from the
+    # TrustedPrincipal the caller supplies, proven structurally here.
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    question = f"What is the evidence status of Supplier Legal Name in {CANONICAL_BLUEPRINT_NAME}?"
+    demo_principal = _principal(BOOTSTRAP_DEMO_TENANT_ID)
+    other_principal = _principal(_tenant("gate-p-other-tenant"))
+
+    demo_result = service.ask(demo_principal, question)
+    other_result = service.ask(other_principal, question)
+
+    assert demo_result.context_explanation is not None
+    assert other_result.context_explanation is not None
+    assert demo_result.context_explanation.coverage_status == CoverageStatus.MAPPED
+    assert other_result.context_explanation.coverage_status == CoverageStatus.UNMAPPED
+
+
+def test_gate_p_no_persistence_side_effect(migrated_engine: Engine) -> None:
+    _seed_h4_fixture(sessionmaker(migrated_engine))
+
+    def _counts(session: Session) -> tuple[int, int]:
+        return (
+            session.execute(select(func.count()).select_from(EnterpriseEntity)).scalar_one(),
+            session.execute(
+                select(func.count()).select_from(InstitutionalRelationship)
+            ).scalar_one(),
+        )
+
+    with Session(migrated_engine) as session:
+        before = _counts(session)
+
+    service = OntologyCopilotApiService(create_session_factory(migrated_engine))
+    for question in (
+        f"What is the evidence status of Supplier Legal Name in {CANONICAL_BLUEPRINT_NAME}?",
+        f"What is the evidence status of Risk Event Severity in {CANONICAL_BLUEPRINT_NAME}?",
+        f"What is the evidence status of X in Nonexistent-{uuid4()}?",
+    ):
+        service.ask(_principal(BOOTSTRAP_DEMO_TENANT_ID), question)
+
+    with Session(migrated_engine) as session:
+        after = _counts(session)
+
+    assert before == after
+
+
+def test_gate_p_module_imports_no_gate_j_or_llm_dependency() -> None:
+    tree = ast.parse(inspect.getsource(ontology_copilot_api_module))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+            names.update(alias.name for alias in node.names)
+
+    forbidden = {
+        "GapImpactContext",
+        "RemediationAction",
+        "gap_impact_remediation",
+        "SourceObservation",
+        "FieldValueEvidence",
+    }
+    assert names.isdisjoint(forbidden)
+    assert not any("app.integration" in name for name in names)
+    assert not any(
+        keyword in name.lower()
+        for name in names
+        for keyword in ("openai", "anthropic", "gemini", "mcp", "agent")
+    )

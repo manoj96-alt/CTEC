@@ -22,6 +22,7 @@ from app.api.ontology_copilot.schemas import (
     AskRequest,
     AskResponse,
     EvidenceStepResponse,
+    InformationElementContextExplanationResponse,
     ResolvedEntityResponse,
 )
 from app.api.supplier_risk.authentication import TrustedPrincipal
@@ -63,6 +64,41 @@ def _to_response(result: AskResult) -> AskResponse:
             for path in result.evidence
         ],
         reason=result.reason,
+        context_explanation=(
+            InformationElementContextExplanationResponse(
+                status=result.context_explanation.status.value,
+                blueprint_id=(
+                    str(result.context_explanation.blueprint_id)
+                    if result.context_explanation.blueprint_id is not None
+                    else None
+                ),
+                blueprint_version_number=result.context_explanation.blueprint_version_number,
+                information_element_requirement_id=(
+                    str(result.context_explanation.information_element_requirement_id)
+                    if result.context_explanation.information_element_requirement_id is not None
+                    else None
+                ),
+                information_element_name=result.context_explanation.information_element_name,
+                obligation=(
+                    result.context_explanation.obligation.value
+                    if result.context_explanation.obligation is not None
+                    else None
+                ),
+                coverage_status=(
+                    result.context_explanation.coverage_status.value
+                    if result.context_explanation.coverage_status is not None
+                    else None
+                ),
+                evidence_availability_status=(
+                    result.context_explanation.evidence_availability_status.value
+                    if result.context_explanation.evidence_availability_status is not None
+                    else None
+                ),
+                reason=result.context_explanation.reason,
+            )
+            if result.context_explanation is not None
+            else None
+        ),
     )
 
 

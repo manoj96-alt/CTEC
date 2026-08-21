@@ -22,11 +22,19 @@ from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.api.supplier_risk.dependencies import container, principal
 from app.api.supplier_risk.rate_limit import RateLimiter
 from app.application.ontology_copilot_api import OntologyCopilotApiService
-from app.core.bootstrap import BOOTSTRAP_BUSINESS_DOMAIN_ID, BOOTSTRAP_SYSTEM_ENTITY_ID
+from app.core.bootstrap import (
+    BOOTSTRAP_BUSINESS_DOMAIN_ID,
+    BOOTSTRAP_DEMO_TENANT_ID,
+    BOOTSTRAP_SYSTEM_ENTITY_ID,
+)
 from app.core.config import Settings
 from app.core.dependency_container import Container
 from app.infrastructure.persistence.api_security_audit_repository import (
     ApiSecurityAuditRepository,
+)
+from app.infrastructure.persistence.blueprint_seed import CANONICAL_BLUEPRINT_NAME
+from app.infrastructure.persistence.demo_field_value_evidence_seeder import (
+    DemoFieldValueEvidenceSeeder,
 )
 from app.infrastructure.persistence.models.api_security_audit import ApiSecurityAuditEventORM
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
@@ -245,3 +253,50 @@ def test_full_stack_ask_is_read_only(migrated_engine: Engine) -> None:
         after = _counts(session)
 
     assert before == after
+
+
+# ---------------------------------------------------------------------------
+# Gate P (CDD-025): one bounded full-stack acceptance scenario. This does
+# not re-prove the full acceptance matrix (already proven in
+# test_ontology_copilot_api_postgres.py) -- it proves the real HTTP round
+# trip: request -> auth -> scope check -> application service -> real
+# Blueprint/Gate I/H4/Gate N chain -> HTTP response.
+# ---------------------------------------------------------------------------
+
+
+def test_successful_gate_p_ask_through_the_full_stack(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session, session.begin():
+        DemoFieldValueEvidenceSeeder(session).seed()
+
+    client = _client(migrated_engine, _principal(BOOTSTRAP_DEMO_TENANT_ID))
+    response = client.post(
+        "/api/v1/ontology-copilot/ask",
+        json={
+            "question": (
+                f"What is the evidence status of Supplier Legal Name in {CANONICAL_BLUEPRINT_NAME}?"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "answered"
+    explanation = body["context_explanation"]
+    assert explanation is not None
+    assert explanation["status"] == "answered"
+    assert explanation["coverage_status"] == "MAPPED"
+    assert explanation["evidence_availability_status"] == "EVIDENCE_PRESENT"
+    assert "Supplier Legal Name" in body["answer"]
+
+    # Existing Gate D supplier-question full-stack behavior remains unaffected,
+    # asked through the same client/principal as the Gate P question above.
+    supplier_name = f"GateP-Coexist-Supplier-{uuid4()}"
+    with Session(migrated_engine) as session, session.begin():
+        _seed_supply_chain(session, tenant_id=BOOTSTRAP_DEMO_TENANT_ID, supplier_name=supplier_name)
+    supplier_response = client.post(
+        "/api/v1/ontology-copilot/ask",
+        json={"question": f"Which products depend on {supplier_name}?"},
+    )
+    assert supplier_response.status_code == 200
+    assert supplier_response.json()["status"] == "answered"
+    assert supplier_response.json()["context_explanation"] is None

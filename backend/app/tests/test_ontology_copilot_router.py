@@ -17,9 +17,17 @@ from app.api.ontology_copilot.dependencies import ontology_copilot_api_service
 from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.api.supplier_risk.dependencies import container, principal
 from app.api.supplier_risk.rate_limit import RateLimiter
-from app.application.ontology_copilot_api import AskResult, AskStatus
+from app.application.information_element_evidence_availability import EvidenceAvailabilityStatus
+from app.application.ontology_copilot_api import (
+    AskResult,
+    AskStatus,
+    GatePAskStatus,
+    InformationElementContextExplanationResult,
+)
+from app.application.semantic_coverage_evaluation import CoverageStatus
 from app.core.config import Settings
 from app.core.dependency_container import Container
+from app.domain.blueprint import Obligation
 from app.main import create_app
 
 NOW = datetime.now(UTC)
@@ -232,3 +240,106 @@ def test_get_is_not_allowed_endpoint_is_logically_read_only_but_wired_as_post() 
     )
     response = client.get("/api/v1/ontology-copilot/ask")
     assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Gate P (CDD-025): response-schema mapping
+# ---------------------------------------------------------------------------
+
+
+def test_existing_supplier_intent_response_has_no_context_explanation_field_populated() -> None:
+    # Backward compatibility: the existing intent's response must be
+    # unaffected by the new optional Gate P field.
+    service = FakeOntologyCopilotService(result=_ANSWERED_RESULT)
+    client = _client(
+        _container(audit=Audit()), service, _principal(scopes=("ontology-copilot:ask",))
+    )
+    response = client.post(
+        "/api/v1/ontology-copilot/ask", json={"question": "Which products depend on TSMC?"}
+    )
+    assert response.status_code == 200
+    assert response.json()["context_explanation"] is None
+
+
+def test_gate_p_answered_response_maps_context_explanation_fields() -> None:
+    requirement_id = uuid4()
+    blueprint_id = uuid4()
+    gate_p_result = AskResult(
+        status=AskStatus.ANSWERED,
+        intent=None,
+        answer="'Supplier Legal Name' in the Blueprint A Blueprint: ...",
+        resolved_entity=None,
+        result_names=(),
+        evidence=(),
+        reason=None,
+        context_explanation=InformationElementContextExplanationResult(
+            status=GatePAskStatus.ANSWERED,
+            blueprint_id=blueprint_id,
+            blueprint_version_number=1,
+            information_element_requirement_id=requirement_id,
+            information_element_name="Supplier Legal Name",
+            obligation=Obligation.REQUIRED,
+            coverage_status=CoverageStatus.MAPPED,
+            evidence_availability_status=EvidenceAvailabilityStatus.EVIDENCE_PRESENT,
+            answer="'Supplier Legal Name' in the Blueprint A Blueprint: ...",
+            reason=None,
+        ),
+    )
+    service = FakeOntologyCopilotService(result=gate_p_result)
+    client = _client(
+        _container(audit=Audit()), service, _principal(scopes=("ontology-copilot:ask",))
+    )
+    response = client.post(
+        "/api/v1/ontology-copilot/ask",
+        json={"question": "What is the evidence status of Supplier Legal Name in Blueprint A?"},
+    )
+    assert response.status_code == 200
+    body = response.json()["context_explanation"]
+    assert body is not None
+    assert body["status"] == "answered"
+    assert body["blueprint_id"] == str(blueprint_id)
+    assert body["blueprint_version_number"] == 1
+    assert body["information_element_requirement_id"] == str(requirement_id)
+    assert body["information_element_name"] == "Supplier Legal Name"
+    assert body["obligation"] == "REQUIRED"
+    assert body["coverage_status"] == "MAPPED"
+    assert body["evidence_availability_status"] == "EVIDENCE_PRESENT"
+    assert body["reason"] is None
+
+
+def test_gate_p_blueprint_not_found_response_has_null_coverage_and_evidence_fields() -> None:
+    gate_p_result = AskResult(
+        status=AskStatus.NO_MATCH,
+        intent=None,
+        answer="CTEC does not currently have an Approved Blueprint named 'Nonexistent'.",
+        resolved_entity=None,
+        result_names=(),
+        evidence=(),
+        reason="BLUEPRINT_NOT_FOUND",
+        context_explanation=InformationElementContextExplanationResult(
+            status=GatePAskStatus.BLUEPRINT_NOT_FOUND,
+            blueprint_id=None,
+            blueprint_version_number=None,
+            information_element_requirement_id=None,
+            information_element_name=None,
+            obligation=None,
+            coverage_status=None,
+            evidence_availability_status=None,
+            answer="CTEC does not currently have an Approved Blueprint named 'Nonexistent'.",
+            reason="BLUEPRINT_NOT_FOUND",
+        ),
+    )
+    service = FakeOntologyCopilotService(result=gate_p_result)
+    client = _client(
+        _container(audit=Audit()), service, _principal(scopes=("ontology-copilot:ask",))
+    )
+    response = client.post(
+        "/api/v1/ontology-copilot/ask",
+        json={"question": "What is the evidence status of X in Nonexistent?"},
+    )
+    assert response.status_code == 200
+    body = response.json()["context_explanation"]
+    assert body["status"] == "blueprint_not_found"
+    assert body["coverage_status"] is None
+    assert body["evidence_availability_status"] is None
+    assert body["information_element_requirement_id"] is None
