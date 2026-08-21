@@ -23,6 +23,17 @@ implementation exists yet, and none is authorized by this record's approval alon
 Product Owner implementation authorization is still required before any file listed below is created or
 modified (CDD-022 §29, restated).
 
+**Post-approval artifact-authorization-gap remediation (this revision)**: implementation against the
+original 14-artifact allowlist below surfaced a genuine, narrow gap during the complete-backend-suite step
+of implementation — see the final Discovery finding, below — closed by adding exactly one artifact (row
+15). No other row in this document was altered by this remediation; the 14 originally authorized artifacts,
+and every binding requirement in every other section, are unchanged. No implementation has been staged,
+committed, pushed, or merged under either the original or the amended surface — the implementation branch
+remains uncommitted and frozen pending this remediation's own Product Owner review, governance commit, PR,
+CI, and merge, exactly mirroring the identical CDD-019 H1 precedent (`test_domain_foundation.py`, row 19 of
+that companion, added post-approval for the identical reason: `SourceField`'s own authorized placement in
+`domain/integration/`).
+
 ## 2. Objective (binding, restated from CDD-022 §1, §6)
 
 Persist and retrieve, for a given tenant and a specific already-governed `SourceField` (CDD-019,
@@ -130,7 +141,30 @@ companions that reused already-existing persistence.
   `DemoFieldValueEvidenceSeeder` and its two test files mirror this exact structure.
 - **`AUTHORIZED_CHANGED_PATHS` mechanism**: `backend/app/tests/test_runtime_architecture.py` — confirmed
   unchanged mechanism, extended identically by every prior Gate G/H/I/J phase; this record extends it by
-  the full 13-path CREATE+MODIFY surface below (excluding itself).
+  the full 13-path CREATE+MODIFY surface below (excluding itself). `backend/app/tests/test_domain_foundation.py`
+  (row 15, below) requires no further extension of `AUTHORIZED_CHANGED_PATHS`: it was already added there
+  permanently by the CDD-019 H1 amendment (confirmed by direct read, this revision) and remains present
+  unconditionally for reuse by any subsequent gate touching the same file for the same narrow reason.
+- **`test_domain_foundation.py` exact-set staleness (post-approval gap, closed by row 15 below)**:
+  `test_domain_has_no_forbidden_dependencies_or_artifact_classes` asserts an exact, hardcoded set of every
+  class declared across five "canonical domain roots" (`foundation`, `integration`, `operational`,
+  `semantic`, `shared`), discovered via `ast.walk` over each root's `.py` files. `domain/integration/` is
+  one of those five roots, and row 1's authorized `FieldValueEvidence` class is placed there (CDD-022 §6-7,
+  sibling to `SourceField`). Confirmed by direct verification, this revision: (a) the assertion is exact-set
+  equality (`declared_classes == {...}`), not subset comparison; (b) `FieldValueEvidence` necessarily enters
+  the discovered set solely because of its already-authorized location under `domain/integration/`, with no
+  alternative authorized location available; (c) the test passes, unmodified, against authoritative main
+  (`304abf483a4092d1298864d6b60ae8d4af1c133a`) before `field_value_evidence.py` exists — proven by
+  temporarily excluding that one untracked file from the working tree and re-running the test in isolation;
+  (d) the test fails, with `FieldValueEvidence` appearing as the sole unexpected extra element, once the
+  file is restored; (e) adding only the string `"FieldValueEvidence"` to the expected set is sufficient to
+  restore exact equality; (f) no production code requires any change to achieve this; (g) no weakening of
+  the assertion (subset comparison, wildcard, skip, xfail) is required or authorized. This is identical in
+  kind to the migration-head staleness the four `1df0024`-precedent rows already correct, and identical in
+  kind and cause to the CDD-019 H1 precedent (`SourceField` in the same directory, same test, same
+  remediation shape) — not new/optional coverage, but a stale snapshot the authorized placement mechanically
+  falsifies. No other authorized artifact's published purpose covers this repo-wide, cross-cutting inventory
+  assertion; the correction can only be made in the one file where the false assertion lives.
 
 ## 4. Authorized artifacts
 
@@ -150,6 +184,7 @@ companions that reused already-existing persistence.
 | `backend/app/tests/test_governance_engine.py` | MODIFY | Mechanical migration-head consequence | Update the single existing revision assertion identically. No other line changed. | Same as above. | Direct test execution (Postgres). |
 | `backend/app/tests/test_knowledge_engine.py` | MODIFY | Mechanical migration-head consequence | Update the single existing revision assertion identically. No other line changed. | Same as above. | Direct test execution (Postgres). |
 | `backend/app/tests/test_persistence_integration.py` | MODIFY | Mechanical migration-head consequence | Update the revision assertion identically, and `table_count == 59` → `table_count == 60`. No other line changed. | No change to `test_repository_crud` or any other test in the file. | Direct test execution (Postgres). |
+| `backend/app/tests/test_domain_foundation.py` | MODIFY | CDD-022 §6-§7 (Discovery findings, above); identical precedent CDD-019 H1 (row 19 of that companion) | In `test_domain_has_no_forbidden_dependencies_or_artifact_classes` only: add exactly the string `"FieldValueEvidence"` to the existing `declared_classes == {...}` set literal, so the assertion correctly reflects the authorized `FieldValueEvidence` class row 1 places in `domain/integration/`. | No other assertion, string, or line in this file may change — not the `forbidden_imports` set, not any other entry in `declared_classes`, not the forbidden-imports check, not `canonical_domain_roots`, not any test function other than the one named above. No new test function. No refactor. No authorization for any future or unrelated change to this file — this row authorizes exactly one string addition, once. | Direct test execution: the pre-existing test must pass unmodified in every other respect, with only `"FieldValueEvidence"` added to the set. |
 
 No other repository path is authorized. In particular: `backend/app/domain/blueprint/*`, `backend/app/application/blueprint_conformance.py`,
 `semantic_coverage_evaluation.py`, `gap_impact_remediation.py`, `semantic_mapping_resolution.py`,
@@ -298,10 +333,14 @@ no second fact, no production admission path.
 12. `alembic upgrade head` / `alembic downgrade` round-trips cleanly against real PostgreSQL for
     `0016_field_value_evidence`, and the four mechanical migration-head assertions (§4) pass at the new
     revision/table-count.
+13. `test_domain_has_no_forbidden_dependencies_or_artifact_classes` (row 15) passes unmodified in every
+    respect other than the single authorized `"FieldValueEvidence"` string addition — required evidence
+    that the domain-purity/class-inventory boundary remains intact and accurate, not merely that
+    `FieldValueEvidence` was added to it.
 
 ## 13. Implementation stop conditions (binding)
 
-Implementation MUST NOT expand beyond the fourteen artifact paths authorized above (nine CREATE, five
+Implementation MUST NOT expand beyond the fifteen artifact paths authorized above (nine CREATE, six
 MODIFY) without new Product Owner authorization. If implementation discovers that any authorized artifact's
 Exclusions column cannot be satisfied without touching an unlisted path (in particular: any file under
 `backend/app/integration/`, `backend/app/api/*`, any Blueprint/H2/Gate-I/Gate-J/H4 artifact, or
@@ -325,7 +364,9 @@ migration, no backfill, no dependency on any other table's rollback.
 This document is an **approved artifact-authorization companion**, published to `APPROVED ARTIFACT
 AUTHORIZATION` state following the identical Product Owner review-and-approval cycle every prior companion
 (CDD-017 G2/G3/G3.5, CDD-018 G4, CDD-019 H1/H2/H3, CDD-020 I1, CDD-021 J1/J2) underwent — discovery (§3), a
-content review that found and resolved two P1s (§1), and Product Owner approval. Approval of this record
-governs exactly the artifact sandbox in §4 above; it does **not** itself authorize implementation of any
-artifact listed there — a separate, subsequent Product Owner implementation authorization remains required
-before any file listed above is created or modified.
+content review that found and resolved two P1s (§1), and Product Owner approval, and — for row 15 only — a
+subsequent, narrow artifact-authorization-gap review and remediation confirming the gap was real, no
+existing authorized artifact could hold it, and exactly one row closes it (§1, §3). CDD-022 remains
+unchanged. Approval of this record governs exactly the artifact sandbox in §4 above; it does **not** itself
+authorize implementation of any artifact listed there — a separate, subsequent Product Owner implementation
+authorization remains required before any file listed above is created or modified.
