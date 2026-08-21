@@ -445,6 +445,12 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_field_value_evidence_persistence_postgres.py",
     "backend/app/tests/test_demo_field_value_evidence_seeder.py",
     "backend/app/tests/test_demo_field_value_evidence_seeder_postgres.py",
+    # H4 companion: InformationElementEvidenceAvailabilityApplicationService
+    # (new file) and its unit + Postgres tests (new files). None existed
+    # before H4.
+    "backend/app/application/information_element_evidence_availability.py",
+    "backend/app/tests/test_information_element_evidence_availability.py",
+    "backend/app/tests/test_information_element_evidence_availability_postgres.py",
 }
 
 
