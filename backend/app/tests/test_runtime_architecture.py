@@ -451,6 +451,12 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/information_element_evidence_availability.py",
     "backend/app/tests/test_information_element_evidence_availability.py",
     "backend/app/tests/test_information_element_evidence_availability_postgres.py",
+    # Gate N companion: InformationElementContextAvailabilityApplicationService
+    # (new file) and its unit + Postgres tests (new files). None existed
+    # before Gate N.
+    "backend/app/application/information_element_context_availability.py",
+    "backend/app/tests/test_information_element_context_availability.py",
+    "backend/app/tests/test_information_element_context_availability_postgres.py",
 }
 
 
