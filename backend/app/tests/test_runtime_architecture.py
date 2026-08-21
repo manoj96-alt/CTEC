@@ -429,6 +429,22 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/gap_impact_remediation.py",
     "backend/app/tests/test_gap_impact_remediation.py",
     "backend/app/tests/test_gap_impact_remediation_postgres.py",
+    # CDD-022 companion: FieldValueEvidence domain/persistence/migration/
+    # seeder (new files) and its unit + Postgres tests (new files). The
+    # mechanical migration-head consequence in test_decision_engine.py/
+    # test_governance_engine.py/test_knowledge_engine.py/
+    # test_persistence_integration.py needs no new entry here -- each was
+    # already added permanently above by an earlier gate for the identical
+    # reason (every migration bump touches these four).
+    "backend/app/domain/integration/field_value_evidence.py",
+    "backend/app/infrastructure/persistence/models/field_value_evidence.py",
+    "backend/app/infrastructure/persistence/field_value_evidence_repository.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0016_field_value_evidence.py",
+    "backend/app/infrastructure/persistence/demo_field_value_evidence_seeder.py",
+    "backend/app/tests/test_field_value_evidence_persistence.py",
+    "backend/app/tests/test_field_value_evidence_persistence_postgres.py",
+    "backend/app/tests/test_demo_field_value_evidence_seeder.py",
+    "backend/app/tests/test_demo_field_value_evidence_seeder_postgres.py",
 }
 
 

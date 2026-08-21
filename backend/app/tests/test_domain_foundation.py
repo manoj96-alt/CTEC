@@ -221,6 +221,7 @@ def test_domain_has_no_forbidden_dependencies_or_artifact_classes() -> None:
         "SourceSystem",
         "SourceObject",
         "SourceField",
+        "FieldValueEvidence",
         "Identifier",
         "CanonicalName",
         "BusinessName",
