@@ -457,6 +457,12 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/information_element_context_availability.py",
     "backend/app/tests/test_information_element_context_availability.py",
     "backend/app/tests/test_information_element_context_availability_postgres.py",
+    # Gate K companion: InformationElementDecisionPrerequisiteAssessmentApplicationService
+    # (new file) and its unit + Postgres tests (new files). None existed
+    # before Gate K.
+    "backend/app/application/information_element_decision_prerequisite_assessment.py",
+    "backend/app/tests/test_information_element_decision_prerequisite_assessment.py",
+    "backend/app/tests/test_information_element_decision_prerequisite_assessment_postgres.py",
 }
 
 
