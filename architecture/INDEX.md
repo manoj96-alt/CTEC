@@ -127,7 +127,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-023 Blueprint Information-Element Evidence Availability Evaluation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-023-Blueprint-Information-Element-Evidence-Availability-Evaluation.md) · [H4 artifact authorization](../docs/cdd/CDD-023-H4-Evidence-Availability-Artifact-Authorization.md) |
 | CDD-024 Blueprint Information-Element Context Availability Composition | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-024-Blueprint-Information-Element-Context-Availability-Composition.md) · [Artifact authorization](../docs/cdd/CDD-024-Context-Availability-Composition-Artifact-Authorization.md) |
 | CDD-025 Blueprint Information-Element Context Explanation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-025-Blueprint-Information-Element-Context-Explanation.md) · [Artifact authorization](../docs/cdd/CDD-025-Context-Explanation-Artifact-Authorization.md) |
-| CDD-026 Blueprint Information-Element Decision-Prerequisite Assessment | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-026-Blueprint-Information-Element-Decision-Prerequisite-Assessment.md) |
+| CDD-026 Blueprint Information-Element Decision-Prerequisite Assessment | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-026-Blueprint-Information-Element-Decision-Prerequisite-Assessment.md) · [Artifact authorization](../docs/cdd/CDD-026-Decision-Prerequisite-Assessment-Artifact-Authorization.md) |
 
 ## Historical review artifacts
 
