@@ -12,9 +12,12 @@ import ast
 import inspect
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import ModuleType
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.application import semantic_mapping_proposal_governance as gate_l_governance_module
@@ -33,6 +36,11 @@ from app.domain.semantic_mapping import SemanticMapping
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
 from app.domain.shared.exceptions import ValidationException
 from app.domain.shared.value_objects import CanonicalName, Identifier
+from app.infrastructure.persistence.semantic_mapping_repository import (
+    SemanticMappingRepository,
+    SemanticMappingResolution,
+)
+from app.infrastructure.persistence.source_field_repository import SourceFieldRepository
 
 _TENANT_ID = "acme-tenant"
 
@@ -52,7 +60,7 @@ class _FakeSemanticMappingRepository:
 
     def get_approved_by_information_element_requirement(
         self, information_element_requirement_id: UUID, tenant_id: str
-    ) -> object | None:
+    ) -> SemanticMappingResolution | None:
         return None
 
 
@@ -77,6 +85,23 @@ class _FakeSession:
 
     def scalar(self, _statement: object) -> str | None:
         return self.tenant_ids.pop(0)
+
+
+def _service(
+    *,
+    session: _FakeSession,
+    semantic_mapping_repository: _FakeSemanticMappingRepository,
+    source_field_repository: _FakeSourceFieldRepository,
+) -> SemanticMappingProposalGovernanceApplicationService:
+    """Constructs the service under test against its real, narrow
+    Session/Protocol dependencies -- the hand-built fakes above satisfy
+    those contracts structurally/behaviorally but are intentionally not
+    nominal subtypes, so the boundary is bridged here, once, via cast."""
+    return SemanticMappingProposalGovernanceApplicationService(
+        session=cast(Session, session),
+        semantic_mapping_repository=cast(SemanticMappingRepository, semantic_mapping_repository),
+        source_field_repository=cast(SourceFieldRepository, source_field_repository),
+    )
 
 
 def _source_field(*, source_object_id: UUID | None = None) -> tuple[UUID, SourceField]:
@@ -134,7 +159,7 @@ def _principal(*, tenant_id: str = _TENANT_ID) -> TrustedPrincipal:
 def test_materialize_proposal_succeeds_for_valid_in_universe_candidate() -> None:
     source_field_id, source_field = _source_field()
     mapping_repo = _FakeSemanticMappingRepository()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[_TENANT_ID, None]),
         semantic_mapping_repository=mapping_repo,
         source_field_repository=_FakeSourceFieldRepository(
@@ -160,7 +185,7 @@ def test_materialize_proposal_succeeds_for_valid_in_universe_candidate() -> None
 
 def test_materialize_proposal_uses_fixed_system_identity_not_a_human() -> None:
     source_field_id, source_field = _source_field()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[_TENANT_ID, None]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(
@@ -180,7 +205,7 @@ def test_materialize_proposal_uses_fixed_system_identity_not_a_human() -> None:
 
 def test_materialize_proposal_rejects_out_of_universe_candidate() -> None:
     source_field_id, source_field = _source_field()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(
@@ -199,7 +224,7 @@ def test_materialize_proposal_rejects_out_of_universe_candidate() -> None:
 
 def test_materialize_proposal_rejects_hallucinated_source_field_not_found() -> None:
     hallucinated_id = uuid4()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -216,7 +241,7 @@ def test_materialize_proposal_rejects_hallucinated_source_field_not_found() -> N
 
 def test_materialize_proposal_rejects_cross_tenant_source_field() -> None:
     source_field_id, source_field = _source_field()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=["a-different-tenant"]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(
@@ -244,7 +269,7 @@ def test_materialize_proposal_rejects_non_active_source_field() -> None:
         created_by=source_field.created_by,
         created_on=source_field.created_on,
     )
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(
@@ -272,7 +297,7 @@ def test_materialize_proposal_rejects_source_field_not_approved_governance_statu
         created_by=source_field.created_by,
         created_on=source_field.created_on,
     )
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(
@@ -290,7 +315,7 @@ def test_materialize_proposal_rejects_source_field_not_approved_governance_statu
 
 
 def test_materialize_proposal_rejects_malformed_candidate_type() -> None:
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -328,7 +353,7 @@ def test_approve_requires_a_trusted_principal() -> None:
     proposed = _proposed_mapping(
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -342,7 +367,7 @@ def test_approve_fails_for_wrong_tenant_principal() -> None:
     proposed = _proposed_mapping(
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[_TENANT_ID]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -358,7 +383,7 @@ def test_approve_creates_new_approved_row_and_leaves_proposed_unchanged() -> Non
     )
     before = SemanticMapping(**{f: getattr(proposed, f) for f in proposed.__dataclass_fields__})
     mapping_repo = _FakeSemanticMappingRepository()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[_TENANT_ID]),
         semantic_mapping_repository=mapping_repo,
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -380,7 +405,7 @@ def test_approve_uses_fixed_system_identity_not_principal_id() -> None:
     proposed = _proposed_mapping(
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[_TENANT_ID]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -398,7 +423,7 @@ def test_approve_rejects_already_approved_proposed_row() -> None:
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
     object.__setattr__(already_approved, "governance_status", GovernanceStatus.APPROVED)
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -418,15 +443,14 @@ def test_reject_performs_no_repository_write() -> None:
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
     mapping_repo = _FakeSemanticMappingRepository()
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=mapping_repo,
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
     )
 
-    result = service.reject(proposed=proposed, principal=_principal())
+    service.reject(proposed=proposed, principal=_principal())
 
-    assert result is None
     assert mapping_repo.created == []
 
 
@@ -434,7 +458,7 @@ def test_reject_requires_a_trusted_principal() -> None:
     proposed = _proposed_mapping(
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -449,7 +473,7 @@ def test_reject_rejects_a_non_proposed_row() -> None:
         source_field_id=uuid4(), information_element_requirement_id=uuid4()
     )
     object.__setattr__(already_approved, "governance_status", GovernanceStatus.APPROVED)
-    service = SemanticMappingProposalGovernanceApplicationService(
+    service = _service(
         session=_FakeSession(tenant_ids=[]),
         semantic_mapping_repository=_FakeSemanticMappingRepository(),
         source_field_repository=_FakeSourceFieldRepository(fields_by_id={}),
@@ -469,7 +493,7 @@ def test_reject_does_not_introduce_a_new_governance_status() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _module_imported_names(module: object) -> set[str]:
+def _module_imported_names(module: ModuleType) -> set[str]:
     source = inspect.getsource(module)
     tree = ast.parse(source)
     names: set[str] = set()

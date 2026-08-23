@@ -11,6 +11,7 @@ proven separately, against real fixture data, in
 import ast
 import inspect
 from dataclasses import fields
+from types import ModuleType
 from uuid import uuid4
 
 from app.application import semantic_mapping_candidate_discovery as gate_l_discovery_module
@@ -167,7 +168,7 @@ def test_fake_provider_can_only_select_from_the_supplied_universe() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _module_imported_names(module: object) -> set[str]:
+def _module_imported_names(module: ModuleType) -> set[str]:
     source = inspect.getsource(module)
     tree = ast.parse(source)
     names: set[str] = set()

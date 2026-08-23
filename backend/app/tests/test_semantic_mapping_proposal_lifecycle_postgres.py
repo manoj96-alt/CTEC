@@ -21,7 +21,7 @@ Gate K/H2/Gate I are never called anywhere in this file.
 """
 
 from datetime import UTC, datetime
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 import pytest
 from sqlalchemy import Engine
@@ -51,8 +51,12 @@ from app.infrastructure.persistence.blueprint_repository import BlueprintReposit
 from app.infrastructure.persistence.blueprint_seed import CANONICAL_BLUEPRINT_NAME
 from app.infrastructure.persistence.demo_field_value_evidence_seeder import (
     DemoFieldValueEvidenceSeeder,
+    DemoFieldValueEvidenceSeedSummary,
 )
-from app.infrastructure.persistence.demo_semantic_mapping_seeder import DemoSemanticMappingSeeder
+from app.infrastructure.persistence.demo_semantic_mapping_seeder import (
+    DemoSemanticMappingSeeder,
+    DemoSemanticMappingSeedSummary,
+)
 from app.infrastructure.persistence.semantic_mapping_repository import (
     SemanticMappingRepositoryImpl,
 )
@@ -61,7 +65,9 @@ from app.infrastructure.persistence.source_field_repository import SourceFieldRe
 _RISK_EVENT_SEVERITY = "Risk Event Severity"
 
 
-def _seed(factory: "sessionmaker[Session]") -> tuple[object, object]:
+def _seed(
+    factory: "sessionmaker[Session]",
+) -> tuple[DemoFieldValueEvidenceSeedSummary, DemoSemanticMappingSeedSummary]:
     with factory() as session:
         summary = DemoFieldValueEvidenceSeeder(session).seed()
         mapping_summary = DemoSemanticMappingSeeder(session).seed(BOOTSTRAP_DEMO_TENANT_ID)
@@ -69,7 +75,9 @@ def _seed(factory: "sessionmaker[Session]") -> tuple[object, object]:
     return summary, mapping_summary
 
 
-def _ensure_source_field(session: Session, *, source_object_id, field_label: str) -> Identifier:
+def _ensure_source_field(
+    session: Session, *, source_object_id: UUID, field_label: str
+) -> Identifier:
     """Ordinary, idempotent test-fixture construction via the existing,
     unmodified H1 `SourceFieldRepositoryImpl.create()` -- not a new seeder
     module. Deterministic id (uuid5 under the existing BOOTSTRAP_SEED_NAMESPACE,
