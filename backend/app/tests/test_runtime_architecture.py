@@ -474,6 +474,39 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_semantic_mapping_candidate_discovery.py",
     "backend/app/tests/test_semantic_mapping_proposal_governance.py",
     "backend/app/tests/test_semantic_mapping_proposal_lifecycle_postgres.py",
+    # Gate M companion: Governed Visual Ontology Modeling, net-new-only
+    # (CDD-028; Gate M Artifact Authorization v1.1). New non-canonical
+    # OntologyChangeProposal domain/persistence/migration/repository,
+    # application governance service, and API package (new files), plus
+    # their unit + Postgres + router tests (new files). None existed before
+    # Gate M. entity_types/relationship_types/institutional_concepts/
+    # ontology_relationship_bindings and resolver.py remain unmodified.
+    "backend/app/domain/ontology_modeling/__init__.py",
+    "backend/app/domain/ontology_modeling/proposal.py",
+    "backend/app/infrastructure/persistence/models/ontology_change_proposal.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0017_ontology_change_proposal.py",
+    "backend/app/infrastructure/persistence/ontology_change_proposal_repository.py",
+    "backend/app/application/ontology_modeling_proposal_governance.py",
+    "backend/app/api/ontology_modeling/__init__.py",
+    "backend/app/api/ontology_modeling/router.py",
+    "backend/app/api/ontology_modeling/schemas.py",
+    "backend/app/api/ontology_modeling/dependencies.py",
+    "backend/app/tests/test_ontology_modeling_proposal_governance.py",
+    "backend/app/tests/test_ontology_modeling_proposal_lifecycle_postgres.py",
+    "backend/app/tests/test_ontology_modeling_router.py",
+    # Gate M frontend companion (Gate M Artifact Authorization v1.1 §11):
+    # self-contained new /ontology-studio/ontology-modeling sub-route (new
+    # files), mirroring the existing entity-resolution sub-workspace shape.
+    # No modification to ontology-graph.tsx or lib/ontology-studio/*.
+    "frontend/lib/ontology-modeling/api-client.ts",
+    "frontend/lib/ontology-modeling/contracts.ts",
+    "frontend/app/ontology-studio/ontology-modeling/page.tsx",
+    "frontend/app/ontology-studio/ontology-modeling/_components/ontology-modeling-workspace.tsx",
+    "frontend/app/ontology-studio/ontology-modeling/_components/propose-form.tsx",
+    "frontend/app/ontology-studio/ontology-modeling/_components/proposal-list.tsx",
+    "frontend/app/ontology-studio/ontology-modeling/_components/decision-dialog.tsx",
+    "frontend/app/ontology-studio/_components/ontology-modeling-link-card.tsx",
+    "frontend/tests/ontology-modeling-workspace.test.tsx",
 }
 
 
