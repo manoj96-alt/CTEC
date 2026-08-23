@@ -129,6 +129,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-025 Blueprint Information-Element Context Explanation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-025-Blueprint-Information-Element-Context-Explanation.md) · [Artifact authorization](../docs/cdd/CDD-025-Context-Explanation-Artifact-Authorization.md) |
 | CDD-026 Blueprint Information-Element Decision-Prerequisite Assessment | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-026-Blueprint-Information-Element-Decision-Prerequisite-Assessment.md) · [Artifact authorization](../docs/cdd/CDD-026-Decision-Prerequisite-Assessment-Artifact-Authorization.md) |
 | CDD-027 AI-Assisted Semantic Mapping Candidate Discovery with Human Governance | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-027-AI-Assisted-Semantic-Mapping-Candidate-Discovery-with-Human-Governance.md) · [Artifact authorization](../docs/cdd/CDD-027-AI-Assisted-Semantic-Mapping-Candidate-Discovery-Artifact-Authorization.md) · [Human-approver attribution clarification](../docs/cdd/CDD-027-Human-Approver-Attribution-Clarification-and-Remediation-Report.md) |
+| CDD-028 Governed Visual Ontology Modeling with Proposal, Approval, and Publication | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-028-Governed-Visual-Ontology-Modeling-with-Proposal-Approval-and-Publication.md) |
 
 ## Historical review artifacts
 
