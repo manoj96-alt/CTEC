@@ -17,6 +17,7 @@ import { ApiExportPanel } from "./api-export-panel";
 import { ActivationCard } from "./activation-card";
 import { EntityResolutionLinkCard } from "./entity-resolution-link-card";
 import { AskCtecLinkCard } from "./ask-ctec-link-card";
+import { OntologyModelingLinkCard } from "./ontology-modeling-link-card";
 
 type LoadState =
   | { status: "loading" }
@@ -114,6 +115,7 @@ export function StudioClient() {
       />
       <EntityResolutionLinkCard />
       <AskCtecLinkCard />
+      <OntologyModelingLinkCard />
       <ConnectorCatalogPanel connectors={connectors} />
       <OntologyGraph
         concepts={ontology.concepts}
