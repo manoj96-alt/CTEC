@@ -463,6 +463,17 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/information_element_decision_prerequisite_assessment.py",
     "backend/app/tests/test_information_element_decision_prerequisite_assessment.py",
     "backend/app/tests/test_information_element_decision_prerequisite_assessment_postgres.py",
+    # Gate L6 companion: SemanticMappingCandidateUniverseService /
+    # SemanticMappingProposalGovernanceApplicationService (new files) and
+    # their unit + Postgres tests (new files). None existed before Gate L
+    # (CDD-027; AI-Assisted Semantic Mapping Candidate Discovery Artifact
+    # Authorization, as corrected by the Human-Approver Attribution
+    # Clarification and Remediation Report).
+    "backend/app/application/semantic_mapping_candidate_discovery.py",
+    "backend/app/application/semantic_mapping_proposal_governance.py",
+    "backend/app/tests/test_semantic_mapping_candidate_discovery.py",
+    "backend/app/tests/test_semantic_mapping_proposal_governance.py",
+    "backend/app/tests/test_semantic_mapping_proposal_lifecycle_postgres.py",
 }
 
 
