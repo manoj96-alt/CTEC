@@ -523,6 +523,16 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_information_element_context_resolution.py",
     "backend/app/tests/test_information_element_context_resolution_postgres.py",
     "backend/app/tests/test_information_element_context_router.py",
+    # Gate Q companion: Governed Outbound MCP Client and Connector
+    # Capability Boundary (CDD-030; Gate Q Artifact Authorization v1.0).
+    # New, standalone, router-less MCP client and static tool/connector
+    # catalog -- no persistence, no migration, no API, no frontend, no new
+    # dependency. backend/app/domain/ontology/connector_catalog.py remains
+    # completely untouched and independent (Q-D5).
+    "backend/app/application/mcp_connector_catalog.py",
+    "backend/app/application/mcp_client.py",
+    "backend/app/tests/test_mcp_connector_catalog.py",
+    "backend/app/tests/test_mcp_client.py",
 }
 
 
