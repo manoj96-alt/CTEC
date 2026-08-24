@@ -507,6 +507,22 @@ AUTHORIZED_CHANGED_PATHS = {
     "frontend/app/ontology-studio/ontology-modeling/_components/decision-dialog.tsx",
     "frontend/app/ontology-studio/_components/ontology-modeling-link-card.tsx",
     "frontend/tests/ontology-modeling-workspace.test.tsx",
+    # Gate O companion: Governed Blueprint Information-Element
+    # Context-as-a-Service (CDD-029; Gate O Artifact Authorization v1.0).
+    # New, standalone application service reusing the existing, unmodified
+    # Blueprint/Gate I/H4/Gate N chain by call only, plus a new, dedicated
+    # API package (new files), plus their unit + Postgres + router tests
+    # (new files). Ask CTEC (ontology_copilot_api.py and its router/schemas)
+    # remains completely untouched; the resulting orchestration-logic
+    # duplication is an explicit, Product-Owner-accepted tradeoff.
+    "backend/app/application/information_element_context_resolution.py",
+    "backend/app/api/information_element_context/__init__.py",
+    "backend/app/api/information_element_context/router.py",
+    "backend/app/api/information_element_context/schemas.py",
+    "backend/app/api/information_element_context/dependencies.py",
+    "backend/app/tests/test_information_element_context_resolution.py",
+    "backend/app/tests/test_information_element_context_resolution_postgres.py",
+    "backend/app/tests/test_information_element_context_router.py",
 }
 
 
