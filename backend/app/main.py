@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from app.api.config.router import router as config_router
 from app.api.entity_resolution.router import router as entity_resolution_router
 from app.api.health.router import router as health_router
+from app.api.information_element_context.router import router as information_element_context_router
 from app.api.ontology.router import router as ontology_router
 from app.api.ontology_copilot.router import router as ontology_copilot_router
 from app.api.ontology_modeling.router import router as ontology_modeling_router
@@ -128,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(ontology_copilot_router)
     app.include_router(ontology_modeling_router)
     app.include_router(supply_chain_impact_router)
+    app.include_router(information_element_context_router)
     return app
 
 
