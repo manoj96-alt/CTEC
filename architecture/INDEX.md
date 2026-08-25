@@ -132,7 +132,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-028 Governed Visual Ontology Modeling with Proposal, Approval, and Publication | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-028-Governed-Visual-Ontology-Modeling-with-Proposal-Approval-and-Publication.md) · [Artifact authorization](../docs/cdd/CDD-028-Governed-Visual-Ontology-Modeling-Artifact-Authorization.md) |
 | CDD-029 Governed Blueprint Information-Element Context-as-a-Service | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-029-Governed-Blueprint-Information-Element-Context-as-a-Service.md) · [Artifact authorization](../docs/cdd/CDD-029-Governed-Blueprint-Information-Element-Context-as-a-Service-Artifact-Authorization.md) |
 | CDD-030 Governed Outbound MCP Client and Connector Capability Boundary | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-030-Governed-Outbound-MCP-Client-and-Connector-Capability-Boundary.md) · [Artifact authorization](../docs/cdd/CDD-030-Governed-Outbound-MCP-Client-and-Connector-Capability-Boundary-Artifact-Authorization.md) |
-| CDD-031 Governed Source-Evidence Fitness Evaluation and Ontology Impact | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact.md) |
+| CDD-031 Governed Source-Evidence Fitness Evaluation and Ontology Impact | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact.md) · [Artifact authorization](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact-Artifact-Authorization.md) |
 
 ## Historical review artifacts
 
