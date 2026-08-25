@@ -3,9 +3,9 @@ import type { QualityScore } from "@/lib/ontology-studio/contracts";
 export function QualityPanel({ quality }: { quality: QualityScore }) {
   return (
     <section className="panel" style={{ marginTop: "1.5rem" }}>
-      <p className="eyebrow">Deterministic ontology quality assessment</p>
+      <p className="eyebrow">Ontology Model Completeness</p>
       <h2 style={{ marginTop: "0.25rem" }}>
-        Overall score: {(quality.overall_score * 100).toFixed(0)}%
+        Completeness score: {(quality.overall_score * 100).toFixed(0)}%
       </h2>
       <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
         {quality.method}
