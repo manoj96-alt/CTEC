@@ -533,6 +533,19 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/mcp_client.py",
     "backend/app/tests/test_mcp_connector_catalog.py",
     "backend/app/tests/test_mcp_client.py",
+    # Gate T companion: Governed Source-Evidence Fitness Evaluation and
+    # Ontology Impact (CDD-031; Gate T Artifact Authorization v1.0). New,
+    # standalone fitness-evaluation and impact/remediation application
+    # services (new files) and their unit + Postgres tests (new files) --
+    # no persistence, no migration, no API, no frontend, no new dependency.
+    # gap_impact_remediation.py and information_element_evidence_availability.py
+    # remain completely untouched and independent.
+    "backend/app/application/source_evidence_fitness_evaluation.py",
+    "backend/app/application/source_evidence_fitness_impact_remediation.py",
+    "backend/app/tests/test_source_evidence_fitness_evaluation.py",
+    "backend/app/tests/test_source_evidence_fitness_evaluation_postgres.py",
+    "backend/app/tests/test_source_evidence_fitness_impact_remediation.py",
+    "backend/app/tests/test_source_evidence_fitness_impact_remediation_postgres.py",
 }
 
 
