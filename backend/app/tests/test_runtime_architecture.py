@@ -546,6 +546,16 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_source_evidence_fitness_evaluation_postgres.py",
     "backend/app/tests/test_source_evidence_fitness_impact_remediation.py",
     "backend/app/tests/test_source_evidence_fitness_impact_remediation_postgres.py",
+    # Gate U companion: Ephemeral Governed What-if Simulation over
+    # Source-Evidence Fitness Impact and Remediation (CDD-032; Gate U
+    # Artifact Authorization v1.0). New, standalone, zero-I/O application
+    # service wrapping Gate T's own unmodified
+    # SourceEvidenceFitnessImpactRemediationApplicationService by call
+    # only -- no persistence, no migration, no API, no frontend, no new
+    # dependency, no MCP. source_evidence_fitness_impact_remediation.py
+    # remains completely untouched and independent.
+    "backend/app/application/what_if_simulation.py",
+    "backend/app/tests/test_what_if_simulation.py",
 }
 
 
