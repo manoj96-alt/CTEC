@@ -134,7 +134,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-030 Governed Outbound MCP Client and Connector Capability Boundary | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-030-Governed-Outbound-MCP-Client-and-Connector-Capability-Boundary.md) · [Artifact authorization](../docs/cdd/CDD-030-Governed-Outbound-MCP-Client-and-Connector-Capability-Boundary-Artifact-Authorization.md) |
 | CDD-031 Governed Source-Evidence Fitness Evaluation and Ontology Impact | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact.md) · [Artifact authorization](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact-Artifact-Authorization.md) |
 | CDD-032 Governed Ephemeral What-if Simulation over Source-Evidence Fitness Impact and Remediation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-032-Governed-Ephemeral-What-if-Simulation-over-Source-Evidence-Fitness-Impact-and-Remediation.md) · [Artifact authorization](../docs/cdd/CDD-032-Governed-Ephemeral-What-if-Simulation-over-Source-Evidence-Fitness-Impact-and-Remediation-Artifact-Authorization.md) |
-| CDD-033 Enterprise UX / Governed Product Experience (Gate X v1) | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-033-Enterprise-UX-Governed-Product-Experience.md) |
+| CDD-033 Enterprise UX / Governed Product Experience (Gate X v1) | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-033-Enterprise-UX-Governed-Product-Experience.md) · [Artifact authorization](../docs/cdd/CDD-033-Enterprise-UX-Governed-Product-Experience-Artifact-Authorization.md) |
 
 ## Historical review artifacts
 
