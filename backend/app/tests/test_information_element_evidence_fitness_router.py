@@ -314,6 +314,15 @@ def test_empty_blueprint_name_is_rejected_with_422() -> None:
 
 
 def test_router_exposes_exactly_the_frozen_endpoint_path() -> None:
-    app = create_app()
-    paths = {route.path for route in app.routes}  # type: ignore[attr-defined]
-    assert "/api/v1/information-element-evidence-fitness/resolve" in paths
+    # Proven through TestClient dispatch (real ASGI routing), not by
+    # inspecting `app.routes` internals -- FastAPI/Starlette's route-object
+    # shape underneath `app.routes` differs across versions within this
+    # repository's own pinned range, so introspecting it directly is
+    # brittle. A non-404 response at the exact literal path is sufficient
+    # proof the route exists there.
+    client = _client(_container(audit=Audit()), FakeService(), _principal(scopes=(_SCOPE,)))
+    response = client.post(_ENDPOINT, json=_VALID_BODY)
+    assert response.status_code != 404
+
+    unrelated = client.post("/api/v1/information-element-evidence-fitness/nonexistent")
+    assert unrelated.status_code == 404
