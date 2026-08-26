@@ -14,13 +14,17 @@ describe("SiteShell", () => {
     expect(
       screen.getByRole("navigation", { name: "Primary" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Secondary" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
       "href",
       "/",
     );
-    expect(
-      screen.getByRole("link", { name: "Supplier Risk Workspace" }),
-    ).toHaveAttribute("href", "/supplier-risk");
+    expect(screen.getByRole("link", { name: "Intelligence" })).toHaveAttribute(
+      "href",
+      "/intelligence",
+    );
     expect(screen.getByRole("link", { name: "Architecture" })).toHaveAttribute(
       "href",
       "/architecture",
