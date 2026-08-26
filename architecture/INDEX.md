@@ -135,7 +135,7 @@ CDD gate state is distinct from architecture-artifact lifecycle status.
 | CDD-031 Governed Source-Evidence Fitness Evaluation and Ontology Impact | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact.md) · [Artifact authorization](../docs/cdd/CDD-031-Governed-Source-Evidence-Fitness-Evaluation-and-Ontology-Impact-Artifact-Authorization.md) · [Evidence Fitness Exposure clarification](../docs/cdd/CDD-031-Evidence-Fitness-Exposure-Clarification-and-Remediation-Report.md) |
 | CDD-032 Governed Ephemeral What-if Simulation over Source-Evidence Fitness Impact and Remediation | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-032-Governed-Ephemeral-What-if-Simulation-over-Source-Evidence-Fitness-Impact-and-Remediation.md) · [Artifact authorization](../docs/cdd/CDD-032-Governed-Ephemeral-What-if-Simulation-over-Source-Evidence-Fitness-Impact-and-Remediation-Artifact-Authorization.md) |
 | CDD-033 Enterprise UX / Governed Product Experience (Gate X v1) | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-033-Enterprise-UX-Governed-Product-Experience.md) · [Artifact authorization](../docs/cdd/CDD-033-Enterprise-UX-Governed-Product-Experience-Artifact-Authorization.md) |
-| CDD-034 Governed Evidence Fitness Exposure | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-034-Governed-Evidence-Fitness-Exposure.md) |
+| CDD-034 Governed Evidence Fitness Exposure | 1.0 | FROZEN | NOT STARTED | [Work order](../docs/cdd/CDD-034-Governed-Evidence-Fitness-Exposure.md) · [Artifact authorization](../docs/cdd/CDD-034-Governed-Evidence-Fitness-Exposure-Artifact-Authorization.md) |
 
 ## Historical review artifacts
 
