@@ -30,7 +30,8 @@
         "ontology-copilot:ask",
         "supply-chain-impact:read",
         "supply-chain-impact:evaluate",
-        "information-element-evidence-fitness:read"
+        "information-element-evidence-fitness:read",
+        "information-element-context:read"
       ],
       "optionalClientScopes": [
         "supplier-risk:submit",
@@ -209,6 +210,15 @@
       "name": "information-element-evidence-fitness:read",
       "protocol": "openid-connect",
       "description": "CDD-034 canonical scope -- Governed Evidence Fitness Exposure read access.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "information-element-context:read",
+      "protocol": "openid-connect",
+      "description": "CDD-029 canonical scope -- Governed Blueprint Information-Element Context-as-a-Service read access.",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"

@@ -304,3 +304,21 @@ def test_unexpected_extra_field_is_rejected_by_the_closed_schema() -> None:
         json={**_VALID_BODY, "unexpected_field": "value"},
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Keycloak configuration (POST-U/X-DEBT-6; CDD-029 Keycloak Scope Defect
+# Authorization). Mirrors test_gate_f_api_security.py's own structural
+# realm-parsing pattern, scoped to this router's own frozen scope literal.
+# ---------------------------------------------------------------------------
+
+
+def test_keycloak_demo_persona_has_information_element_context_scope() -> None:
+    import json
+    from pathlib import Path
+
+    realm = json.loads((Path(__file__).parents[3] / "keycloak" / "ctec-realm.json").read_text())
+    default_scopes = realm["clients"][0]["defaultClientScopes"]
+    assert "information-element-context:read" in default_scopes
+    scope_names = {block["name"] for block in realm["clientScopes"]}
+    assert "information-element-context:read" in scope_names
