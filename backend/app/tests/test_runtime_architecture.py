@@ -556,6 +556,22 @@ AUTHORIZED_CHANGED_PATHS = {
     # remains completely untouched and independent.
     "backend/app/application/what_if_simulation.py",
     "backend/app/tests/test_what_if_simulation.py",
+    # CDD-034: Governed Evidence Fitness Exposure (CDD-031 Evidence Fitness
+    # Exposure Clarification and Remediation Report; CDD-034 Artifact
+    # Authorization v1.0). New, standalone, thin composition/exposure
+    # application service and API package exposing Gate T's own unmodified
+    # SourceEvidenceFitnessEvaluationApplicationService by call only, via
+    # Gate I/H4 composition -- no persistence, no migration, no frontend, no
+    # dependency_container.py change, no new dependency. Gate O, Gate I, H4,
+    # and Gate T remain completely untouched and independent.
+    "backend/app/application/information_element_evidence_fitness_resolution.py",
+    "backend/app/api/information_element_evidence_fitness/__init__.py",
+    "backend/app/api/information_element_evidence_fitness/router.py",
+    "backend/app/api/information_element_evidence_fitness/schemas.py",
+    "backend/app/api/information_element_evidence_fitness/dependencies.py",
+    "backend/app/tests/test_information_element_evidence_fitness_resolution.py",
+    "backend/app/tests/test_information_element_evidence_fitness_resolution_postgres.py",
+    "backend/app/tests/test_information_element_evidence_fitness_router.py",
 }
 
 
