@@ -2,13 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/design-system/page-header";
-import { browserAuthConfig } from "@/lib/auth/config";
 
 // ADMINISTRATION boundary (CDD-033 §24): "System Health" presents only the
 // existing, unmodified `GET /health` liveness signal, honestly labeled as
 // basic liveness (not per-service/connector health detail, which does not
 // exist). "Users & Access" does not appear -- no CTEC-owned user/role API
 // exists; identity is fully delegated to the OIDC provider.
+//
+// X-PR5-D2: reads NEXT_PUBLIC_CTEC_API_ORIGIN directly rather than
+// browserAuthConfig() -- /health is genuinely unauthenticated (matching
+// the existing ontology-studio/api-client.ts precedent for unauthenticated
+// endpoints), so this page must not fail merely because an unrelated OIDC
+// config value is absent.
+function apiOrigin(): string {
+  return process.env.NEXT_PUBLIC_CTEC_API_ORIGIN ?? "";
+}
 type HealthState =
   | { status: "loading" }
   | { status: "healthy" }
@@ -19,7 +27,7 @@ export default function Page() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${browserAuthConfig().apiOrigin}/health`, {
+    fetch(`${apiOrigin()}/health`, {
       signal: controller.signal,
       cache: "no-store",
     })
