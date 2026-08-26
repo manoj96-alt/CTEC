@@ -29,7 +29,8 @@
         "entity-resolution:read",
         "ontology-copilot:ask",
         "supply-chain-impact:read",
-        "supply-chain-impact:evaluate"
+        "supply-chain-impact:evaluate",
+        "information-element-evidence-fitness:read"
       ],
       "optionalClientScopes": [
         "supplier-risk:submit",
@@ -199,6 +200,15 @@
       "name": "supply-chain-impact:evaluate",
       "protocol": "openid-connect",
       "description": "PAD-003 SS2b canonical scope -- Gate F governed evaluation (granted to the primary demo persona, PAD-003 SS9 F5.1 correction; not approval or execution authority).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "information-element-evidence-fitness:read",
+      "protocol": "openid-connect",
+      "description": "CDD-034 canonical scope -- Governed Evidence Fitness Exposure read access.",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
