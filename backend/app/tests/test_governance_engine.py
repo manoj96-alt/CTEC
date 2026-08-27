@@ -385,5 +385,5 @@ def test_governance_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'governance_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0018_gate_s_approval"
+    assert revision == "0019_gate_v_agent_resolution"
     assert trigger_count == 1

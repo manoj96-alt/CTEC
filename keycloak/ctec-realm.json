@@ -44,7 +44,8 @@
         "ontology-modeling:publish",
         "tool-execution:execute",
         "governed-approval:request",
-        "governed-approval:decide"
+        "governed-approval:decide",
+        "governed-agent:propose"
       ]
     }
   ],
@@ -289,6 +290,15 @@
       "name": "governed-approval:decide",
       "protocol": "openid-connect",
       "description": "CDD-036 canonical scope -- Governed Human Approval decide (approve/reject) authority (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "governed-agent:propose",
+      "protocol": "openid-connect",
+      "description": "CDD-037 canonical scope -- Governed Agent Resolution proposal authority (not granted to the primary demo persona).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"

@@ -609,6 +609,26 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_gate_s_approval_postgres.py",
     "docs/cdd/CDD-036-Governed-Human-Approval.md",
     "docs/cdd/CDD-036-Governed-Human-Approval-Artifact-Authorization.md",
+    # Gate V (CDD-037) v1 implementation: Governed Agent Resolution. No Gate
+    # Q, Gate R, or Gate S file above is touched by Gate V. The mechanical
+    # migration-head consequence in test_decision_engine.py/
+    # test_governance_engine.py/test_knowledge_engine.py/
+    # test_persistence_integration.py needs no new entry here -- each was
+    # already added permanently above by an earlier gate for the identical
+    # reason (every migration bump touches these four).
+    "backend/app/domain/gate_v/__init__.py",
+    "backend/app/domain/gate_v/agent_resolution.py",
+    "backend/app/infrastructure/persistence/models/gate_v_agent_resolution.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0019_gate_v_agent_resolution.py",
+    "backend/app/infrastructure/persistence/gate_v_agent_resolution_repository.py",
+    "backend/app/application/gate_v_agent_service.py",
+    "backend/app/api/gate_v/__init__.py",
+    "backend/app/api/gate_v/dependencies.py",
+    "backend/app/api/gate_v/schemas.py",
+    "backend/app/api/gate_v/router.py",
+    "backend/app/tests/test_gate_v_agent_service.py",
+    "backend/app/tests/test_gate_v_agent_router.py",
+    "backend/app/tests/test_gate_v_agent_postgres.py",
 }
 
 
@@ -797,3 +817,65 @@ def test_gate_s_governed_approval_respects_every_firewall() -> None:
     assert [str(p.relative_to(backend_root)) for p in construction_sites] == [
         "infrastructure/persistence/gate_s_approval_repository.py"
     ], f"GateSGovernedNoteORM constructed outside its single authorized site: {construction_sites}"
+
+
+def test_gate_v_governed_agent_resolution_respects_every_firewall() -> None:
+    """CDD-037 Sec12, Sec20, Sec24-Sec27: Gate V shares no code with Gate Q,
+    Gate R, or the closed six-stage cognitive-engine runtime; consumes Gate
+    S only via `GateSApprovalService.request()` (never `approve()`/
+    `reject()`/`decide()`/`execute()`); and `GateVAgentResolutionORM` is
+    constructed in exactly one location in the entire codebase."""
+    gate_v_paths = (
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "gate_v" / "agent_resolution.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "gate_v_agent_resolution_repository.py",
+        REPOSITORY_ROOT / "backend" / "app" / "application" / "gate_v_agent_service.py",
+        REPOSITORY_ROOT / "backend" / "app" / "api" / "gate_v" / "dependencies.py",
+        REPOSITORY_ROOT / "backend" / "app" / "api" / "gate_v" / "router.py",
+    )
+    forbidden_prefixes = (
+        "app.application.mcp_client",
+        "app.application.mcp_connector_catalog",
+        "app.application.governed_tool_executor",
+        "app.runtime",
+        "app.integration.adapters",
+        "openai",
+        "anthropic",
+        "azure",
+    )
+    forbidden_gate_s_calls = (".approve(", ".reject(", ".decide(", ".execute(")
+    for path in gate_v_paths:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imports = [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        ]
+        imports.extend(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            module.startswith(forbidden_prefixes) for module in imports
+        ), f"{path.name} bypasses a Gate V firewall: {imports}"
+        assert not any(
+            call in source for call in forbidden_gate_s_calls
+        ), f"{path.name} calls a Gate S human-decision/execution method: {source}"
+
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+    construction_sites = [
+        path
+        for path in backend_root.rglob("*.py")
+        if "GateVAgentResolutionORM(" in path.read_text(encoding="utf-8")
+        and path.name not in {"gate_v_agent_resolution.py", "test_runtime_architecture.py"}
+    ]
+    assert [str(p.relative_to(backend_root)) for p in construction_sites] == [
+        "infrastructure/persistence/gate_v_agent_resolution_repository.py"
+    ], f"GateVAgentResolutionORM constructed outside its single authorized site: {construction_sites}"
