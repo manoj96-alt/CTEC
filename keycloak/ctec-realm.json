@@ -42,7 +42,9 @@
         "ontology-modeling:propose",
         "ontology-modeling:approve",
         "ontology-modeling:publish",
-        "tool-execution:execute"
+        "tool-execution:execute",
+        "governed-approval:request",
+        "governed-approval:decide"
       ]
     }
   ],
@@ -269,6 +271,24 @@
       "name": "tool-execution:execute",
       "protocol": "openid-connect",
       "description": "CDD-035 canonical scope -- Governed Tool Execution invocation authority (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "governed-approval:request",
+      "protocol": "openid-connect",
+      "description": "CDD-036 canonical scope -- Governed Human Approval request/execute authority (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "governed-approval:decide",
+      "protocol": "openid-connect",
+      "description": "CDD-036 canonical scope -- Governed Human Approval decide (approve/reject) authority (not granted to the primary demo persona).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"

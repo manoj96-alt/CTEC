@@ -302,5 +302,5 @@ def test_knowledge_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'knowledge_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0017_ontology_change_proposal"
+    assert revision == "0018_gate_s_approval"
     assert trigger_count == 1
