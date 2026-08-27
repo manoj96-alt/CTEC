@@ -102,7 +102,7 @@ def get_proposal(
 ) -> ProposalResponse:
     _authorize_any(
         authenticated,
-        ("ontology-modeling:propose", "ontology-modeling:approve"),
+        ("ontology-modeling:read", "ontology-modeling:propose", "ontology-modeling:approve"),
         dependencies,
         correlation,
     )
@@ -124,7 +124,7 @@ def list_proposals(
 ) -> ProposalListResponse:
     _authorize_any(
         authenticated,
-        ("ontology-modeling:propose", "ontology-modeling:approve"),
+        ("ontology-modeling:read", "ontology-modeling:propose", "ontology-modeling:approve"),
         dependencies,
         correlation,
     )
