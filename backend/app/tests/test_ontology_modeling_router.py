@@ -339,3 +339,32 @@ def test_no_delete_or_patch_endpoint_exists() -> None:
     )
     assert delete_response.status_code == 405
     assert patch_response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Keycloak configuration (GAP-11; CDD-028 Keycloak Scope Defect
+# Authorization). Mirrors test_information_element_context_router.py's own
+# structural realm-parsing pattern, scoped to this router's own three frozen
+# scope literals -- all three are optional, none is default (not granted to
+# the primary demo persona).
+# ---------------------------------------------------------------------------
+
+
+def test_keycloak_gate_m_scopes_are_optional_not_default() -> None:
+    import json
+    from pathlib import Path
+
+    realm = json.loads((Path(__file__).parents[3] / "keycloak" / "ctec-realm.json").read_text())
+    scope_names = {block["name"] for block in realm["clientScopes"]}
+    client = realm["clients"][0]
+    default_scopes = set(client["defaultClientScopes"])
+    optional_scopes = set(client["optionalClientScopes"])
+
+    gate_m_scopes = {
+        "ontology-modeling:propose",
+        "ontology-modeling:approve",
+        "ontology-modeling:publish",
+    }
+    assert gate_m_scopes <= scope_names
+    assert gate_m_scopes <= optional_scopes
+    assert gate_m_scopes.isdisjoint(default_scopes)
