@@ -745,10 +745,15 @@ def test_keycloak_unrelated_scope_assignments_unchanged() -> None:
 
     realm = json.loads((Path(__file__).parents[3] / "keycloak" / "ctec-realm.json").read_text())
     client = realm["clients"][0]
-    assert set(client["optionalClientScopes"]) == {
+    # POST-X-TEST-DEBT-1 (CDD-015 Optional Client Scopes Regression
+    # Assertion Defect Authorization): CDD-015 sec34 only requires that
+    # Gate F's own implementation not alter these existing entries -- it
+    # never froze optionalClientScopes against later, separately-governed
+    # additions. Subset, not exact-equality, is the correct invariant.
+    assert {
         "supplier-risk:submit",
         "supplier-risk:retry",
         "supplier-risk:replay",
         "entity-resolution:decide",
-    }
+    } <= set(client["optionalClientScopes"])
     assert "entity-resolution:decide" not in client["defaultClientScopes"]
