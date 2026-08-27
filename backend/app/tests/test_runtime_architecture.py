@@ -592,6 +592,23 @@ AUTHORIZED_CHANGED_PATHS = {
     # allowlist is touched by Gate R.
     "backend/app/application/governed_tool_executor.py",
     "backend/app/tests/test_governed_tool_executor.py",
+    # Gate S (CDD-036) v1 implementation: Governed Human Approval. No Gate R
+    # file above is touched by Gate S.
+    "backend/app/domain/gate_s/__init__.py",
+    "backend/app/domain/gate_s/approval.py",
+    "backend/app/infrastructure/persistence/models/gate_s_approval.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0018_gate_s_approval.py",
+    "backend/app/infrastructure/persistence/gate_s_approval_repository.py",
+    "backend/app/application/gate_s_approval_service.py",
+    "backend/app/api/gate_s/__init__.py",
+    "backend/app/api/gate_s/dependencies.py",
+    "backend/app/api/gate_s/schemas.py",
+    "backend/app/api/gate_s/router.py",
+    "backend/app/tests/test_gate_s_approval_service.py",
+    "backend/app/tests/test_gate_s_approval_router.py",
+    "backend/app/tests/test_gate_s_approval_postgres.py",
+    "docs/cdd/CDD-036-Governed-Human-Approval.md",
+    "docs/cdd/CDD-036-Governed-Human-Approval-Artifact-Authorization.md",
 }
 
 
@@ -724,3 +741,59 @@ def test_gate_r_governed_tool_executor_respects_every_firewall() -> None:
 
     assert len(GOVERNED_TOOL_REGISTRY) == 1
     assert GOVERNED_TOOL_REGISTRY[0].side_effect_class == "READ_ONLY"
+
+
+def test_gate_s_governed_approval_respects_every_firewall() -> None:
+    """CDD-036 Sec21-Sec22, Sec29, Sec32-Sec33: Gate S shares no code with
+    Gate R, Gate Q, or the closed six-stage cognitive-engine runtime, and
+    `GateSGovernedNoteORM` is constructed in exactly one location in the
+    entire codebase."""
+    gate_s_paths = (
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "gate_s" / "approval.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "gate_s_approval_repository.py",
+        REPOSITORY_ROOT / "backend" / "app" / "application" / "gate_s_approval_service.py",
+        REPOSITORY_ROOT / "backend" / "app" / "api" / "gate_s" / "dependencies.py",
+        REPOSITORY_ROOT / "backend" / "app" / "api" / "gate_s" / "router.py",
+    )
+    forbidden_prefixes = (
+        "app.application.mcp_client",
+        "app.application.mcp_connector_catalog",
+        "app.application.governed_tool_executor",
+        "app.runtime",
+        "app.integration.adapters",
+        "openai",
+        "anthropic",
+        "azure",
+    )
+    for path in gate_s_paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports = [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        ]
+        imports.extend(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            module.startswith(forbidden_prefixes) for module in imports
+        ), f"{path.name} bypasses a Gate S firewall: {imports}"
+
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+    construction_sites = [
+        path
+        for path in backend_root.rglob("*.py")
+        if "GateSGovernedNoteORM(" in path.read_text(encoding="utf-8")
+        and path.name not in {"gate_s_approval.py", "test_runtime_architecture.py"}
+    ]
+    assert [str(p.relative_to(backend_root)) for p in construction_sites] == [
+        "infrastructure/persistence/gate_s_approval_repository.py"
+    ], f"GateSGovernedNoteORM constructed outside its single authorized site: {construction_sites}"

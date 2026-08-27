@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.config.router import router as config_router
 from app.api.entity_resolution.router import router as entity_resolution_router
+from app.api.gate_s.router import router as gate_s_router
 from app.api.health.router import router as health_router
 from app.api.information_element_context.router import router as information_element_context_router
 from app.api.information_element_evidence_fitness.router import (
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(supply_chain_impact_router)
     app.include_router(information_element_context_router)
     app.include_router(information_element_evidence_fitness_router)
+    app.include_router(gate_s_router)
     return app
 
 
