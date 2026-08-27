@@ -307,7 +307,7 @@ def test_raw_input_and_output_are_absent_from_audit(spy_tool: Mock) -> None:
     assert len(repository.events) == 1
     event = repository.events[0]
     assert result.result is not None
-    digest_hex = result.result["digest_hex"]
+    digest_hex = str(result.result["digest_hex"])
     for value in asdict(event).values():
         assert secret_text not in str(value)
         assert digest_hex not in str(value)
