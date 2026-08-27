@@ -683,9 +683,7 @@ def test_gate_r_governed_tool_executor_respects_every_firewall() -> None:
     independent from Gate Q's MCP client/catalog and from the closed
     six-stage cognitive-engine runtime. It introduces no seventh stage and
     depends on no external provider SDK."""
-    module_path = (
-        REPOSITORY_ROOT / "backend" / "app" / "application" / "governed_tool_executor.py"
-    )
+    module_path = REPOSITORY_ROOT / "backend" / "app" / "application" / "governed_tool_executor.py"
     tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
     imports = [
         node.module

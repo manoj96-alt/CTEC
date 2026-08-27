@@ -130,9 +130,7 @@ class GovernedToolExecutor:
     ) -> GovernedToolExecutionResult:
         correlation_id = uuid4()
 
-        tool = next(
-            (entry for entry in GOVERNED_TOOL_REGISTRY if entry.tool_id == tool_id), None
-        )
+        tool = next((entry for entry in GOVERNED_TOOL_REGISTRY if entry.tool_id == tool_id), None)
         if tool is None:
             return self._deny(
                 correlation_id=correlation_id,
@@ -171,7 +169,9 @@ class GovernedToolExecutor:
 
         try:
             output = tool.execution_reference(validated_input)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- CDD-035 Sec19/20: no raw internal
+            # exception may escape; every invocation failure is normalized
+            # to INVOCATION_FAILED regardless of its underlying cause.
             self._record(
                 correlation_id=correlation_id,
                 tool_id=tool_id,
