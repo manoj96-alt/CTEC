@@ -16,16 +16,22 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID, uuid4
 
 from app.api.supplier_risk.authentication import TrustedPrincipal
-from app.infrastructure.persistence.api_security_audit_repository import (
-    ApiSecurityAuditEvent,
-    ApiSecurityAuditRepository,
-)
+from app.infrastructure.persistence.api_security_audit_repository import ApiSecurityAuditEvent
 
 TOOL_EXECUTION_SCOPE = "tool-execution:execute"
+
+
+class AuditRepository(Protocol):
+    """Structural type satisfied by the existing, unmodified
+    `ApiSecurityAuditRepository` (CDD-035 Sec22) -- kept narrow so tests can
+    supply a lightweight fake without depending on a live database
+    session."""
+
+    def append(self, event: ApiSecurityAuditEvent) -> UUID: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +72,7 @@ class GovernedToolDefinition:
     side_effect_class: Literal["READ_ONLY"]
     input_type: type
     output_type: type
-    execution_reference: Callable[[object], object]
+    execution_reference: Callable[..., object]
 
 
 GOVERNED_TOOL_REGISTRY: tuple[GovernedToolDefinition, ...] = (
@@ -118,7 +124,7 @@ class GovernedToolExecutor:
     a field `SecurityAuditService.record` does not expose -- CDD-035 Sec22
     names the repository itself as an equally-authorized reuse target."""
 
-    def __init__(self, audit_repository: ApiSecurityAuditRepository) -> None:
+    def __init__(self, audit_repository: AuditRepository) -> None:
         self._audit_repository = audit_repository
 
     def execute(
@@ -190,7 +196,11 @@ class GovernedToolExecutor:
                 diagnostic_code=GovernedToolExecutionStatus.INVOCATION_FAILED.value,
             )
 
-        result_mapping = asdict(output)
+        # `output` is statically `object` (the registry is generic over
+        # future tools' output types), but every registered tool's
+        # execution_reference is required to return a frozen dataclass
+        # instance matching its declared output_type (CDD-035 Sec9).
+        result_mapping = asdict(output)  # type: ignore[call-overload]
 
         # Fail-closed on audit failure (CDD-035 Sec21): if this raises, it
         # propagates out of execute() -- the caller never receives an
