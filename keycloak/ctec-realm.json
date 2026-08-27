@@ -37,7 +37,10 @@
         "supplier-risk:submit",
         "supplier-risk:retry",
         "supplier-risk:replay",
-        "entity-resolution:decide"
+        "entity-resolution:decide",
+        "ontology-modeling:propose",
+        "ontology-modeling:approve",
+        "ontology-modeling:publish"
       ]
     }
   ],
@@ -174,6 +177,33 @@
       "name": "entity-resolution:decide",
       "protocol": "openid-connect",
       "description": "PAD-002 canonical scope -- Entity Resolution decide (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "ontology-modeling:propose",
+      "protocol": "openid-connect",
+      "description": "CDD-028 canonical scope -- Governed Visual Ontology Modeling propose authority (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "ontology-modeling:approve",
+      "protocol": "openid-connect",
+      "description": "CDD-028 canonical scope -- Governed Visual Ontology Modeling approve/reject authority (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "ontology-modeling:publish",
+      "protocol": "openid-connect",
+      "description": "CDD-028 canonical scope -- Governed Visual Ontology Modeling publish authority (not granted to the primary demo persona).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
