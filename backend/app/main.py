@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.api_versions.router import router as api_versions_router
 from app.api.config.router import router as config_router
 from app.api.entity_resolution.router import router as entity_resolution_router
 from app.api.gate_s.router import router as gate_s_router
@@ -128,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=API_PREFIX)
     app.include_router(config_router, prefix=API_PREFIX)
     app.include_router(version_router, prefix=API_PREFIX)
+    app.include_router(api_versions_router, prefix=API_PREFIX)
     app.include_router(supplier_risk_router)
     app.include_router(ontology_router)
     app.include_router(entity_resolution_router)
