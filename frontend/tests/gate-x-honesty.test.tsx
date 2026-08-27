@@ -136,15 +136,26 @@ describe("Gate X honesty", () => {
     }
   });
 
-  it("Evidence Fitness never renders a live query result or execution action", () => {
+  // The prior invariant here ("never renders a live query result or
+  // execution action") was narrowly superseded by the merged CDD-034
+  // Evidence Fitness Frontend Exposure Authorization, which explicitly
+  // authorizes exactly one live "Check Evidence Fitness" consumer action.
+  // This assertion protects the surviving honesty boundary: the page is a
+  // pure consumer of the governed backend result, it fabricates nothing
+  // before a real response arrives, and it claims no capability beyond
+  // Evidence Fitness itself.
+  it("Evidence Fitness exposes only the authorized live consumer action and claims no unauthorized capability", () => {
     render(<EvidenceFitnessPage />);
     expect(
-      screen.getByText(/not available in this workspace/i),
+      screen.getByRole("button", { name: /Check Evidence Fitness/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    for (const forbidden of ["Run", "Evaluate", "Refresh"]) {
-      expect(screen.queryByText(forbidden)).not.toBeInTheDocument();
-    }
+    expect(screen.queryByText("Governed result")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/is not part of, and does not imply/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/[Ss]imulation/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/remediat/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/autonomous/i)).not.toBeInTheDocument();
   });
 
   it("Simulation always displays the required non-authority marker set and no execution control", () => {
