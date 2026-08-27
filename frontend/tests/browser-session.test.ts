@@ -37,12 +37,15 @@ test("canonical default scope is exactly the least-privilege demo-persona set pl
   const config = browserAuthConfig();
 
   expect(config.scope).toBe(
-    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask",
+    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read",
   );
   expect(config.scope).not.toContain("entity-resolution:decide");
   expect(config.scope).not.toContain("supplier-risk:submit");
   expect(config.scope).not.toContain("supplier-risk:retry");
   expect(config.scope).not.toContain("supplier-risk:replay");
+  expect(config.scope).not.toContain("ontology-modeling:propose");
+  expect(config.scope).not.toContain("ontology-modeling:approve");
+  expect(config.scope).not.toContain("ontology-modeling:publish");
 });
 
 test("an empty-string NEXT_PUBLIC_OIDC_SCOPE (e.g. an unset Docker build arg passed through) falls back to the canonical default, not an empty scope", () => {
@@ -58,7 +61,7 @@ test("an empty-string NEXT_PUBLIC_OIDC_SCOPE (e.g. an unset Docker build arg pas
   const config = browserAuthConfig();
 
   expect(config.scope).toBe(
-    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask",
+    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read",
   );
 });
 

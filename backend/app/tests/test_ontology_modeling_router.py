@@ -268,6 +268,121 @@ def test_get_unknown_proposal_returns_404() -> None:
 
 
 # ---------------------------------------------------------------------------
+# GAP-11-FOLLOWUP-1 (Ontology-Modeling Read Authority Artifact Authorization
+# Amendment): ontology-modeling:read is non-consequential read/list/get
+# authority only. It is sufficient for GET/list, backward compatibility
+# with :propose/:approve holders is preserved, and :read alone can never
+# propose, approve, reject, or publish.
+# ---------------------------------------------------------------------------
+
+
+def test_read_scope_is_sufficient_for_get_and_list() -> None:
+    proposal = _proposal()
+    repository = FakeRepository(proposal=proposal)
+    client = _client(
+        _container(audit=Audit()),
+        FakeService(),
+        repository,
+        _principal(scopes=("ontology-modeling:read",)),
+    )
+    response = client.get(
+        f"/api/v1/ontology-modeling/proposals/{proposal.ontology_change_proposal_id.value}"
+    )
+    assert response.status_code == 200
+    list_response = client.get("/api/v1/ontology-modeling/proposals")
+    assert list_response.status_code == 200
+    assert len(list_response.json()["proposals"]) == 1
+
+
+def test_propose_scope_alone_still_grants_get_and_list() -> None:
+    """Backward compatibility: existing :propose holders retain GET/list
+    access exactly as before, unaffected by the new :read scope."""
+    proposal = _proposal()
+    repository = FakeRepository(proposal=proposal)
+    client = _client(
+        _container(audit=Audit()),
+        FakeService(),
+        repository,
+        _principal(scopes=("ontology-modeling:propose",)),
+    )
+    response = client.get(
+        f"/api/v1/ontology-modeling/proposals/{proposal.ontology_change_proposal_id.value}"
+    )
+    assert response.status_code == 200
+    list_response = client.get("/api/v1/ontology-modeling/proposals")
+    assert list_response.status_code == 200
+
+
+def test_read_scope_alone_cannot_propose() -> None:
+    service = FakeService()
+    client = _client(
+        _container(audit=Audit()),
+        service,
+        FakeRepository(),
+        _principal(scopes=("ontology-modeling:read",)),
+    )
+    response = client.post(
+        "/api/v1/ontology-modeling/proposals",
+        json={"proposal_kind": "CreateConcept", "entity_type_name": "Warehouse"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
+    assert service.calls == []
+
+
+def test_read_scope_alone_cannot_approve() -> None:
+    proposal = _proposal()
+    service = FakeService(result=proposal)
+    client = _client(
+        _container(audit=Audit()),
+        service,
+        FakeRepository(proposal=proposal),
+        _principal(scopes=("ontology-modeling:read",)),
+    )
+    response = client.post(
+        f"/api/v1/ontology-modeling/proposals/{proposal.ontology_change_proposal_id.value}/approve"
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
+    assert service.calls == []
+
+
+def test_read_scope_alone_cannot_reject() -> None:
+    proposal = _proposal()
+    service = FakeService(result=proposal)
+    client = _client(
+        _container(audit=Audit()),
+        service,
+        FakeRepository(proposal=proposal),
+        _principal(scopes=("ontology-modeling:read",)),
+    )
+    response = client.post(
+        f"/api/v1/ontology-modeling/proposals/{proposal.ontology_change_proposal_id.value}/reject",
+        json={"rejection_reason": None},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
+    assert service.calls == []
+
+
+def test_read_scope_alone_cannot_publish() -> None:
+    proposal = _proposal(status=ProposalStatus.APPROVED)
+    service = FakeService(result=proposal)
+    client = _client(
+        _container(audit=Audit()),
+        service,
+        FakeRepository(proposal=proposal),
+        _principal(scopes=("ontology-modeling:read",)),
+    )
+    response = client.post(
+        f"/api/v1/ontology-modeling/proposals/{proposal.ontology_change_proposal_id.value}/publish"
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
+    assert service.calls == []
+
+
+# ---------------------------------------------------------------------------
 # Validation / invalid-transition surfacing.
 # ---------------------------------------------------------------------------
 
@@ -368,3 +483,34 @@ def test_keycloak_gate_m_scopes_are_optional_not_default() -> None:
     assert gate_m_scopes <= scope_names
     assert gate_m_scopes <= optional_scopes
     assert gate_m_scopes.isdisjoint(default_scopes)
+
+
+# ---------------------------------------------------------------------------
+# GAP-11-FOLLOWUP-1 (Ontology-Modeling Read Authority Artifact Authorization
+# Amendment): ontology-modeling:read is non-consequential and default-granted
+# -- the opposite classification from the three scopes above, which remain
+# unaffected by this addition.
+# ---------------------------------------------------------------------------
+
+
+def test_keycloak_gate_m_read_scope_is_default_not_optional() -> None:
+    import json
+    from pathlib import Path
+
+    realm = json.loads((Path(__file__).parents[3] / "keycloak" / "ctec-realm.json").read_text())
+    scope_names = [block["name"] for block in realm["clientScopes"]]
+    client = realm["clients"][0]
+    default_scopes = client["defaultClientScopes"]
+    optional_scopes = client["optionalClientScopes"]
+
+    assert scope_names.count("ontology-modeling:read") == 1
+    assert default_scopes.count("ontology-modeling:read") == 1
+    assert optional_scopes.count("ontology-modeling:read") == 0
+
+    gate_m_write_scopes = {
+        "ontology-modeling:propose",
+        "ontology-modeling:approve",
+        "ontology-modeling:publish",
+    }
+    assert gate_m_write_scopes <= set(optional_scopes)
+    assert gate_m_write_scopes.isdisjoint(set(default_scopes))
