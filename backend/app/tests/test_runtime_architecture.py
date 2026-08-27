@@ -572,6 +572,21 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_information_element_evidence_fitness_resolution.py",
     "backend/app/tests/test_information_element_evidence_fitness_resolution_postgres.py",
     "backend/app/tests/test_information_element_evidence_fitness_router.py",
+    # GAP-8 companion: Evidence Fitness Frontend Exposure Authorization
+    # (CDD-034 Evidence Fitness Frontend Exposure Authorization §11). Pure
+    # frontend consumption of the existing, unmodified CDD-034 resolve
+    # endpoint -- new API client and contracts (new files), the existing
+    # disconnected page rewritten to a live interaction, and its test (new
+    # file). No backend production file, no Keycloak file, no migration.
+    "frontend/lib/evidence-fitness/api-client.ts",
+    "frontend/lib/evidence-fitness/contracts.ts",
+    "frontend/app/quality/evidence-fitness/page.tsx",
+    "frontend/tests/evidence-fitness-workspace.test.tsx",
+    # GAP-8 R5-A Product Owner sixth-file amendment: reconciling the
+    # pre-existing Gate X honesty assertion with the already-approved
+    # CDD-034 Evidence Fitness Frontend Exposure Authorization's live
+    # consumer contract. No other Gate X honesty assertion is touched.
+    "frontend/tests/gate-x-honesty.test.tsx",
 }
 
 
