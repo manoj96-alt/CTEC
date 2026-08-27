@@ -587,6 +587,11 @@ AUTHORIZED_CHANGED_PATHS = {
     # CDD-034 Evidence Fitness Frontend Exposure Authorization's live
     # consumer contract. No other Gate X honesty assertion is touched.
     "frontend/tests/gate-x-honesty.test.tsx",
+    # Gate R (CDD-035) v1 implementation: the GovernedToolExecutor
+    # application module and its focused test file. No other file in this
+    # allowlist is touched by Gate R.
+    "backend/app/application/governed_tool_executor.py",
+    "backend/app/tests/test_governed_tool_executor.py",
 }
 
 
@@ -671,3 +676,51 @@ def test_runtime_package_contains_only_authorized_top_level_files() -> None:
         "orchestration.py",
         "recovery.py",
     }
+
+
+def test_gate_r_governed_tool_executor_respects_every_firewall() -> None:
+    """CDD-035 Sec29, Sec30: Gate R (Governed Tool Execution) is structurally
+    independent from Gate Q's MCP client/catalog and from the closed
+    six-stage cognitive-engine runtime. It introduces no seventh stage and
+    depends on no external provider SDK."""
+    module_path = REPOSITORY_ROOT / "backend" / "app" / "application" / "governed_tool_executor.py"
+    tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+    imports = [
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    ]
+    imports.extend(
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+
+    # `app.api.supplier_risk.authentication` (TrustedPrincipal) is the sole
+    # authorized exception (CDD-035 Sec11, Artifact Authorization Sec6) --
+    # no other `app.api.*` module (no router, no new API surface) may be
+    # imported.
+    forbidden_prefixes = (
+        "app.application.mcp_client",
+        "app.application.mcp_connector_catalog",
+        "app.runtime",
+        "app.integration.adapters",
+        "openai",
+        "anthropic",
+        "azure",
+    )
+    assert not any(
+        module.startswith(forbidden_prefixes) for module in imports
+    ), f"governed_tool_executor.py bypasses a Gate R firewall: {imports}"
+    assert all(
+        not module.startswith("app.api") or module == "app.api.supplier_risk.authentication"
+        for module in imports
+    ), f"governed_tool_executor.py imports an unauthorized API module: {imports}"
+
+    assert STAGES == ("ERM", "SRM", "ASM", "KRM", "DRM", "GRM")
+
+    from app.application.governed_tool_executor import GOVERNED_TOOL_REGISTRY
+
+    assert len(GOVERNED_TOOL_REGISTRY) == 1
+    assert GOVERNED_TOOL_REGISTRY[0].side_effect_class == "READ_ONLY"

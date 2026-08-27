@@ -41,7 +41,8 @@
         "entity-resolution:decide",
         "ontology-modeling:propose",
         "ontology-modeling:approve",
-        "ontology-modeling:publish"
+        "ontology-modeling:publish",
+        "tool-execution:execute"
       ]
     }
   ],
@@ -259,6 +260,15 @@
       "name": "ontology-modeling:read",
       "protocol": "openid-connect",
       "description": "CDD-028 canonical scope -- Governed Visual Ontology Modeling read/list/view authority (non-consequential; granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "tool-execution:execute",
+      "protocol": "openid-connect",
+      "description": "CDD-035 canonical scope -- Governed Tool Execution invocation authority (not granted to the primary demo persona).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
