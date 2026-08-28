@@ -635,6 +635,29 @@ AUTHORIZED_CHANGED_PATHS = {
     # Authorization Sec4).
     "backend/app/api/api_versions/router.py",
     "backend/app/tests/test_api_versions.py",
+    # OQI1 (CDD-039) implementation: Ontology Quality Intelligence
+    # Deterministic Foundation. No API, no frontend, no Keycloak change --
+    # OQI1 introduces no route of any kind (CDD-039 §8; OQI1 Artifact
+    # Authorization §7). The mechanical migration-head consequence in
+    # test_decision_engine.py/test_governance_engine.py/
+    # test_knowledge_engine.py/test_persistence_integration.py needs no new
+    # entry here for the same reason noted above.
+    "backend/app/domain/oqi/__init__.py",
+    "backend/app/domain/oqi/quality_rule.py",
+    "backend/app/domain/oqi/evaluation.py",
+    "backend/app/domain/oqi/finding.py",
+    "backend/app/infrastructure/persistence/models/oqi_quality_rule.py",
+    "backend/app/infrastructure/persistence/models/oqi_quality_evaluation.py",
+    "backend/app/infrastructure/persistence/models/oqi_quality_finding.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0020_oqi1_quality_foundation.py",
+    "backend/app/infrastructure/persistence/oqi_quality_rule_repository.py",
+    "backend/app/infrastructure/persistence/oqi_quality_evaluation_repository.py",
+    "backend/app/application/oqi_quality_evaluation_service.py",
+    "backend/app/tests/test_oqi_quality_rule_domain.py",
+    "backend/app/tests/test_oqi_quality_evaluation_domain.py",
+    "backend/app/tests/test_oqi_quality_evaluation_service.py",
+    "backend/app/tests/test_oqi_quality_postgres.py",
+    "backend/app/tests/test_oqi_provenance.py",
 }
 
 
@@ -885,3 +908,106 @@ def test_gate_v_governed_agent_resolution_respects_every_firewall() -> None:
     assert [str(p.relative_to(backend_root)) for p in construction_sites] == [
         "infrastructure/persistence/gate_v_agent_resolution_repository.py"
     ], f"GateVAgentResolutionORM constructed outside its single authorized site: {construction_sites}"
+
+
+def test_oqi1_quality_foundation_respects_every_firewall() -> None:
+    """CDD-039 §7-§8, §37-§39; OQI1 Artifact Authorization §4, §6-§7, §11:
+    OQI1 shares no code with Gate T, Entity Resolution, Gate S, or Gate V;
+    introduces no API route (no OQI file is registered in `main.py`,
+    already proven by `test_changed_files_match_cdd_010_and_cdd_012_
+    exhaustive_allowlists` since `backend/app/main.py` is absent from
+    `AUTHORIZED_CHANGED_PATHS`'s OQI1 entries); and `QualityRuleORM`,
+    `QualityEvaluationORM`, `QualityEvaluationEvidenceORM`, and
+    `QualityFindingORM` are each constructed in exactly one authorized
+    repository file."""
+    oqi_paths = (
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi" / "quality_rule.py",
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi" / "evaluation.py",
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi" / "finding.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "oqi_quality_rule_repository.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "oqi_quality_evaluation_repository.py",
+        REPOSITORY_ROOT / "backend" / "app" / "application" / "oqi_quality_evaluation_service.py",
+    )
+    forbidden_prefixes = (
+        "app.domain.gate_s",
+        "app.application.gate_s_approval_service",
+        "app.domain.gate_v",
+        "app.application.gate_v_agent_service",
+        "app.domain.identity_resolution",
+        "app.api",
+        "app.runtime",
+        "app.integration.adapters",
+        "openai",
+        "anthropic",
+        "azure",
+    )
+    forbidden_substrings = ("evidence_fitness", "gate_t")
+    for path in oqi_paths:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imports = [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        ]
+        imports.extend(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            module.startswith(forbidden_prefixes) for module in imports
+        ), f"{path.name} bypasses an OQI1 firewall: {imports}"
+        assert not any(
+            fragment in module.lower() for module in imports for fragment in forbidden_substrings
+        ), f"{path.name} imports a Gate T-shaped module: {imports}"
+
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_quality_rule.py",
+                "oqi_quality_evaluation.py",
+                "oqi_quality_finding.py",
+                "test_runtime_architecture.py",
+                # test_oqi_quality_postgres.py deliberately constructs a raw
+                # QualityRuleORM row, bypassing the repository, in exactly
+                # one test proving the database-level partial unique index
+                # (one ACTIVE version per condition) rejects it even when
+                # the application layer is bypassed -- the same established
+                # pattern as test_field_value_evidence_persistence_postgres.py's
+                # own direct FieldValueEvidenceORM construction for its
+                # identity-conflict test.
+                "test_oqi_quality_postgres.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("QualityRuleORM") == [
+        "infrastructure/persistence/oqi_quality_rule_repository.py"
+    ], "QualityRuleORM constructed outside its single authorized site"
+    assert _construction_sites("QualityEvaluationORM") == [
+        "infrastructure/persistence/oqi_quality_evaluation_repository.py"
+    ], "QualityEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("QualityEvaluationEvidenceORM") == [
+        "infrastructure/persistence/oqi_quality_evaluation_repository.py"
+    ], "QualityEvaluationEvidenceORM constructed outside its single authorized site"
+    assert _construction_sites("QualityFindingORM") == [
+        "infrastructure/persistence/oqi_quality_evaluation_repository.py"
+    ], "QualityFindingORM constructed outside its single authorized site"

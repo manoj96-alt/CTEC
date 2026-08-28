@@ -92,7 +92,7 @@ def test_migration_head_and_down_revision(migrated_engine: Engine) -> None:
         from sqlalchemy import text
 
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0019_gate_v_agent_resolution"
+    assert revision == "0020_oqi1_quality_foundation"
 
 
 def test_proposed_resolution_creates_genuine_gate_s_approval_request(
