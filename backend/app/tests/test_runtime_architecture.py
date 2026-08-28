@@ -1141,6 +1141,9 @@ def test_oqi2_cross_source_consistency_respects_every_firewall() -> None:
     assert _construction_sites("QualityComparisonEvaluationEvidenceORM") == [
         "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
     ], "QualityComparisonEvaluationEvidenceORM constructed outside its single authorized site"
+    assert _construction_sites("QualityComparisonEvaluationObservationORM") == [
+        "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
+    ], "QualityComparisonEvaluationObservationORM constructed outside its single authorized site"
     assert _construction_sites("QualityComparisonFindingORM") == [
         "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
     ], "QualityComparisonFindingORM constructed outside its single authorized site"

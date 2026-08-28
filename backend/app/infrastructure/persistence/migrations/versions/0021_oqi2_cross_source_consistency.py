@@ -1,17 +1,27 @@
 """Create OQI2 cross-source Multi-Source Quality Intelligence persistence
 (CDD-040 §49, §52-§53; CDD-040 Artifact Authorization §7; CDD-022
-Artifact Authorization OQI2 Evidence Composite Uniqueness Amendment).
+Artifact Authorization OQI2 Evidence Composite Uniqueness Amendment;
+N-Source Finding Representation Amendment §9-10 and its Artifact
+Authorization Amendment §6-7).
 
-Six new tables: `comparison_subject_correspondences`,
+Seven new tables: `comparison_subject_correspondences`,
 `comparison_subject_correspondence_members`, `quality_comparison_evaluations`,
 `quality_comparison_evaluation_participants`,
-`quality_comparison_evaluation_evidence`, `quality_comparison_findings`.
+`quality_comparison_evaluation_evidence`, `quality_comparison_findings`,
+`quality_comparison_evaluation_observations`.
 
 One additive, non-destructive constraint on the existing CDD-022-governed
 `field_value_evidence` table: `UNIQUE(field_value_evidence_id,
 source_field_id)` -- no column added, no data mutated, no backfill;
 authorized by the separate CDD-022 companion amendment, not by CDD-040
-alone. No other existing table is altered."""
+alone. No other existing table is altered.
+
+`quality_comparison_findings` carries no `finding_type` column -- that
+single-valued classification was replaced, before this PR merged, by the
+plural `quality_comparison_evaluation_observations` model (N-Source Finding
+Representation Amendment). This migration is amended in place rather than
+superseded, since PR #166 was never merged and nothing external depends on
+its prior shape (Artifact Authorization Amendment §7)."""
 
 from collections.abc import Sequence
 
@@ -222,7 +232,6 @@ def upgrade() -> None:
         sa.Column("quality_condition_id", sa.String(200), nullable=False),
         sa.Column("subject_type", sa.String(32), nullable=False),
         sa.Column("comparison_subject_id", sa.Uuid(), nullable=False),
-        sa.Column("finding_type", sa.String(64), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("state_revision", sa.Integer(), nullable=False),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
@@ -247,8 +256,33 @@ def upgrade() -> None:
         "idx_quality_comparison_findings_status", "quality_comparison_findings", ["status"]
     )
 
+    op.create_table(
+        "quality_comparison_evaluation_observations",
+        sa.Column(
+            "evaluation_id",
+            sa.Uuid(),
+            sa.ForeignKey(
+                "quality_comparison_evaluations.evaluation_id",
+                name="fk_comparison_eval_observations_evaluation_id",
+            ),
+            primary_key=True,
+        ),
+        sa.Column("observation_type", sa.String(64), primary_key=True),
+        sa.Column("participant_role", sa.String(64), primary_key=True),
+        sa.ForeignKeyConstraint(
+            ["evaluation_id", "participant_role"],
+            [
+                "quality_comparison_evaluation_participants.evaluation_id",
+                "quality_comparison_evaluation_participants.participant_role",
+            ],
+            name="fk_comparison_eval_observations_participant",
+        ),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("quality_comparison_evaluation_observations")
+
     op.drop_index(
         "idx_quality_comparison_findings_status", table_name="quality_comparison_findings"
     )

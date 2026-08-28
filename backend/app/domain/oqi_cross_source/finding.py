@@ -1,14 +1,18 @@
 """OQI2 `QualityComparisonFinding` -- the current-state truth for one
 governed cross-source quality condition on one governed comparison subject
-(CDD-040 §31-§33). Mechanically reproduces OQI1's exact six-row transition
-table (`app.domain.oqi.finding.apply_transition`) rather than reusing it
+(CDD-040 §31-§33; N-Source Finding Representation Amendment §2, §7, §14).
+Mechanically reproduces OQI1's exact six-row transition table
+(`app.domain.oqi.finding.apply_transition`) rather than reusing it
 directly, since the subject shape differs (`comparison_subject_id` vs.
 `EvaluationSubject`) -- but semantically identical counter/status
 discipline throughout. Additionally threads `latest_evaluation_id` on every
-transition (CDD-040 §52, §61), and updates `finding_type` only on
-transitions that touch VIOLATED (a cross-source Finding's violation reason
-can change between conflict and missingness across evaluations, unlike
-OQI1's fixed per-rule finding_type)."""
+transition (CDD-040 §52, §61). A cross-source Finding owns only the
+continuing OPEN/RESOLVED condition-state lineage -- it does NOT own a
+single failure classification; that decomposed, possibly-plural fact now
+lives on the Finding's `latest_evaluation_id`'s own
+`ComparisonObservation` rows (amendment §2), decoupled from Finding
+lifecycle (amendment §14): observation composition may freely change
+while a Finding remains OPEN."""
 
 from __future__ import annotations
 
@@ -18,7 +22,6 @@ from uuid import UUID
 
 from app.domain.oqi.evaluation import EvaluationOutcome
 from app.domain.oqi.finding import QualityFindingStatus
-from app.domain.oqi.quality_rule import QualityFindingType
 from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
 from app.domain.shared.exceptions import ValidationException
 
@@ -31,7 +34,6 @@ class QualityComparisonFinding:
     tenant_id: str
     quality_condition_id: str
     comparison_subject_id: UUID
-    finding_type: QualityFindingType
     status: QualityFindingStatus
     state_revision: int
     first_seen_at: datetime
@@ -52,8 +54,6 @@ class QualityComparisonFinding:
             raise ValidationException("quality_condition_id must be non-empty bounded text")
         if not isinstance(self.comparison_subject_id, UUID):
             raise ValidationException("comparison_subject_id must be a UUID")
-        if not isinstance(self.finding_type, QualityFindingType):
-            raise ValidationException("finding_type must be a QualityFindingType")
         if not isinstance(self.status, QualityFindingStatus):
             raise ValidationException("status must be a QualityFindingStatus")
         if (
@@ -105,17 +105,15 @@ def apply_correspondence_finding_transition(
     tenant_id: str,
     quality_condition_id: str,
     comparison_subject_id: UUID,
-    finding_type: QualityFindingType | None,
     evaluation_id: UUID,
 ) -> QualityComparisonFinding | None:
-    """CDD-040 §33: mechanically reproduces CDD-039 §30's exhaustive
-    six-row transition table. `finding_type` is required (non-None) exactly
-    when `outcome` is VIOLATED; it is ignored otherwise. Returns `None`
-    exactly for the "no Finding + SATISFIED -> no Finding" case."""
+    """CDD-040 §33, N-Source Finding Representation Amendment §14:
+    mechanically reproduces CDD-039 §30's exhaustive six-row transition
+    table, driven by `outcome` alone -- never by which observation(s)
+    caused it. Returns `None` exactly for the "no Finding + SATISFIED ->
+    no Finding" case."""
     if evaluation_horizon is None or evaluation_horizon.tzinfo is None:
         raise ValidationException("evaluation_horizon must include a timezone")
-    if outcome is EvaluationOutcome.VIOLATED and finding_type is None:
-        raise ValidationException("finding_type is required when outcome is VIOLATED")
 
     finding_id = derive_comparison_finding_id(
         tenant_id=tenant_id,
@@ -130,14 +128,12 @@ def apply_correspondence_finding_transition(
     if existing is None:
         if outcome is EvaluationOutcome.SATISFIED:
             return None
-        assert finding_type is not None
         # No Finding + VIOLATED -> create OPEN
         return QualityComparisonFinding(
             finding_id=finding_id,
             tenant_id=tenant_id,
             quality_condition_id=quality_condition_id,
             comparison_subject_id=comparison_subject_id,
-            finding_type=finding_type,
             status=QualityFindingStatus.OPEN,
             state_revision=1,
             first_seen_at=evaluation_horizon,
@@ -149,11 +145,9 @@ def apply_correspondence_finding_transition(
         )
 
     if existing.status is QualityFindingStatus.OPEN and outcome is EvaluationOutcome.VIOLATED:
-        assert finding_type is not None
-        # OPEN + VIOLATED -> remain OPEN; violation reason may change.
+        # OPEN + VIOLATED -> remain OPEN; observation composition may change.
         return replace(
             existing,
-            finding_type=finding_type,
             state_revision=existing.state_revision + 1,
             last_seen_at=evaluation_horizon,
             last_evaluated_horizon=evaluation_horizon,
@@ -180,10 +174,8 @@ def apply_correspondence_finding_transition(
         )
 
     # RESOLVED + VIOLATED -> OPEN; reopen_count += 1
-    assert finding_type is not None
     return replace(
         existing,
-        finding_type=finding_type,
         status=QualityFindingStatus.OPEN,
         state_revision=existing.state_revision + 1,
         last_seen_at=evaluation_horizon,

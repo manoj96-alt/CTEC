@@ -25,7 +25,7 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
             )
         ).scalar_one()
         assert revision == "0021_oqi2_cross_source"
-        assert table_count == 74
+        assert table_count == 75
 
 
 def test_repository_crud(migrated_engine: Engine) -> None:

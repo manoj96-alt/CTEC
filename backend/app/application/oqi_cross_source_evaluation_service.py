@@ -1,21 +1,31 @@
 """OQI2 cross-source deterministic evaluation orchestration service
-(CDD-040 §14-§50). Mirrors `OqiQualityEvaluationService`'s proven
-discipline exactly: `evaluate_historical` never acquires authority and
-never touches `QualityComparisonFinding`; `evaluate_current_state` enforces
-the frozen ordering (CDD-040 §46) -- load ACTIVE rule + ACTIVE
-correspondence -> defensive in-memory status checks -> compute Finding-
-identity material -> acquire authority -> select per-participant evidence
--> evaluate -> persist idempotently -> mutate Finding only when genuinely
-new. Never executes user code, calls an LLM, or otherwise determines
-cross-source truth by any means other than the deterministic exact-match
-primitive in `app.domain.oqi_cross_source.evaluation` (CDD-040 §25, §43).
+(CDD-040 §14-§50; N-Source Finding Representation Amendment §13). Mirrors
+`OqiQualityEvaluationService`'s proven discipline exactly:
+`evaluate_historical` never acquires authority and never touches
+`QualityComparisonFinding`; `evaluate_current_state` enforces the frozen
+ordering (CDD-040 §46) -- load ACTIVE rule + ACTIVE correspondence ->
+defensive in-memory status checks -> compute Finding-identity material ->
+acquire authority -> select per-participant evidence -> evaluate -> persist
+idempotently -> mutate Finding only when genuinely new. Never executes user
+code, calls an LLM, or otherwise determines cross-source truth by any means
+other than the deterministic exact-match primitive in
+`app.domain.oqi_cross_source.evaluation` (CDD-040 §25, §43).
 
 Implements CDD-040 §27/§29's full epistemic missingness resolution: a role
 absent from the ACTIVE correspondence is never evaluated regardless of the
 rule's `expected` flag (§27 case 4b); a role the correspondence names but
-whose lineage is unknown is a genuine missing-participant Finding only when
-the rule also marks it `expected=true` (§27 case 4a) -- rule-level
-`expected` alone is never sufficient."""
+whose lineage is unknown is a genuine missing-participant observation only
+when the rule also marks it `expected=true` (§27 case 4a) -- rule-level
+`expected` alone is never sufficient.
+
+Missingness and conflict are evaluated independently and combined (amendment
+§13): every deterministically-provable missing participant produces its own
+`CROSS_SOURCE_PARTICIPANT_VALUE_MISSING` observation, and -- whenever two or
+more known participant values exist -- an independent conflict check
+produces a `CROSS_SOURCE_VALUE_CONFLICT` observation for every known
+participant when they disagree. Neither computation suppresses the other,
+closing the P1 where a value conflict among known participants could be
+silently lost merely because another participant was also missing."""
 
 from __future__ import annotations
 
@@ -30,17 +40,14 @@ from app.domain.oqi.evaluation import (
     EvaluationOutcome,
     SourceRecordLineageIdentity,
 )
-from app.domain.oqi.quality_rule import (
-    QualityDimension,
-    QualityFindingType,
-    QualityRule,
-    QualityRuleStatus,
-)
+from app.domain.oqi.quality_rule import QualityDimension, QualityRule, QualityRuleStatus
 from app.domain.oqi_cross_source.correspondence import (
     ComparisonSubjectCorrespondence,
     ComparisonSubjectCorrespondenceStatus,
 )
 from app.domain.oqi_cross_source.evaluation import (
+    ComparisonObservation,
+    ComparisonObservationType,
     ParticipantEvidenceEntry,
     QualityComparisonEvaluation,
     derive_comparison_evaluation_id,
@@ -121,7 +128,7 @@ class OqiCrossSourceEvaluationService:
         )
         if result is None:
             return None
-        outcome, _finding_type, participants = result
+        outcome, observations, participants = result
 
         digest = participant_evidence_digest(participants)
         evaluation = QualityComparisonEvaluation(
@@ -149,6 +156,7 @@ class OqiCrossSourceEvaluationService:
             applied_current_state_authority=False,
             state_revision_applied=None,
             evaluated_on=self._clock(),
+            observations=observations,
         )
         self._evaluation_repository.insert_evaluation_idempotent(evaluation)
         return evaluation
@@ -197,7 +205,7 @@ class OqiCrossSourceEvaluationService:
             # Finding touched. Authority releases automatically on
             # commit/rollback.
             return None
-        outcome, finding_type, participants = result
+        outcome, observations, participants = result
 
         finding_id = derive_comparison_finding_id(
             tenant_id=correspondence.tenant_id,
@@ -224,7 +232,6 @@ class OqiCrossSourceEvaluationService:
             tenant_id=correspondence.tenant_id,
             quality_condition_id=rule.quality_condition_id,
             comparison_subject_id=correspondence.comparison_subject_id,
-            finding_type=finding_type,
             evaluation_id=evaluation_id,
         )
 
@@ -244,6 +251,7 @@ class OqiCrossSourceEvaluationService:
             applied_current_state_authority=True,
             state_revision_applied=(None if next_finding is None else next_finding.state_revision),
             evaluated_on=self._clock(),
+            observations=observations,
         )
 
         # CDD-040 §43: idempotent replay -- if this exact evaluation_id
@@ -262,19 +270,25 @@ class OqiCrossSourceEvaluationService:
         correspondence: ComparisonSubjectCorrespondence,
         evaluation_horizon: datetime,
     ) -> (
-        tuple[EvaluationOutcome, QualityFindingType | None, tuple[ParticipantEvidenceEntry, ...]]
+        tuple[
+            EvaluationOutcome,
+            tuple[ComparisonObservation, ...],
+            tuple[ParticipantEvidenceEntry, ...],
+        ]
         | None
     ):
-        """CDD-040 §27-§30's exact deterministic algorithm. Returns
-        `(outcome, finding_type, participants)` or `None` when no
-        evaluation is possible (fewer than 2 known-and-valued participants
-        and no deterministically-provable missingness)."""
+        """CDD-040 §27-§30's participant-selection algorithm, combined with
+        the N-Source Finding Representation Amendment §13 replacement for
+        the missingness short-circuit. Returns `(outcome, observations,
+        participants)` or `None` when no evaluation is possible (fewer than
+        2 known-and-valued participants and no deterministically-provable
+        missingness)."""
         members_by_role = {member.participant_role: member for member in correspondence.members}
         configured_participants = rule.rule_parameters["participants"]
 
         participants: list[ParticipantEvidenceEntry] = []
         known_values: dict[str, str] = {}
-        any_missing = False
+        missing_roles: list[str] = []
 
         for entry in configured_participants:
             if not entry["eligible"]:
@@ -317,7 +331,7 @@ class OqiCrossSourceEvaluationService:
                             evidence_ids=(),
                         )
                     )
-                    any_missing = True
+                    missing_roles.append(role)
                 # else CDD-040 §29 Case 5: excluded entirely.
                 continue
 
@@ -340,7 +354,7 @@ class OqiCrossSourceEvaluationService:
                     )
                 )
                 if expected:
-                    any_missing = True  # Case 1
+                    missing_roles.append(role)  # Case 1
                 # else Case 2: present, informational, no missing finding.
                 continue
 
@@ -357,25 +371,43 @@ class OqiCrossSourceEvaluationService:
             )
             known_values[role] = value
 
-        if any_missing:
-            return (
-                EvaluationOutcome.VIOLATED,
-                QualityFindingType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING,
-                tuple(participants),
+        # Amendment §13 step 1: one independent missing observation per
+        # deterministically-provable missing participant. Never suppressed
+        # by, and never suppresses, the conflict computation below.
+        observations: list[ComparisonObservation] = [
+            ComparisonObservation(
+                observation_type=ComparisonObservationType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING,
+                participant_role=role,
             )
+            for role in missing_roles
+        ]
 
-        if len(known_values) < 2:
-            # CDD-040 §30: a single observed value cannot prove or disprove
-            # cross-source consistency.
+        # Amendment §13 step 2: whenever >= 2 known values exist,
+        # independently evaluate them for disagreement -- regardless of
+        # whether any participant is simultaneously missing.
+        if len(known_values) >= 2:
+            consistency_outcome = evaluate_consistency(participant_values=known_values)
+            if consistency_outcome is EvaluationOutcome.VIOLATED:
+                observations.extend(
+                    ComparisonObservation(
+                        observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+                        participant_role=role,
+                    )
+                    for role in known_values
+                )
+
+        # Amendment §13 step 4: outcome derived from combined observations.
+        if observations:
+            outcome = EvaluationOutcome.VIOLATED
+        elif len(known_values) >= 2:
+            outcome = EvaluationOutcome.SATISFIED
+        else:
+            # CDD-040 §30: a single observed value, with no
+            # deterministically-provable missingness either, cannot prove
+            # or disprove cross-source consistency.
             return None
 
-        outcome = evaluate_consistency(participant_values=known_values)
-        finding_type = (
-            QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT
-            if outcome is EvaluationOutcome.VIOLATED
-            else None
-        )
-        return outcome, finding_type, tuple(participants)
+        return outcome, tuple(observations), tuple(participants)
 
 
 def _assert_rule_and_correspondence_scope(

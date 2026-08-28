@@ -24,7 +24,6 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.domain.oqi.finding import QualityFindingStatus
-from app.domain.oqi.quality_rule import QualityFindingType
 from app.domain.oqi_cross_source.evaluation import (
     QualityComparisonEvaluation,
     participant_evidence_digest,
@@ -33,6 +32,7 @@ from app.domain.oqi_cross_source.finding import QualityComparisonFinding
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.oqi_cross_source_evaluation import (
     QualityComparisonEvaluationEvidenceORM,
+    QualityComparisonEvaluationObservationORM,
     QualityComparisonEvaluationORM,
     QualityComparisonEvaluationParticipantORM,
 )
@@ -136,6 +136,14 @@ class OqiCrossSourceEvaluationRepositoryImpl:
                         sequence_index=sequence_index,
                     )
                 )
+        for observation in evaluation.observations:
+            self.session.add(
+                QualityComparisonEvaluationObservationORM(
+                    evaluation_id=evaluation.evaluation_id,
+                    observation_type=observation.observation_type.value,
+                    participant_role=observation.participant_role,
+                )
+            )
         return True
 
     def upsert_finding(self, finding: QualityComparisonFinding) -> None:
@@ -143,7 +151,6 @@ class OqiCrossSourceEvaluationRepositoryImpl:
         if model is None:
             self.session.add(_finding_to_orm(finding))
             return
-        model.finding_type = finding.finding_type.value
         model.status = finding.status.value
         model.state_revision = finding.state_revision
         model.last_seen_at = finding.last_seen_at
@@ -208,7 +215,6 @@ def _finding_to_orm(finding: QualityComparisonFinding) -> QualityComparisonFindi
         quality_condition_id=finding.quality_condition_id,
         subject_type="CROSS_SOURCE_COMPARISON",
         comparison_subject_id=finding.comparison_subject_id,
-        finding_type=finding.finding_type.value,
         status=finding.status.value,
         state_revision=finding.state_revision,
         first_seen_at=finding.first_seen_at,
@@ -226,7 +232,6 @@ def _finding_to_domain(model: QualityComparisonFindingORM) -> QualityComparisonF
         tenant_id=model.tenant_id,
         quality_condition_id=model.quality_condition_id,
         comparison_subject_id=model.comparison_subject_id,
-        finding_type=QualityFindingType(model.finding_type),
         status=QualityFindingStatus(model.status),
         state_revision=model.state_revision,
         first_seen_at=model.first_seen_at,

@@ -10,7 +10,19 @@ exact shape persisted as the immutable evaluation-participant snapshot
 (CDD-040 §37) -- one dataclass, two uses, no duplication. The
 participant-keyed digest (§40) is role-ordered and role-/subject-/
 evidence-sensitive, closing the flat-digest collision risk a naive reuse of
-OQI1's `evidence_set_digest` alone would introduce."""
+OQI1's `evidence_set_digest` alone would introduce.
+
+`ComparisonObservation` (CDD-040 N-Source Finding Representation Amendment
+§2-§10): one deterministic quality fact established by one
+`QualityComparisonEvaluation`. An Evaluation produces 0..N observations
+simultaneously -- observations are plural by design, closing the P1 where a
+single-valued `finding_type` could not jointly represent a value conflict
+and a missing participant discovered in the same evaluation. Observation
+identity is the natural key `(evaluation_id, observation_type,
+participant_role)`; `evaluation_id` is supplied by the owning Evaluation,
+not stored on the observation itself. The observation-type domain is
+closed to exactly two members (amendment §4) -- a third requires its own
+governed extension."""
 
 from __future__ import annotations
 
@@ -18,6 +30,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid5
 
 from app.domain.oqi.evaluation import (
@@ -84,6 +97,40 @@ class ParticipantEvidenceEntry:
         return canonical_subject_identity(
             EvaluationSubject(lineage=self.lineage, source_field_id=self.source_field_id)
         )
+
+
+class ComparisonObservationType(StrEnum):
+    """CDD-040 N-Source Finding Representation Amendment §4: closed,
+    exactly these two members. No additional observation type is
+    authorized without its own governed extension."""
+
+    CROSS_SOURCE_VALUE_CONFLICT = "CROSS_SOURCE_VALUE_CONFLICT"
+    CROSS_SOURCE_PARTICIPANT_VALUE_MISSING = "CROSS_SOURCE_PARTICIPANT_VALUE_MISSING"
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonObservation:
+    """CDD-040 N-Source Finding Representation Amendment §5-§10: one
+    deterministic quality fact established by one
+    `QualityComparisonEvaluation`. `CROSS_SOURCE_VALUE_CONFLICT /
+    <role>` means "this participant supplied evidence participating in a
+    deterministically established cross-source disagreement" -- never
+    "this participant is wrong." `CROSS_SOURCE_PARTICIPANT_VALUE_MISSING /
+    <role>` means one independently-missing expected participant --
+    multiple simultaneously-missing participants each get their own row."""
+
+    observation_type: ComparisonObservationType
+    participant_role: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.observation_type, ComparisonObservationType):
+            raise ValidationException("observation_type must be a ComparisonObservationType")
+        if not isinstance(self.participant_role, str) or not (
+            1 <= len(self.participant_role) <= _MAX_ROLE_LENGTH
+        ):
+            raise ValidationException(
+                f"participant_role must be non-empty text of length <= {_MAX_ROLE_LENGTH}"
+            )
 
 
 def participant_evidence_digest(participants: Sequence[ParticipantEvidenceEntry]) -> str:
@@ -187,6 +234,7 @@ class QualityComparisonEvaluation:
     applied_current_state_authority: bool
     state_revision_applied: int | None
     evaluated_on: datetime
+    observations: tuple[ComparisonObservation, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.evaluation_id, UUID):
@@ -222,6 +270,23 @@ class QualityComparisonEvaluation:
         roles = [entry.role for entry in self.participants]
         if len(set(roles)) != len(roles):
             raise ValidationException("participants must not repeat a role")
+        if not isinstance(self.observations, tuple) or not all(
+            isinstance(observation, ComparisonObservation) for observation in self.observations
+        ):
+            raise ValidationException("observations must be a tuple of ComparisonObservation")
+        observation_keys = [
+            (observation.observation_type, observation.participant_role)
+            for observation in self.observations
+        ]
+        if len(set(observation_keys)) != len(observation_keys):
+            raise ValidationException("observations must not repeat (observation_type, role)")
+        participant_roles = set(roles)
+        if not all(
+            observation.participant_role in participant_roles for observation in self.observations
+        ):
+            raise ValidationException(
+                "every observation's participant_role must belong to this evaluation's participants"
+            )
         if not isinstance(self.outcome, EvaluationOutcome):
             raise ValidationException("outcome must be an EvaluationOutcome")
         if not isinstance(self.applied_current_state_authority, bool):

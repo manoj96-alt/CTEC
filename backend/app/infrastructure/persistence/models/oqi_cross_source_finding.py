@@ -27,7 +27,6 @@ class QualityComparisonFindingORM(BaseEntity):
     quality_condition_id: Mapped[str] = mapped_column(String(200), nullable=False)
     subject_type: Mapped[str] = mapped_column(String(32), nullable=False)
     comparison_subject_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
-    finding_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     state_revision: Mapped[int] = mapped_column(Integer(), nullable=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

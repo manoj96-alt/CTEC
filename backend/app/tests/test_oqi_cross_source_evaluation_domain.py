@@ -16,8 +16,9 @@ from app.domain.oqi.evaluation import (
     SourceRecordLineageIdentity,
 )
 from app.domain.oqi.finding import QualityFindingStatus
-from app.domain.oqi.quality_rule import QualityFindingType
 from app.domain.oqi_cross_source.evaluation import (
+    ComparisonObservation,
+    ComparisonObservationType,
     ParticipantEvidenceEntry,
     QualityComparisonEvaluation,
     derive_comparison_evaluation_id,
@@ -358,6 +359,154 @@ def test_evaluation_rejects_inconsistent_id() -> None:
         )
 
 
+# --- ComparisonObservation (N-Source Finding Representation Amendment
+# §5-§10): construction, and proof observations do not enter Evaluation
+# identity ---
+
+
+def _valid_evaluation(
+    *,
+    participants: tuple[ParticipantEvidenceEntry, ...],
+    observations: tuple[ComparisonObservation, ...] = (),
+    tenant_id: str = "tenant-a",
+    quality_condition_id: str = "cond-1",
+    comparison_subject_id: UUID | None = None,
+    comparison_subject_correspondence_id: UUID | None = None,
+    rule_version: int = 1,
+) -> QualityComparisonEvaluation:
+    subject_id = comparison_subject_id or uuid4()
+    correspondence_id = comparison_subject_correspondence_id or uuid4()
+    digest = participant_evidence_digest(participants)
+    evaluation_id = derive_comparison_evaluation_id(
+        tenant_id=tenant_id,
+        quality_condition_id=quality_condition_id,
+        rule_version=rule_version,
+        comparison_subject_id=subject_id,
+        evaluation_mode=EvaluationMode.CURRENT_STATE,
+        evaluation_horizon=NOW,
+        participant_digest=digest,
+        comparison_subject_correspondence_id=correspondence_id,
+    )
+    return QualityComparisonEvaluation(
+        evaluation_id=evaluation_id,
+        tenant_id=tenant_id,
+        quality_condition_id=quality_condition_id,
+        rule_id=uuid4(),
+        rule_version=rule_version,
+        comparison_subject_id=subject_id,
+        comparison_subject_correspondence_id=correspondence_id,
+        evaluation_mode=EvaluationMode.CURRENT_STATE,
+        evaluation_origin=EvaluationOrigin.RULE_DETERMINISTIC,
+        evaluation_horizon=NOW,
+        participants=participants,
+        outcome=EvaluationOutcome.VIOLATED if observations else EvaluationOutcome.SATISFIED,
+        applied_current_state_authority=False,
+        state_revision_applied=None,
+        evaluated_on=NOW,
+        observations=observations,
+    )
+
+
+def test_comparison_observation_construction() -> None:
+    observation = ComparisonObservation(
+        observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+        participant_role="SAP",
+    )
+    assert observation.observation_type is ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT
+    assert observation.participant_role == "SAP"
+
+
+def test_comparison_observation_rejects_blank_role() -> None:
+    with pytest.raises(ValidationException):
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+            participant_role="",
+        )
+
+
+def test_evaluation_accepts_multiple_simultaneous_observations() -> None:
+    """The critical N-source repair: one Evaluation may establish a
+    conflict observation and a missing observation simultaneously --
+    neither suppresses the other."""
+    sap, plm, portal = _entry(role="SAP"), _entry(role="PLM"), _entry(role="Portal")
+    observations = (
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING,
+            participant_role="Portal",
+        ),
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+            participant_role="SAP",
+        ),
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+            participant_role="PLM",
+        ),
+    )
+    evaluation = _valid_evaluation(participants=(sap, plm, portal), observations=observations)
+    assert len(evaluation.observations) == 3
+
+
+def test_evaluation_rejects_duplicate_observation_key() -> None:
+    sap = _entry(role="SAP")
+    duplicate = (
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+            participant_role="SAP",
+        ),
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+            participant_role="SAP",
+        ),
+    )
+    with pytest.raises(ValidationException):
+        _valid_evaluation(participants=(sap,), observations=duplicate)
+
+
+def test_evaluation_rejects_observation_for_role_not_a_participant() -> None:
+    sap = _entry(role="SAP")
+    orphan = (
+        ComparisonObservation(
+            observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+            participant_role="NotAParticipant",
+        ),
+    )
+    with pytest.raises(ValidationException):
+        _valid_evaluation(participants=(sap,), observations=orphan)
+
+
+def test_observations_do_not_enter_evaluation_identity() -> None:
+    """N-Source Finding Representation Amendment §8: Evaluation identity is
+    unchanged -- observations are a deterministic derivative of the same
+    inputs, computing more facts about one evaluation does not change what
+    was evaluated."""
+    sap, plm = _entry(role="SAP"), _entry(role="PLM")
+    subject_id, correspondence_id = uuid4(), uuid4()
+
+    without_observations = _valid_evaluation(
+        participants=(sap, plm),
+        observations=(),
+        comparison_subject_id=subject_id,
+        comparison_subject_correspondence_id=correspondence_id,
+    )
+    with_observations = _valid_evaluation(
+        participants=(sap, plm),
+        observations=(
+            ComparisonObservation(
+                observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+                participant_role="SAP",
+            ),
+            ComparisonObservation(
+                observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+                participant_role="PLM",
+            ),
+        ),
+        comparison_subject_id=subject_id,
+        comparison_subject_correspondence_id=correspondence_id,
+    )
+    assert without_observations.evaluation_id == with_observations.evaluation_id
+
+
 # --- QualityComparisonFinding transition table (mechanically mirrors
 # CDD-039 §30's six rows) ---
 
@@ -366,7 +515,6 @@ def _finding_transition(
     *,
     existing: QualityComparisonFinding | None,
     outcome: EvaluationOutcome,
-    finding_type: QualityFindingType | None = QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
     subject_id: UUID | None = None,
     condition_id: str = "cond-1",
     horizon: datetime = NOW,
@@ -378,7 +526,6 @@ def _finding_transition(
         tenant_id="tenant-a",
         quality_condition_id=condition_id,
         comparison_subject_id=subject_id or uuid4(),
-        finding_type=finding_type,
         evaluation_id=uuid4(),
     )
 
@@ -463,31 +610,21 @@ def test_resolved_violated_reopens() -> None:
     assert reopened.reopen_count == 1
 
 
-def test_violated_transition_requires_finding_type() -> None:
-    with pytest.raises(ValidationException):
-        _finding_transition(existing=None, outcome=EvaluationOutcome.VIOLATED, finding_type=None)
-
-
-def test_finding_type_updates_on_open_to_open_transition() -> None:
-    """A cross-source Finding's violation reason may change between
-    conflict and missingness across evaluations (CDD-040 §33), unlike
-    OQI1's fixed per-rule finding_type."""
+def test_finding_transition_is_driven_by_outcome_alone() -> None:
+    """N-Source Finding Representation Amendment §14: observation
+    composition may freely change while the Finding remains OPEN --
+    the transition table itself has no `finding_type` concept anymore."""
     subject_id = uuid4()
     first = _finding_transition(
-        existing=None,
-        outcome=EvaluationOutcome.VIOLATED,
-        finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
-        subject_id=subject_id,
+        existing=None, outcome=EvaluationOutcome.VIOLATED, subject_id=subject_id
     )
     assert first is not None
     second = _finding_transition(
-        existing=first,
-        outcome=EvaluationOutcome.VIOLATED,
-        finding_type=QualityFindingType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING,
-        subject_id=subject_id,
+        existing=first, outcome=EvaluationOutcome.VIOLATED, subject_id=subject_id
     )
     assert second is not None
-    assert second.finding_type is QualityFindingType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING
+    assert second.status is QualityFindingStatus.OPEN
+    assert second.state_revision == 2
 
 
 def test_latest_evaluation_id_updates_on_every_transition() -> None:
@@ -500,7 +637,6 @@ def test_latest_evaluation_id_updates_on_every_transition() -> None:
         tenant_id="tenant-a",
         quality_condition_id="cond-1",
         comparison_subject_id=subject_id,
-        finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
         evaluation_id=first_eval_id,
     )
     assert first is not None
@@ -514,7 +650,6 @@ def test_latest_evaluation_id_updates_on_every_transition() -> None:
         tenant_id="tenant-a",
         quality_condition_id="cond-1",
         comparison_subject_id=subject_id,
-        finding_type=None,
         evaluation_id=second_eval_id,
     )
     assert second is not None

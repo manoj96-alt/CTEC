@@ -15,6 +15,7 @@ from app.application.oqi_cross_source_evaluation_service import (
     OqiRuleNotActiveError,
 )
 from app.domain.oqi.evaluation import EvaluationOutcome
+from app.domain.oqi.finding import QualityFindingStatus
 from app.domain.oqi.quality_rule import (
     QualityDimension,
     QualityFindingType,
@@ -26,10 +27,28 @@ from app.domain.oqi_cross_source.correspondence import (
     ComparisonSubjectCorrespondenceMember,
     ComparisonSubjectCorrespondenceStatus,
 )
-from app.domain.oqi_cross_source.evaluation import QualityComparisonEvaluation
+from app.domain.oqi_cross_source.evaluation import (
+    ComparisonObservation,
+    ComparisonObservationType,
+    QualityComparisonEvaluation,
+)
 from app.domain.oqi_cross_source.finding import QualityComparisonFinding
 
 NOW = datetime.now(UTC)
+
+
+def _missing(role: str) -> ComparisonObservation:
+    return ComparisonObservation(
+        observation_type=ComparisonObservationType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING,
+        participant_role=role,
+    )
+
+
+def _conflict(role: str) -> ComparisonObservation:
+    return ComparisonObservation(
+        observation_type=ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT,
+        participant_role=role,
+    )
 
 
 class _FakeRepository:
@@ -315,8 +334,7 @@ def test_two_conflicting_values_violated() -> None:
 
     assert evaluation is not None
     assert evaluation.outcome is EvaluationOutcome.VIOLATED
-    finding = next(iter(repo.findings.values()))
-    assert finding.finding_type is QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT
+    assert set(evaluation.observations) == {_conflict("SAP"), _conflict("PLM")}
 
 
 def test_authority_does_not_override_conflict_detection() -> None:
@@ -351,8 +369,7 @@ def test_case1_known_lineage_expected_zero_target_evidence_is_violated_missing()
 
     assert evaluation is not None
     assert evaluation.outcome is EvaluationOutcome.VIOLATED
-    finding = next(iter(repo.findings.values()))
-    assert finding.finding_type is QualityFindingType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING
+    assert evaluation.observations == (_missing("PLM"),)
 
 
 def test_case2_known_lineage_optional_zero_target_evidence_is_excluded_not_violated() -> None:
@@ -436,8 +453,7 @@ def test_case4_correspondence_names_lineage_unknown_expected_is_violated_missing
 
     assert evaluation is not None
     assert evaluation.outcome is EvaluationOutcome.VIOLATED
-    finding = next(iter(repo.findings.values()))
-    assert finding.finding_type is QualityFindingType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING
+    assert evaluation.observations == (_missing("PLM"),)
 
 
 def test_case5_correspondence_names_lineage_unknown_optional_is_excluded() -> None:
@@ -530,3 +546,210 @@ def test_current_state_idempotent_replay_does_not_double_mutate() -> None:
     assert len(repo.evaluations) == 1
     finding_after_second = repo.findings[next(iter(repo.findings))]
     assert finding_after_second.state_revision == 1
+
+
+# --- N-Source Finding Representation Amendment §13: mandatory
+# simultaneous-condition test matrix (Artifact Authorization Amendment
+# §9-14). Closes the OQI2-VN P1: value conflict among known participants
+# must never be suppressed merely because another participant is also
+# missing, and vice versa. ---
+
+
+def _n_participant_scenario(
+    role_values: dict[str, str | None],
+) -> tuple[QualityRule, ComparisonSubjectCorrespondence, _FakeRepository]:
+    """Builds an N-participant rule/correspondence/repo where a `None`
+    value means "known lineage, zero qualifying target evidence" (CDD-040
+    §29 Case 1) -- every role here is `expected=True`, so `None` is always
+    deterministically missing."""
+    fields = {role: uuid4() for role in role_values}
+    objects = {role: uuid4() for role in role_values}
+    rule = _rule(
+        participants=[_participant(role=role, source_field_id=fields[role]) for role in role_values]
+    )
+    correspondence = _correspondence(
+        subject_id=uuid4(),
+        members=tuple(
+            _member(role=role, source_object_id=objects[role], reference=f"REF-{role}")
+            for role in role_values
+        ),
+    )
+    repo = _FakeRepository()
+    for role, value in role_values.items():
+        repo.known_lineage[(objects[role], f"REF-{role}")] = True
+        if value is not None:
+            repo.latest_value[(fields[role], f"REF-{role}")] = (uuid4(), value)
+    return rule, correspondence, repo
+
+
+def test_9_conflict_plus_single_missing() -> None:
+    rule, correspondence, repo = _n_participant_scenario(
+        {"A": "ABC", "B": "ABC", "C": "XYZ", "D": None}
+    )
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert set(evaluation.observations) == {
+        _missing("D"),
+        _conflict("A"),
+        _conflict("B"),
+        _conflict("C"),
+    }
+
+
+def test_10_multiple_missing_no_conflict() -> None:
+    rule, correspondence, repo = _n_participant_scenario(
+        {"A": "ABC", "B": "ABC", "C": "ABC", "D": None, "E": None}
+    )
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert set(evaluation.observations) == {_missing("D"), _missing("E")}
+
+
+def test_11_multiple_missing_plus_conflict() -> None:
+    rule, correspondence, repo = _n_participant_scenario(
+        {"A": "ABC", "B": "ABC", "C": "XYZ", "D": None, "E": None}
+    )
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert set(evaluation.observations) == {
+        _conflict("A"),
+        _conflict("B"),
+        _conflict("C"),
+        _missing("D"),
+        _missing("E"),
+    }
+
+
+def test_12_conflict_resolves_while_missing_persists_sequential() -> None:
+    rule, correspondence, repo = _n_participant_scenario(
+        {"A": "ABC", "B": "ABC", "C": "XYZ", "D": None}
+    )
+    service = OqiCrossSourceEvaluationService(
+        evaluation_repository=repo, clock=lambda: NOW.replace(microsecond=1)
+    )
+    t1 = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+    assert t1 is not None
+    assert set(t1.observations) == {_missing("D"), _conflict("A"), _conflict("B"), _conflict("C")}
+
+    # C now agrees; D remains missing.
+    c_field = next(f for f in rule.rule_parameters["participants"] if f["role"] == "C")[
+        "source_field_id"
+    ]
+    repo.latest_value[(UUID(c_field), "REF-C")] = (uuid4(), "ABC")
+    service_t2 = OqiCrossSourceEvaluationService(
+        evaluation_repository=repo, clock=lambda: NOW.replace(microsecond=2)
+    )
+    t2 = service_t2.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert t2 is not None
+    assert t2.observations == (_missing("D"),)
+    assert t2.outcome is EvaluationOutcome.VIOLATED
+    finding = next(iter(repo.findings.values()))
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 2
+    assert finding.occurrence_count == 1
+
+
+def test_13_missing_resolves_while_conflict_persists_sequential() -> None:
+    """AA Amendment §13's illustrative narrative for this scenario states
+    "CONFLICT/A, CONFLICT/B only" once C=ABC arrives, but that contradicts
+    the amendment's own binding rules: §5 flags *every* known participant
+    in a disagreement with no attribution/clustering, and §20's worked
+    example flags all four participants in an analogous case (including
+    the three that agree with each other). Persisting a majority/clustering
+    computation to selectively exclude C would violate §12 (Majority !=
+    Truth) and §16 (no agreement clusters). This test asserts the
+    architecturally-consistent result -- CONFLICT for all three known
+    participants -- and the discrepancy in the illustrative narrative is
+    reported to the Product Owner as a documentation note, not implemented
+    literally."""
+    rule, correspondence, repo = _n_participant_scenario({"A": "ABC", "B": "XYZ", "C": None})
+    service = OqiCrossSourceEvaluationService(
+        evaluation_repository=repo, clock=lambda: NOW.replace(microsecond=1)
+    )
+    t1 = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+    assert t1 is not None
+    assert set(t1.observations) == {_missing("C"), _conflict("A"), _conflict("B")}
+
+    c_field = next(f for f in rule.rule_parameters["participants"] if f["role"] == "C")[
+        "source_field_id"
+    ]
+    repo.latest_value[(UUID(c_field), "REF-C")] = (uuid4(), "ABC")
+    service_t2 = OqiCrossSourceEvaluationService(
+        evaluation_repository=repo, clock=lambda: NOW.replace(microsecond=2)
+    )
+    t2 = service_t2.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert t2 is not None
+    assert set(t2.observations) == {_conflict("A"), _conflict("B"), _conflict("C")}
+    assert t2.outcome is EvaluationOutcome.VIOLATED
+    finding = next(iter(repo.findings.values()))
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 2
+
+
+def test_14_full_lifecycle_conflict_missing_then_missing_then_resolved_then_reopened() -> None:
+    rule, correspondence, repo = _n_participant_scenario(
+        {"A": "ABC", "B": "ABC", "C": "XYZ", "D": None}
+    )
+
+    def _field_id(role: str) -> UUID:
+        return UUID(
+            next(p for p in rule.rule_parameters["participants"] if p["role"] == role)[
+                "source_field_id"
+            ]
+        )
+
+    c_field, d_field = _field_id("C"), _field_id("D")
+
+    def _step(horizon: datetime) -> QualityComparisonEvaluation | None:
+        service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: horizon)
+        return service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    # T1: conflict + missing -> OPEN, rev=1, occurrence=1
+    t1 = _step(NOW.replace(microsecond=1))
+    assert t1 is not None
+    finding = next(iter(repo.findings.values()))
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 1
+    assert finding.occurrence_count == 1
+
+    # T2: missing only -> OPEN, rev=2 (unchanged occurrence)
+    repo.latest_value[(c_field, "REF-C")] = (uuid4(), "ABC")
+    t2 = _step(NOW.replace(microsecond=2))
+    assert t2 is not None
+    assert t2.observations == (_missing("D"),)
+    finding = next(iter(repo.findings.values()))
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 2
+    assert finding.occurrence_count == 1
+
+    # T3: all agree, D now present -> RESOLVED, rev=3
+    repo.latest_value[(d_field, "REF-D")] = (uuid4(), "ABC")
+    t3 = _step(NOW.replace(microsecond=3))
+    assert t3 is not None
+    assert t3.observations == ()
+    assert t3.outcome is EvaluationOutcome.SATISFIED
+    finding = next(iter(repo.findings.values()))
+    assert finding.status is QualityFindingStatus.RESOLVED
+    assert finding.state_revision == 3
+
+    # T4: D disagrees again -> OPEN (reopened), rev=4, occurrence=2, reopen=1
+    repo.latest_value[(d_field, "REF-D")] = (uuid4(), "ZZZ")
+    t4 = _step(NOW.replace(microsecond=4))
+    assert t4 is not None
+    assert set(t4.observations) == {_conflict("A"), _conflict("B"), _conflict("C"), _conflict("D")}
+    finding = next(iter(repo.findings.values()))
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 4
+    assert finding.occurrence_count == 2
+    assert finding.reopen_count == 1
