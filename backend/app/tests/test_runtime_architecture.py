@@ -629,6 +629,12 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_gate_v_agent_service.py",
     "backend/app/tests/test_gate_v_agent_router.py",
     "backend/app/tests/test_gate_v_agent_postgres.py",
+    # Gate W (CDD-038) v1 implementation: Governed API Version Declaration.
+    # No persistence, no auth, no predecessor-gate coupling exists to
+    # firewall -- no new architecture test is authorized (Gate W Artifact
+    # Authorization Sec4).
+    "backend/app/api/api_versions/router.py",
+    "backend/app/tests/test_api_versions.py",
 }
 
 
