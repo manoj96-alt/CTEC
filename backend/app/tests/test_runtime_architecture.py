@@ -658,6 +658,30 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_oqi_quality_evaluation_service.py",
     "backend/app/tests/test_oqi_quality_postgres.py",
     "backend/app/tests/test_oqi_provenance.py",
+    # OQI2 (CDD-040) implementation: Multi-Source Quality Intelligence. No
+    # API, no frontend, no Keycloak change (CDD-040 §69-§70; Artifact
+    # Authorization §3). The mechanical migration-head consequence in
+    # test_decision_engine.py/test_governance_engine.py/
+    # test_knowledge_engine.py/test_persistence_integration.py needs no new
+    # entry here for the same reason noted above; test_oqi_quality_rule_
+    # domain.py and test_runtime_architecture.py were likewise already
+    # added permanently by OQI1/CDD-010-012 respectively.
+    "backend/app/domain/oqi_cross_source/__init__.py",
+    "backend/app/domain/oqi_cross_source/correspondence.py",
+    "backend/app/domain/oqi_cross_source/evaluation.py",
+    "backend/app/domain/oqi_cross_source/finding.py",
+    "backend/app/infrastructure/persistence/models/oqi_cross_source_correspondence.py",
+    "backend/app/infrastructure/persistence/models/oqi_cross_source_evaluation.py",
+    "backend/app/infrastructure/persistence/models/oqi_cross_source_finding.py",
+    "backend/app/infrastructure/persistence/oqi_cross_source_correspondence_repository.py",
+    "backend/app/infrastructure/persistence/oqi_cross_source_evaluation_repository.py",
+    "backend/app/application/oqi_cross_source_evaluation_service.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0021_oqi2_cross_source_consistency.py",
+    "backend/app/tests/test_oqi_cross_source_correspondence_domain.py",
+    "backend/app/tests/test_oqi_cross_source_evaluation_domain.py",
+    "backend/app/tests/test_oqi_cross_source_evaluation_service.py",
+    "backend/app/tests/test_oqi_cross_source_postgres.py",
+    "backend/app/tests/test_oqi_cross_source_provenance.py",
 }
 
 
@@ -1011,3 +1035,112 @@ def test_oqi1_quality_foundation_respects_every_firewall() -> None:
     assert _construction_sites("QualityFindingORM") == [
         "infrastructure/persistence/oqi_quality_evaluation_repository.py"
     ], "QualityFindingORM constructed outside its single authorized site"
+
+
+def test_oqi2_cross_source_consistency_respects_every_firewall() -> None:
+    """CDD-040 §9, §15, §57: OQI2 shares no code with Gate T, Entity
+    Resolution, Gate S, Gate V, or any LLM/model-provider SDK; introduces no
+    API route; performs no record-correlation inference of any kind; and
+    every new ORM class is constructed in exactly one authorized repository
+    file."""
+    oqi_cross_source_paths = (
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_cross_source" / "correspondence.py",
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_cross_source" / "evaluation.py",
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_cross_source" / "finding.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "oqi_cross_source_correspondence_repository.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "oqi_cross_source_evaluation_repository.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "application"
+        / "oqi_cross_source_evaluation_service.py",
+    )
+    forbidden_prefixes = (
+        "app.domain.gate_s",
+        "app.application.gate_s_approval_service",
+        "app.domain.gate_v",
+        "app.application.gate_v_agent_service",
+        "app.domain.identity_resolution",
+        "app.api",
+        "app.runtime",
+        "app.integration.adapters",
+        "openai",
+        "anthropic",
+        "azure",
+    )
+    forbidden_substrings = ("evidence_fitness", "gate_t")
+    for path in oqi_cross_source_paths:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imports = [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        ]
+        imports.extend(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            module.startswith(forbidden_prefixes) for module in imports
+        ), f"{path.name} bypasses an OQI2 firewall: {imports}"
+        assert not any(
+            fragment in module.lower() for module in imports for fragment in forbidden_substrings
+        ), f"{path.name} imports a Gate T-shaped module: {imports}"
+
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_cross_source_correspondence.py",
+                "oqi_cross_source_evaluation.py",
+                "oqi_cross_source_finding.py",
+                "test_runtime_architecture.py",
+                # test_oqi_cross_source_postgres.py deliberately constructs
+                # raw ORM rows, bypassing the repository, in exactly the
+                # tests proving database-level constraints (partial unique
+                # ACTIVE-correspondence index, chained composite FKs) reject
+                # them even when the application layer is bypassed -- the
+                # same established pattern as
+                # test_oqi_quality_postgres.py's own direct QualityRuleORM
+                # construction.
+                "test_oqi_cross_source_postgres.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("ComparisonSubjectCorrespondenceORM") == [
+        "infrastructure/persistence/oqi_cross_source_correspondence_repository.py"
+    ], "ComparisonSubjectCorrespondenceORM constructed outside its single authorized site"
+    assert _construction_sites("ComparisonSubjectCorrespondenceMemberORM") == [
+        "infrastructure/persistence/oqi_cross_source_correspondence_repository.py"
+    ], "ComparisonSubjectCorrespondenceMemberORM constructed outside its single authorized site"
+    assert _construction_sites("QualityComparisonEvaluationORM") == [
+        "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
+    ], "QualityComparisonEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("QualityComparisonEvaluationParticipantORM") == [
+        "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
+    ], "QualityComparisonEvaluationParticipantORM constructed outside its single authorized site"
+    assert _construction_sites("QualityComparisonEvaluationEvidenceORM") == [
+        "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
+    ], "QualityComparisonEvaluationEvidenceORM constructed outside its single authorized site"
+    assert _construction_sites("QualityComparisonFindingORM") == [
+        "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
+    ], "QualityComparisonFindingORM constructed outside its single authorized site"

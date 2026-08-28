@@ -39,19 +39,28 @@ class OqiMalformedRuleError(DomainException):
 
 
 class QualityDimension(StrEnum):
-    """CDD-039 §9: exactly these two, closed."""
+    """CDD-039 §9: originally exactly two, closed. CDD-040 §14 additively
+    extends this with `CONSISTENCY` -- scoped explicitly to CROSS-SOURCE
+    value consistency; never a reinterpretation of Gate T's own intra-source
+    `CONFLICTING` outcome (CDD-031, unchanged)."""
 
     COMPLETENESS = "COMPLETENESS"
     VALIDITY = "VALIDITY"
+    CONSISTENCY = "CONSISTENCY"
 
 
 class QualityFindingType(StrEnum):
-    """CDD-039 §10: exactly these four, closed."""
+    """CDD-039 §10: originally exactly four, closed. CDD-040 §14, §31
+    additively extends this with the two cross-source Finding types. No
+    further type is authorized -- authority is explanation metadata, never
+    a Finding-type discriminator (CDD-040 §23, §31)."""
 
     MISSING_VALUE = "MISSING_VALUE"
     ENUM_VIOLATION = "ENUM_VIOLATION"
     FORMAT_VIOLATION = "FORMAT_VIOLATION"
     RANGE_VIOLATION = "RANGE_VIOLATION"
+    CROSS_SOURCE_VALUE_CONFLICT = "CROSS_SOURCE_VALUE_CONFLICT"
+    CROSS_SOURCE_PARTICIPANT_VALUE_MISSING = "CROSS_SOURCE_PARTICIPANT_VALUE_MISSING"
 
 
 class ValidityPrimitive(StrEnum):
@@ -72,11 +81,21 @@ class QualityRuleStatus(StrEnum):
     RETIRED = "RETIRED"
 
 
-# CDD-039 §10's closed, exhaustive 4-row coupling table:
+# CDD-039 §10's closed, exhaustive 4-row coupling table, additively
+# extended by CDD-040 §14 with 1 more row for CONSISTENCY:
 #   COMPLETENESS -> MISSING_VALUE   -> validity_primitive = None
 #   VALIDITY     -> ENUM_VIOLATION  -> validity_primitive = ENUM_MEMBERSHIP
 #   VALIDITY     -> FORMAT_VIOLATION -> validity_primitive = FORMAT_VIOLATION
 #   VALIDITY     -> RANGE_VIOLATION  -> validity_primitive = RANGE_VIOLATION
+#   CONSISTENCY  -> CROSS_SOURCE_VALUE_CONFLICT -> validity_primitive = None
+#
+# `CROSS_SOURCE_PARTICIPANT_VALUE_MISSING` deliberately has NO row here: a
+# CONSISTENCY rule's own static `finding_type` is a required-but-nominal
+# shape field (mirroring every other dimension); the actual per-evaluation
+# Finding type is computed dynamically by the cross-source evaluation
+# service (CDD-040 §29-§31) and may legitimately differ from the rule's own
+# nominal `CROSS_SOURCE_VALUE_CONFLICT` value when a governed missingness
+# case applies -- this is expected, not a shape violation.
 _ALLOWED_COMBINATIONS: frozenset[
     tuple[QualityDimension, QualityFindingType, ValidityPrimitive | None]
 ] = frozenset(
@@ -97,11 +116,18 @@ _ALLOWED_COMBINATIONS: frozenset[
             QualityFindingType.RANGE_VIOLATION,
             ValidityPrimitive.RANGE_VIOLATION,
         ),
+        (
+            QualityDimension.CONSISTENCY,
+            QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+            None,
+        ),
     }
 )
 
 _MAX_CONDITION_ID_LENGTH = 200
 _MAX_REQUIREMENT_ID_LENGTH = 200
+_MAX_PARTICIPANT_ROLE_LENGTH = 64
+_MIN_CONSISTENCY_PARTICIPANTS = 2
 
 
 def _require_numeric(value: Any, *, label: str) -> float:
@@ -110,6 +136,77 @@ def _require_numeric(value: Any, *, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise OqiMalformedRuleError(f"{label} must be a number, not {value!r}")
     return float(value)
+
+
+def _validate_consistency_parameters(rule_parameters: Mapping[str, Any]) -> None:
+    """CDD-040 §20, §22: the canonical CONSISTENCY `rule_parameters` shape
+    and its exact deterministic validation rules. No implicit boolean
+    defaults are permitted anywhere -- a participant missing `eligible`,
+    `expected`, or `authoritative` is malformed, never defaulted."""
+    allowed_keys = {"semantic_target_id", "participants"}
+    if "participants" not in rule_parameters or not set(rule_parameters.keys()) <= allowed_keys:
+        raise OqiMalformedRuleError(
+            f"CONSISTENCY rule_parameters must contain 'participants' and only keys within "
+            f"{allowed_keys}"
+        )
+    semantic_target_id = rule_parameters.get("semantic_target_id")
+    if semantic_target_id is not None and not isinstance(semantic_target_id, str):
+        raise OqiMalformedRuleError("semantic_target_id must be a string or absent")
+
+    participants = rule_parameters["participants"]
+    if not isinstance(participants, list) or len(participants) < _MIN_CONSISTENCY_PARTICIPANTS:
+        raise OqiMalformedRuleError(
+            f"participants must be a list with at least {_MIN_CONSISTENCY_PARTICIPANTS} entries"
+        )
+
+    required_participant_keys = {"role", "source_field_id", "eligible", "expected", "authoritative"}
+    seen_roles: set[str] = set()
+    seen_source_field_ids: set[str] = set()
+    authoritative_count = 0
+    for entry in participants:
+        if not isinstance(entry, Mapping) or set(entry.keys()) != required_participant_keys:
+            raise OqiMalformedRuleError(
+                f"each participant must be a mapping containing exactly "
+                f"{required_participant_keys}"
+            )
+        role = entry["role"]
+        if not isinstance(role, str) or not (1 <= len(role) <= _MAX_PARTICIPANT_ROLE_LENGTH):
+            raise OqiMalformedRuleError(
+                f"role must be non-empty text of length <= {_MAX_PARTICIPANT_ROLE_LENGTH}"
+            )
+        if role in seen_roles:
+            raise OqiMalformedRuleError(f"duplicate participant role: {role!r}")
+        seen_roles.add(role)
+
+        source_field_id = entry["source_field_id"]
+        if not isinstance(source_field_id, str) or not source_field_id.strip():
+            raise OqiMalformedRuleError("source_field_id must be non-empty text")
+        if source_field_id in seen_source_field_ids:
+            raise OqiMalformedRuleError(
+                f"duplicate source_field_id across roles: {source_field_id!r}"
+            )
+        seen_source_field_ids.add(source_field_id)
+
+        for flag_name in ("eligible", "expected", "authoritative"):
+            flag_value = entry[flag_name]
+            if not isinstance(flag_value, bool):
+                raise OqiMalformedRuleError(
+                    f"{flag_name} must be an explicit boolean -- no implicit default is permitted"
+                )
+        eligible, expected, authoritative = (
+            entry["eligible"],
+            entry["expected"],
+            entry["authoritative"],
+        )
+        if authoritative and not eligible:
+            raise OqiMalformedRuleError("authoritative=true requires eligible=true")
+        if expected and not eligible:
+            raise OqiMalformedRuleError("expected=true requires eligible=true")
+        if authoritative:
+            authoritative_count += 1
+
+    if authoritative_count > 1:
+        raise OqiMalformedRuleError("at most one participant may be authoritative=true")
 
 
 def validate_rule_shape(
@@ -133,6 +230,10 @@ def validate_rule_shape(
     if dimension is QualityDimension.COMPLETENESS:
         if dict(rule_parameters) != {}:
             raise OqiMalformedRuleError("COMPLETENESS rule_parameters must be empty")
+        return
+
+    if dimension is QualityDimension.CONSISTENCY:
+        _validate_consistency_parameters(rule_parameters)
         return
 
     if validity_primitive is ValidityPrimitive.ENUM_MEMBERSHIP:
