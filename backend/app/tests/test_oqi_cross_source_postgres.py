@@ -7,6 +7,7 @@ invariant holds; and the `pg_advisory_xact_lock` mechanism genuinely
 serializes concurrent cross-source evaluations, including the critical
 evidence-arrives-while-waiting case."""
 
+# isort: skip_file
 from __future__ import annotations
 
 import threading
@@ -15,7 +16,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import alembic.command
 import pytest
+from alembic.config import Config
 from sqlalchemy import Engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -168,17 +171,13 @@ def test_migration_creates_expected_schema(migrated_engine: Engine) -> None:
 
 
 def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
-    from alembic.config import Config
-
-    from alembic import command
-
     alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option("sqlalchemy.url", str(migrated_engine.url))
-    command.downgrade(alembic_cfg, "0020_oqi1_quality_foundation")
-    with migrated_engine.connect() as connection:
+    alembic.command.downgrade(alembic_cfg, "0020_oqi1_quality_foundation")
+    with migrated_engine.connect():
         tables = set(inspect(migrated_engine).get_table_names())
         assert "comparison_subject_correspondences" not in tables
-    command.upgrade(alembic_cfg, "0021_oqi2_cross_source")
+    alembic.command.upgrade(alembic_cfg, "0021_oqi2_cross_source")
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     assert revision == "0021_oqi2_cross_source"
