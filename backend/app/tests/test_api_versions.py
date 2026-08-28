@@ -66,9 +66,14 @@ def test_declared_versions_match_real_route_surface() -> None:
     """CDD-038 SS17: (a) every declared version has at least one real route
     under /api/{version}/; (b) no route exists under an undeclared
     /api/v{N}/ prefix. Evidence is derived from the real, running
-    application route table, not a hardcoded expected-path list."""
+    application's own OpenAPI schema (`app.openapi()["paths"]`) -- FastAPI's
+    stable, public, version-independent flattened route enumeration -- never
+    a hardcoded expected-path list. `app.routes` is deliberately not walked
+    directly: FastAPI internally represents an included router as an opaque
+    wrapper object across versions, so manual traversal is not a reliable
+    cross-version route source."""
     app = create_app()
-    route_paths = [route.path for route in app.routes if hasattr(route, "path")]
+    route_paths = list(app.openapi()["paths"].keys())
 
     versioned_prefixes_in_routes = {
         match.group(1) for path in route_paths if (match := _VERSION_PREFIX.match(path)) is not None
