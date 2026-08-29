@@ -304,7 +304,7 @@ def test_decision_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'decision_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0020_oqi1_quality_foundation"
+    assert revision == "0021_oqi2_cross_source"
     assert trigger_count == 1
 
 

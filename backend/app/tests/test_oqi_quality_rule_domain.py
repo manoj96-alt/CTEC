@@ -128,6 +128,163 @@ def test_validity_couplings_are_valid(
     )
 
 
+def test_consistency_cross_source_value_conflict_none_primitive_is_valid() -> None:
+    validate_rule_shape(
+        dimension=QualityDimension.CONSISTENCY,
+        finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+        validity_primitive=None,
+        rule_parameters={
+            "participants": [
+                {
+                    "role": "SAP",
+                    "source_field_id": "11111111-1111-1111-1111-111111111111",
+                    "eligible": True,
+                    "expected": True,
+                    "authoritative": False,
+                },
+                {
+                    "role": "PLM",
+                    "source_field_id": "22222222-2222-2222-2222-222222222222",
+                    "eligible": True,
+                    "expected": True,
+                    "authoritative": True,
+                },
+            ]
+        },
+    )
+
+
+def test_consistency_requires_at_least_two_participants() -> None:
+    with pytest.raises(OqiMalformedRuleError):
+        validate_rule_shape(
+            dimension=QualityDimension.CONSISTENCY,
+            finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+            validity_primitive=None,
+            rule_parameters={
+                "participants": [
+                    {
+                        "role": "SAP",
+                        "source_field_id": "11111111-1111-1111-1111-111111111111",
+                        "eligible": True,
+                        "expected": True,
+                        "authoritative": False,
+                    }
+                ]
+            },
+        )
+
+
+def test_consistency_rejects_implicit_boolean_default() -> None:
+    with pytest.raises(OqiMalformedRuleError):
+        validate_rule_shape(
+            dimension=QualityDimension.CONSISTENCY,
+            finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+            validity_primitive=None,
+            rule_parameters={
+                "participants": [
+                    {
+                        "role": "SAP",
+                        "source_field_id": "11111111-1111-1111-1111-111111111111",
+                        "eligible": True,
+                        "expected": True,
+                        # authoritative deliberately omitted -- must fail closed,
+                        # never default to False.
+                    },
+                    {
+                        "role": "PLM",
+                        "source_field_id": "22222222-2222-2222-2222-222222222222",
+                        "eligible": True,
+                        "expected": True,
+                        "authoritative": False,
+                    },
+                ]
+            },
+        )
+
+
+def test_consistency_authoritative_true_requires_eligible_true() -> None:
+    with pytest.raises(OqiMalformedRuleError):
+        validate_rule_shape(
+            dimension=QualityDimension.CONSISTENCY,
+            finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+            validity_primitive=None,
+            rule_parameters={
+                "participants": [
+                    {
+                        "role": "SAP",
+                        "source_field_id": "11111111-1111-1111-1111-111111111111",
+                        "eligible": False,
+                        "expected": False,
+                        "authoritative": True,
+                    },
+                    {
+                        "role": "PLM",
+                        "source_field_id": "22222222-2222-2222-2222-222222222222",
+                        "eligible": True,
+                        "expected": True,
+                        "authoritative": False,
+                    },
+                ]
+            },
+        )
+
+
+def test_consistency_rejects_authoritative_true_implying_expected() -> None:
+    """CDD-040 §21: authoritative=true MUST NOT imply expected=true -- both
+    remain independently governable, including authoritative-but-not-
+    expected, which must NOT be rejected merely for that combination."""
+    validate_rule_shape(
+        dimension=QualityDimension.CONSISTENCY,
+        finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+        validity_primitive=None,
+        rule_parameters={
+            "participants": [
+                {
+                    "role": "SAP",
+                    "source_field_id": "11111111-1111-1111-1111-111111111111",
+                    "eligible": True,
+                    "expected": True,
+                    "authoritative": False,
+                },
+                {
+                    "role": "PLM",
+                    "source_field_id": "22222222-2222-2222-2222-222222222222",
+                    "eligible": True,
+                    "expected": False,
+                    "authoritative": True,
+                },
+            ]
+        },
+    )
+
+
+def test_consistency_rejects_two_authoritative_participants() -> None:
+    with pytest.raises(OqiMalformedRuleError):
+        validate_rule_shape(
+            dimension=QualityDimension.CONSISTENCY,
+            finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+            validity_primitive=None,
+            rule_parameters={
+                "participants": [
+                    {
+                        "role": "SAP",
+                        "source_field_id": "11111111-1111-1111-1111-111111111111",
+                        "eligible": True,
+                        "expected": True,
+                        "authoritative": True,
+                    },
+                    {
+                        "role": "PLM",
+                        "source_field_id": "22222222-2222-2222-2222-222222222222",
+                        "eligible": True,
+                        "expected": True,
+                        "authoritative": True,
+                    },
+                ]
+            },
+        )
+
+
 def test_invalid_combination_completeness_with_primitive_is_rejected() -> None:
     with pytest.raises(OqiMalformedRuleError):
         validate_rule_shape(
