@@ -693,6 +693,18 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/infrastructure/persistence/migrations/versions/0022_oqi3_business_rule.py",
     "backend/app/tests/test_oqi_business_rule_domain.py",
     "backend/app/tests/test_oqi_business_rule_postgres.py",
+    # OQI3-I2 (CDD-041): deterministic BusinessRule evaluation ledger --
+    # typed parsing, evidence-frontier selection, AST evaluation, and
+    # Evaluation/EvaluationInput/Observation persistence. No Finding
+    # lifecycle (OQI3-I3, separately authorized) -- Artifact Authorization
+    # §2 rows 3, 6, 9 (partial), 10 (partial), 13-16.
+    "backend/app/domain/oqi_business_rule/evaluation.py",
+    "backend/app/infrastructure/persistence/models/oqi_business_rule_evaluation.py",
+    "backend/app/infrastructure/persistence/oqi_business_rule_evaluation_repository.py",
+    "backend/app/application/oqi_business_rule_evaluation_service.py",
+    "backend/app/tests/test_oqi_business_rule_evaluation_domain.py",
+    "backend/app/tests/test_oqi_business_rule_evaluation_service.py",
+    "backend/app/tests/test_oqi_business_rule_provenance.py",
 }
 
 
@@ -1167,12 +1179,24 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
     classes are each constructed in exactly one authorized repository file."""
     oqi_business_rule_paths = (
         REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_business_rule" / "rule.py",
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_business_rule" / "evaluation.py",
         REPOSITORY_ROOT
         / "backend"
         / "app"
         / "infrastructure"
         / "persistence"
         / "oqi_business_rule_repository.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "oqi_business_rule_evaluation_repository.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "application"
+        / "oqi_business_rule_evaluation_service.py",
     )
     forbidden_prefixes = (
         "app.domain.oqi.quality_rule",
@@ -1220,14 +1244,16 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
             and path.name
             not in {
                 "oqi_business_rule.py",
+                "oqi_business_rule_evaluation.py",
                 "test_runtime_architecture.py",
                 # test_oqi_business_rule_postgres.py deliberately constructs a
-                # raw BusinessRuleORM row, bypassing the repository, in
-                # exactly the test proving the database-level partial unique
-                # index (one ACTIVE version per condition) and the
-                # (business_condition_id, version) uniqueness constraint
-                # reject it even when the application layer is bypassed --
-                # the same established pattern as
+                # raw BusinessRuleORM/BusinessRuleEvaluationInputORM row,
+                # bypassing the repository, in exactly the tests proving the
+                # database-level partial unique index (one ACTIVE version per
+                # condition), the (business_condition_id, version) uniqueness
+                # constraint, and rollback atomicity (a forged, FK-violating
+                # input row) reject/rollback even when the application layer
+                # is bypassed -- the same established pattern as
                 # test_oqi_quality_postgres.py's own direct QualityRuleORM
                 # construction.
                 "test_oqi_business_rule_postgres.py",
@@ -1241,6 +1267,15 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
     assert _construction_sites("BusinessRuleInputBindingORM") == [
         "infrastructure/persistence/oqi_business_rule_repository.py"
     ], "BusinessRuleInputBindingORM constructed outside its single authorized site"
+    assert _construction_sites("BusinessRuleEvaluationORM") == [
+        "infrastructure/persistence/oqi_business_rule_evaluation_repository.py"
+    ], "BusinessRuleEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("BusinessRuleEvaluationInputORM") == [
+        "infrastructure/persistence/oqi_business_rule_evaluation_repository.py"
+    ], "BusinessRuleEvaluationInputORM constructed outside its single authorized site"
+    assert _construction_sites("BusinessRuleEvaluationObservationORM") == [
+        "infrastructure/persistence/oqi_business_rule_evaluation_repository.py"
+    ], "BusinessRuleEvaluationObservationORM constructed outside its single authorized site"
 
 
 def test_oqi3_business_rule_foundation_does_not_modify_quality_rule() -> None:
