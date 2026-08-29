@@ -13,14 +13,17 @@ snapshot-acquisition mechanics only: the OQI1-derived latest-evidence
 ordering/filter predicates, `EMPTY` semantics, and `NOT_EVALUABLE`/
 unknown-subject semantics are all reproduced verbatim.
 
-Deliberately does NOT expose `acquire_evaluation_authority`, `get_finding`,
-or `upsert_finding` -- Finding-authority advisory locking (seed=3, CDD-041
-§21 steps 1-6, 10, 17) and Finding lifecycle mutation belong exclusively to
-OQI3-I3 (CDD-041 §33 decomposition). This repository's persistence methods
-are safe building blocks for I3 to compose *inside* its lock; calling
-`insert_evaluation_idempotent` on its own (as this module's own HISTORICAL
-path and tests do) never claims CURRENT_STATE Finding-lifecycle safety --
-see the OQI3-I2/I2-R3 reports' honest concurrency-scope analysis."""
+CDD-041 §21 steps 1-6, 10, 17 (OQI3-I3): `acquire_evaluation_authority` reuses
+OQI1/OQI2's exact mechanism -- `SELECT pg_advisory_xact_lock(hashtextextended
+(:identity, :seed))` -- with `OQI_BUSINESS_RULE_ADVISORY_LOCK_SEED = 3`,
+distinct from `_lock_replay_identity`'s seed 0, OQI1's seed 1, and OQI2's
+seed 2 (CDD-041 §21). `get_finding`/`upsert_finding` are the Finding-lifecycle
+read/write primitives the application service composes *inside* that lock.
+Calling `insert_evaluation_idempotent` standalone (as this module's own
+HISTORICAL path and tests do) never claims CURRENT_STATE Finding-lifecycle
+safety by itself -- see the OQI3-I2/I2-R3 reports' honest concurrency-scope
+analysis; only the full CDD-041 §21 sequence (lock before evidence selection,
+held through Finding mutation and commit) provides that guarantee."""
 
 from __future__ import annotations
 
@@ -29,12 +32,25 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import String, Uuid, and_, column, func, literal_column, or_, select, true, values
+from sqlalchemy import (
+    String,
+    Uuid,
+    and_,
+    column,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+    true,
+    values,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
 from app.domain.oqi.evaluation import EvaluationMode
+from app.domain.oqi.finding import QualityFindingStatus
 from app.domain.oqi_business_rule.evaluation import (
     BusinessRuleEvaluation,
     BusinessRuleEvaluationInputEntry,
@@ -44,6 +60,7 @@ from app.domain.oqi_business_rule.evaluation import (
     canonical_single_record_subject_identity,
     input_evidence_digest,
 )
+from app.domain.oqi_business_rule.finding import BusinessRuleFinding, ResolutionBasis
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.oqi_business_rule import BusinessRuleORM
 from app.infrastructure.persistence.models.oqi_business_rule_evaluation import (
@@ -51,7 +68,13 @@ from app.infrastructure.persistence.models.oqi_business_rule_evaluation import (
     BusinessRuleEvaluationObservationORM,
     BusinessRuleEvaluationORM,
 )
+from app.infrastructure.persistence.models.oqi_business_rule_finding import BusinessRuleFindingORM
 from app.infrastructure.persistence.models.source_field import SourceFieldORM
+
+#: CDD-041 §21: distinct from `_lock_replay_identity`'s seed 0, OQI1's own
+#: seed 1, and OQI2's own seed 2, so the four otherwise-unrelated subsystems
+#: can never coincidentally serialize against each other.
+OQI_BUSINESS_RULE_ADVISORY_LOCK_SEED = 3
 
 
 class OqiBusinessRuleEvaluationRepository(Protocol):
@@ -67,6 +90,12 @@ class OqiBusinessRuleEvaluationRepository(Protocol):
     def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool: ...
 
     def get_evaluation(self, evaluation_id: UUID) -> BusinessRuleEvaluation | None: ...
+
+    def acquire_evaluation_authority(self, identity: str) -> None: ...
+
+    def get_finding(self, finding_id: UUID) -> BusinessRuleFinding | None: ...
+
+    def upsert_finding(self, finding: BusinessRuleFinding) -> None: ...
 
 
 class OqiBusinessRuleEvidenceValueReader:
@@ -198,6 +227,35 @@ def _build_evidence_frontier_statement(
 class OqiBusinessRuleEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def acquire_evaluation_authority(self, identity: str) -> None:
+        """CDD-041 §21 step 5: transaction-scoped -- releases automatically
+        on COMMIT, ROLLBACK, or connection loss. Never `pg_advisory_lock`
+        (session-scoped)."""
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, :seed))"),
+            {"identity": identity, "seed": OQI_BUSINESS_RULE_ADVISORY_LOCK_SEED},
+        )
+
+    def get_finding(self, finding_id: UUID) -> BusinessRuleFinding | None:
+        model = self.session.get(BusinessRuleFindingORM, finding_id)
+        return None if model is None else _finding_to_domain(model)
+
+    def upsert_finding(self, finding: BusinessRuleFinding) -> None:
+        model = self.session.get(BusinessRuleFindingORM, finding.finding_id)
+        if model is None:
+            self.session.add(_finding_to_orm(finding))
+            return
+        model.status = finding.status.value
+        model.resolution_basis = (
+            None if finding.resolution_basis is None else finding.resolution_basis.value
+        )
+        model.latest_evaluation_id = finding.latest_evaluation_id
+        model.occurrence_count = finding.occurrence_count
+        model.reopen_count = finding.reopen_count
+        model.state_revision = finding.state_revision
+        model.first_seen_at = finding.first_seen_at
+        model.last_seen_at = finding.last_seen_at
 
     def select_evidence_frontier(
         self,
@@ -343,6 +401,46 @@ class OqiBusinessRuleEvaluationRepositoryImpl:
         rule_model = self.session.get(BusinessRuleORM, model.rule_id)
         assert rule_model is not None  # FK-enforced; a rule is never deleted once referenced
         return _to_domain(model, rule_model.version, input_rows, observation_rows)
+
+
+def _finding_to_orm(finding: BusinessRuleFinding) -> BusinessRuleFindingORM:
+    return BusinessRuleFindingORM(
+        finding_id=finding.finding_id,
+        tenant_id=finding.tenant_id,
+        business_condition_id=finding.business_condition_id,
+        subject_type=finding.subject_type,
+        subject_identity=finding.subject_identity,
+        status=finding.status.value,
+        resolution_basis=(
+            None if finding.resolution_basis is None else finding.resolution_basis.value
+        ),
+        latest_evaluation_id=finding.latest_evaluation_id,
+        occurrence_count=finding.occurrence_count,
+        reopen_count=finding.reopen_count,
+        state_revision=finding.state_revision,
+        first_seen_at=finding.first_seen_at,
+        last_seen_at=finding.last_seen_at,
+    )
+
+
+def _finding_to_domain(model: BusinessRuleFindingORM) -> BusinessRuleFinding:
+    return BusinessRuleFinding(
+        finding_id=model.finding_id,
+        tenant_id=model.tenant_id,
+        business_condition_id=model.business_condition_id,
+        subject_type=model.subject_type,
+        subject_identity=model.subject_identity,
+        status=QualityFindingStatus(model.status),
+        resolution_basis=(
+            None if model.resolution_basis is None else ResolutionBasis(model.resolution_basis)
+        ),
+        latest_evaluation_id=model.latest_evaluation_id,
+        occurrence_count=model.occurrence_count,
+        reopen_count=model.reopen_count,
+        state_revision=model.state_revision,
+        first_seen_at=model.first_seen_at,
+        last_seen_at=model.last_seen_at,
+    )
 
 
 def _input_evidence_digest_of(evaluation: BusinessRuleEvaluation) -> str:

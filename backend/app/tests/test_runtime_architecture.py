@@ -705,6 +705,11 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_oqi_business_rule_evaluation_domain.py",
     "backend/app/tests/test_oqi_business_rule_evaluation_service.py",
     "backend/app/tests/test_oqi_business_rule_provenance.py",
+    # OQI3-I3 (CDD-041): CURRENT-STATE BusinessRuleFinding lifecycle +
+    # seed-3 advisory authority -- Artifact Authorization §2 rows 4, 7, 9
+    # (remainder), 10 (remainder), 14-16 (remainder), 17.
+    "backend/app/domain/oqi_business_rule/finding.py",
+    "backend/app/infrastructure/persistence/models/oqi_business_rule_finding.py",
 }
 
 
@@ -1197,6 +1202,7 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
         / "app"
         / "application"
         / "oqi_business_rule_evaluation_service.py",
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_business_rule" / "finding.py",
     )
     forbidden_prefixes = (
         "app.domain.oqi.quality_rule",
@@ -1245,6 +1251,7 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
             not in {
                 "oqi_business_rule.py",
                 "oqi_business_rule_evaluation.py",
+                "oqi_business_rule_finding.py",
                 "test_runtime_architecture.py",
                 # test_oqi_business_rule_postgres.py deliberately constructs a
                 # raw BusinessRuleORM/BusinessRuleEvaluationInputORM row,
@@ -1276,6 +1283,9 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
     assert _construction_sites("BusinessRuleEvaluationObservationORM") == [
         "infrastructure/persistence/oqi_business_rule_evaluation_repository.py"
     ], "BusinessRuleEvaluationObservationORM constructed outside its single authorized site"
+    assert _construction_sites("BusinessRuleFindingORM") == [
+        "infrastructure/persistence/oqi_business_rule_evaluation_repository.py"
+    ], "BusinessRuleFindingORM constructed outside its single authorized site"
 
 
 def test_oqi3_business_rule_foundation_does_not_modify_quality_rule() -> None:

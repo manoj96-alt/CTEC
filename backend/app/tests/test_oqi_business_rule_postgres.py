@@ -441,6 +441,7 @@ def test_valid_rule_round_trips_through_create_and_get_by_id(migrated_engine: En
 
     with factory() as session:
         loaded = OqiBusinessRuleRepositoryImpl(session).get_by_id(rule.rule_id)
+        assert loaded is not None
     assert loaded == rule
 
 
@@ -460,6 +461,7 @@ def test_get_active_returns_the_active_version(migrated_engine: Engine) -> None:
         active = OqiBusinessRuleRepositoryImpl(session).get_active(
             tenant_id=tenant_id, business_condition_id=rule.business_condition_id
         )
+        assert active is not None
     assert active == rule
 
 
@@ -1393,7 +1395,9 @@ def test_retired_rule_is_not_returned_by_get_active(migrated_engine: Engine) -> 
         active = OqiBusinessRuleRepositoryImpl(session).get_active(
             tenant_id=tenant_id, business_condition_id=condition_id
         )
+        assert active is not None
         retired = OqiBusinessRuleRepositoryImpl(session).get_by_id(rule_v1.rule_id)
+        assert retired is not None
     assert active is not None and active.version == 2
     assert retired is not None and retired.status is BusinessRuleStatus.RETIRED
 
@@ -2575,3 +2579,583 @@ def test_atomic_frontier_value_to_new_value_race_is_snapshot_consistent(
     session_writer.close()
 
     assert results["rows"]["a"] == eid_v1
+
+
+# --- OQI3-I3: CURRENT-STATE BusinessRuleFinding lifecycle + seed-3 authority
+# (CDD-041 §14-§15, §21, §24; Artifact Authorization §9, §14-§15 remainder).
+# Fake-repo lifecycle/counter/compound/Kleene tests live in
+# test_oqi_business_rule_evaluation_service.py; these are the real-Postgres
+# concurrency and atomicity proofs that fake repo cannot provide.
+
+
+def _current_state_service(session: Session) -> OqiBusinessRuleEvaluationService:
+    return _service(session)
+
+
+def test_current_state_first_violation_race_creates_exactly_one_finding(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §21: two concurrent CURRENT_STATE evaluators, identical
+    evidence, no existing Finding. Seed-3 serializes them -- the second
+    worker only proceeds after the first commits, so no duplicate Finding,
+    no lost update, and no caller-visible IntegrityError from the Finding
+    table itself."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as setup_session:
+        object_id, field_id = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="MATERIAL_TYPE"
+        )
+        classification_field_id = _seed_field(
+            setup_session, tenant_id=tenant_id, field_label="HAZMAT_CLASSIFICATION"
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=ComparatorNode(
+                clause_id="applicable-hazmat",
+                operator=Operator.EQ,
+                input_role="material_type",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.STRING,
+                literal_value="HAZMAT",
+            ),
+            predicate=ComparatorNode(
+                clause_id="classification-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="hazmat_classification",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            input_bindings=(
+                BusinessRuleInputBinding(
+                    input_role="material_type",
+                    source_field_id=field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="hazmat_classification",
+                    source_field_id=classification_field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+            ),
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(setup_session).create(rule)
+        _admit_evidence(
+            setup_session,
+            source_field_id=field_id,
+            source_record_reference="MAT-100",
+            observed_representation="HAZMAT",
+        )
+        # hazmat_classification deliberately never admitted -> EMPTY -> VIOLATED.
+        setup_session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    barrier = threading.Barrier(2)
+    outcomes: dict[str, tuple[str, object]] = {}
+
+    def _worker(session: Session, key: str) -> None:
+        # Defensive: ANY exception (not just IntegrityError) must still
+        # release the transaction-scoped seed-3 lock via rollback in the
+        # `finally` clause -- an unhandled exception left uncaught here
+        # would leave the session "idle in transaction" holding the lock
+        # forever, deadlocking the sibling worker.
+        try:
+            rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+                tenant_id=tenant_id, business_condition_id=condition_id
+            )
+            assert rule_local is not None
+            barrier.wait(timeout=5)
+            evaluation = _current_state_service(session).evaluate_current_state(
+                rule=rule_local, subject=subject
+            )
+            assert evaluation is not None
+            session.commit()
+            outcomes[key] = ("committed", evaluation.evaluation_id)
+        except IntegrityError:
+            outcomes[key] = ("integrity_error", None)
+        except BaseException as exc:  # noqa: BLE001
+            outcomes[key] = ("error", repr(exc))
+        finally:
+            session.rollback()
+
+    session_a, session_b = factory(), factory()
+    thread_a = threading.Thread(target=_worker, args=(session_a, "a"))
+    thread_b = threading.Thread(target=_worker, args=(session_b, "b"))
+    thread_a.start()
+    thread_b.start()
+    thread_a.join(timeout=15)
+    thread_b.join(timeout=15)
+    session_a.close()
+    session_b.close()
+
+    assert outcomes["a"][0] == "committed", outcomes["a"]
+    assert outcomes["b"][0] == "committed", outcomes["b"]
+    assert outcomes["a"][1] == outcomes["b"][1]  # identical evidence -> identical evaluation_id
+
+    with factory() as session:
+        finding_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_findings WHERE tenant_id = :t "
+                "AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).scalar_one()
+        finding_row = session.execute(
+            text(
+                "SELECT status, occurrence_count, reopen_count, state_revision "
+                "FROM business_rule_findings WHERE tenant_id = :t AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).one()
+    assert finding_count == 1
+    # Both workers computed the identical evaluation_id (unchanged evidence);
+    # only the transaction that won parent ownership mutates the Finding --
+    # exactly one OPEN Finding at revision 1, never a lost/duplicated update.
+    assert finding_row[0] == "OPEN"
+    assert finding_row[1] == 1  # occurrence_count
+    assert finding_row[2] == 0  # reopen_count
+    assert finding_row[3] == 1  # state_revision
+
+
+def test_current_state_reopen_race_increments_reopen_count_exactly_once(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §14, §21: a Finding resolved via NOT_APPLICABLE (material
+    reclassified STANDARD), then two concurrent CURRENT_STATE evaluators
+    submit identical evidence re-establishing HAZMAT applicability with
+    classification still never admitted (permanently EMPTY) -> VIOLATED.
+    Seed-3 serializes the reopen -- only the transaction that wins parent
+    ownership of the (identical) Evaluation mutates the Finding, so
+    reopen_count increments exactly once, never twice."""
+    from datetime import timedelta
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    ref = "MAT-REOPEN-1"
+    # A single fixed CURRENT_STATE horizon, later than every admitted
+    # evidence timestamp below (NOW, NOW+1h, NOW+2h) -- the service's clock
+    # must not itself be `NOW` (a `_service()` default), since evidence
+    # admitted at `NOW+1h`/`NOW+2h` would otherwise fall after the horizon
+    # and never be selected by the frontier's `received_at <= horizon`
+    # boundary.
+    horizon = NOW + timedelta(hours=10)
+
+    def _horizoned_service(session: Session) -> OqiBusinessRuleEvaluationService:
+        return OqiBusinessRuleEvaluationService(
+            evaluation_repository=OqiBusinessRuleEvaluationRepositoryImpl(session),
+            evidence_value_reader=OqiBusinessRuleEvidenceValueReader(session),
+            clock=lambda: horizon,
+        )
+
+    def _rule(field_id: UUID, classification_field_id: UUID) -> BusinessRule:
+        return BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=ComparatorNode(
+                clause_id="applicable-hazmat",
+                operator=Operator.EQ,
+                input_role="material_type",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.STRING,
+                literal_value="HAZMAT",
+            ),
+            predicate=ComparatorNode(
+                clause_id="classification-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="hazmat_classification",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            input_bindings=(
+                BusinessRuleInputBinding(
+                    input_role="material_type",
+                    source_field_id=field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="hazmat_classification",
+                    source_field_id=classification_field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+            ),
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+
+    with factory() as session:
+        object_id, field_id = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="MATERIAL_TYPE"
+        )
+        classification_field_id = _seed_field(
+            session, tenant_id=tenant_id, field_label="HAZMAT_CLASSIFICATION"
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(_rule(field_id, classification_field_id))
+        # T1: HAZMAT, classification never admitted -> VIOLATED -> OPEN.
+        _admit_evidence(
+            session,
+            source_field_id=field_id,
+            source_record_reference=ref,
+            observed_representation="HAZMAT",
+            received_at=NOW,
+        )
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference=ref
+    )
+    with factory() as session:
+        rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert rule_local is not None
+        evaluation = _horizoned_service(session).evaluate_current_state(
+            rule=rule_local, subject=subject
+        )
+        assert evaluation is not None
+        assert evaluation.outcome is EvaluationOutcome.VIOLATED
+        session.commit()
+
+    # T2: reclassify STANDARD (newer evidence) -> NOT_APPLICABLE -> RESOLVED.
+    with factory() as session:
+        _admit_evidence(
+            session,
+            source_field_id=field_id,
+            source_record_reference=ref,
+            observed_representation="STANDARD",
+            received_at=NOW + timedelta(hours=1),
+        )
+        session.commit()
+    with factory() as session:
+        rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert rule_local is not None
+        evaluation = _horizoned_service(session).evaluate_current_state(
+            rule=rule_local, subject=subject
+        )
+        assert evaluation is not None
+        assert evaluation.outcome is EvaluationOutcome.NOT_APPLICABLE
+        session.commit()
+    with factory() as session:
+        row = session.execute(
+            text(
+                "SELECT status, resolution_basis, reopen_count FROM business_rule_findings "
+                "WHERE tenant_id = :t AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).one()
+        assert row[0] == "RESOLVED" and row[1] == "NOT_APPLICABLE" and row[2] == 0
+
+    # T3: reclassify HAZMAT again (even newer evidence), classification
+    # still never admitted -> VIOLATED again -> REOPEN. Race this step.
+    with factory() as session:
+        _admit_evidence(
+            session,
+            source_field_id=field_id,
+            source_record_reference=ref,
+            observed_representation="HAZMAT",
+            received_at=NOW + timedelta(hours=2),
+        )
+        session.commit()
+
+    barrier = threading.Barrier(2)
+    outcomes: dict[str, tuple[str, object]] = {}
+
+    def _worker(session: Session, key: str) -> None:
+        # Defensive: ANY exception must still release the transaction-scoped
+        # seed-3 lock via rollback in `finally` -- an unhandled exception
+        # left uncaught here would leave the session "idle in transaction"
+        # holding the lock forever, deadlocking the sibling worker.
+        try:
+            rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+                tenant_id=tenant_id, business_condition_id=condition_id
+            )
+            assert rule_local is not None
+            barrier.wait(timeout=5)
+            evaluation = _horizoned_service(session).evaluate_current_state(
+                rule=rule_local, subject=subject
+            )
+            assert evaluation is not None
+            session.commit()
+            outcomes[key] = ("committed", evaluation.evaluation_id)
+        except IntegrityError:
+            outcomes[key] = ("integrity_error", None)
+        except BaseException as exc:  # noqa: BLE001
+            outcomes[key] = ("error", repr(exc))
+        finally:
+            session.rollback()
+
+    session_a, session_b = factory(), factory()
+    thread_a = threading.Thread(target=_worker, args=(session_a, "a"))
+    thread_b = threading.Thread(target=_worker, args=(session_b, "b"))
+    thread_a.start()
+    thread_b.start()
+    thread_a.join(timeout=15)
+    thread_b.join(timeout=15)
+    session_a.close()
+    session_b.close()
+
+    assert outcomes["a"][0] == "committed", outcomes["a"]
+    assert outcomes["b"][0] == "committed", outcomes["b"]
+    assert outcomes["a"][1] == outcomes["b"][1]  # identical evidence -> identical evaluation_id
+
+    with factory() as session:
+        row = session.execute(
+            text(
+                "SELECT status, reopen_count, occurrence_count, state_revision "
+                "FROM business_rule_findings WHERE tenant_id = :t AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).one()
+    assert row[0] == "OPEN"
+    assert row[1] == 1  # reopen_count incremented exactly once, not twice
+    assert row[2] == 2  # occurrence_count: original violation + this reopen
+    assert row[3] == 3  # state_revision: OPEN(1) -> RESOLVED(2) -> OPEN(3)
+
+
+def test_current_state_evaluation_and_finding_atomicity_rollback(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §21 step 16: a forced failure between Evaluation persistence
+    and Finding mutation must roll back the entire transaction -- no
+    orphan Evaluation, no partial Finding. A clean retry afterward succeeds
+    normally with no residue from the failed attempt."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as setup_session:
+        object_id, field_id = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="MATERIAL_TYPE"
+        )
+        classification_field_id = _seed_field(
+            setup_session, tenant_id=tenant_id, field_label="HAZMAT_CLASSIFICATION"
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=ComparatorNode(
+                clause_id="applicable-hazmat",
+                operator=Operator.EQ,
+                input_role="material_type",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.STRING,
+                literal_value="HAZMAT",
+            ),
+            predicate=ComparatorNode(
+                clause_id="classification-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="hazmat_classification",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            input_bindings=(
+                BusinessRuleInputBinding(
+                    input_role="material_type",
+                    source_field_id=field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="hazmat_classification",
+                    source_field_id=classification_field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+            ),
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(setup_session).create(rule)
+        _admit_evidence(
+            setup_session,
+            source_field_id=field_id,
+            source_record_reference="MAT-500",
+            observed_representation="HAZMAT",
+        )
+        # hazmat_classification deliberately never admitted -> EMPTY -> VIOLATED.
+        setup_session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-500"
+    )
+
+    class _FailingUpsertRepo(OqiBusinessRuleEvaluationRepositoryImpl):
+        def upsert_finding(self, finding: Any) -> None:
+            raise RuntimeError("forced failure between Evaluation persistence and Finding mutation")
+
+    with factory() as session:
+        rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert rule_local is not None
+        failing_repo = _FailingUpsertRepo(session)
+        service = OqiBusinessRuleEvaluationService(
+            evaluation_repository=failing_repo,
+            evidence_value_reader=OqiBusinessRuleEvidenceValueReader(session),
+            clock=lambda: NOW,
+        )
+        with pytest.raises(RuntimeError):
+            service.evaluate_current_state(rule=rule_local, subject=subject)
+        session.rollback()
+
+    with factory() as session:
+        evaluation_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_evaluations WHERE tenant_id = :t "
+                "AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).scalar_one()
+        finding_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_findings WHERE tenant_id = :t "
+                "AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).scalar_one()
+    assert evaluation_count == 0  # entire transaction rolled back
+    assert finding_count == 0
+
+    # Clean retry succeeds normally, no residue from the failed attempt.
+    with factory() as session:
+        rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert rule_local is not None
+        evaluation = _current_state_service(session).evaluate_current_state(
+            rule=rule_local, subject=subject
+        )
+        assert evaluation is not None
+        session.commit()
+    with factory() as session:
+        evaluation_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_evaluations WHERE tenant_id = :t "
+                "AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).scalar_one()
+        finding_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_findings WHERE tenant_id = :t "
+                "AND business_condition_id = :c"
+            ),
+            {"t": tenant_id, "c": condition_id},
+        ).scalar_one()
+    assert evaluation_count == 1
+    assert finding_count == 1
+
+
+def test_current_state_tenant_isolation_distinct_findings(migrated_engine: Engine) -> None:
+    """CDD-041 §15, §24: one BusinessRule/SourceObject/subject reference,
+    evaluated with two different `subject.tenant_id` values. Finding
+    identity includes `tenant_id` as its own dimension (independent of
+    `business_condition_id`/`subject_identity`), so the two evaluations
+    must never collide into one Finding row -- two structurally
+    independent Finding identities must exist, each keyed to its own
+    tenant_id, never a shared/overwritten row."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    condition_id = f"cond-{uuid4()}"
+    tenant_a, tenant_b = f"tenant-a-{uuid4()}", f"tenant-b-{uuid4()}"
+    reference = "SHARED-REF-1"
+
+    with factory() as session:
+        object_id, field_id = _seed_field_with_object(
+            session, tenant_id=tenant_a, field_label="MATERIAL_TYPE"
+        )
+        classification_field_id = _seed_field(
+            session, tenant_id=tenant_a, field_label="HAZMAT_CLASSIFICATION"
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_a,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=ComparatorNode(
+                clause_id="applicable-hazmat",
+                operator=Operator.EQ,
+                input_role="material_type",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.STRING,
+                literal_value="HAZMAT",
+            ),
+            predicate=ComparatorNode(
+                clause_id="classification-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="hazmat_classification",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            input_bindings=(
+                BusinessRuleInputBinding(
+                    input_role="material_type",
+                    source_field_id=field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="hazmat_classification",
+                    source_field_id=classification_field_id,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+            ),
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=field_id,
+            source_record_reference=reference,
+            observed_representation="HAZMAT",
+        )
+        # hazmat_classification deliberately never admitted -> EMPTY -> VIOLATED.
+        session.commit()
+
+    findings = {}
+    for tenant_id in (tenant_a, tenant_b):
+        with factory() as session:
+            rule_local = OqiBusinessRuleRepositoryImpl(session).get_by_id(rule.rule_id)
+            assert rule_local is not None
+            subject = SingleRecordSubject(
+                tenant_id=tenant_id, source_object_id=object_id, source_record_reference=reference
+            )
+            evaluation = _current_state_service(session).evaluate_current_state(
+                rule=rule_local, subject=subject
+            )
+            assert evaluation is not None
+            session.commit()
+            findings[tenant_id] = evaluation
+
+    assert findings[tenant_a].tenant_id != findings[tenant_b].tenant_id
+    with factory() as session:
+        finding_rows = session.execute(
+            text(
+                "SELECT tenant_id, finding_id FROM business_rule_findings "
+                "WHERE business_condition_id = :c"
+            ),
+            {"c": condition_id},
+        ).all()
+    assert len(finding_rows) == 2
+    finding_ids = {row[1] for row in finding_rows}
+    assert len(finding_ids) == 2  # two structurally distinct Finding identities
+    tenant_ids_present = {row[0] for row in finding_rows}
+    assert tenant_ids_present == {tenant_a, tenant_b}

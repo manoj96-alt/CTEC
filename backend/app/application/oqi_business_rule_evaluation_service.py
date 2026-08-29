@@ -1,24 +1,23 @@
-"""OQI3-I2 deterministic `BusinessRule` evaluation (CDD-041 §10-§13,
-§16-§21). Implements the CDD-041 §21 algorithm's *deterministic core* only
-(steps 7-9, 11, 13-16): select the governed input frontier, parse each
-bound input per its `expected_type`, evaluate applicability, evaluate the
-predicate without short-circuit, derive observations/outcome, and persist
-the immutable ledger atomically. Steps 1-6, 10, and 17 (ACTIVE-status gate,
-Finding identity, advisory-lock authority seed=3, and Finding transition
-mutation) belong exclusively to OQI3-I3 (CDD-041 §33) and are never
-implemented here.
+"""OQI3 deterministic `BusinessRule` evaluation (CDD-041 §10-§13, §16-§21).
+Implements the full CDD-041 §21 algorithm: `evaluate_historical` (OQI3-I2)
+never acquires Finding authority (CDD-041 §23) and its evidence-frontier
+coherence rests only on evidence being immutable and horizon-filtered,
+exactly OQI1/OQI2's own HISTORICAL discipline. `evaluate_current_state`
+(OQI3-I3) composes `select_input_frontier`/`determine_outcome` *inside*
+seed-3 advisory-lock authority -- acquired before evidence selection and
+held through Finding mutation and commit (CDD-041 §21 steps 1-6, 10, 17;
+Atomic Multi-Field Evidence Frontier Amendment) -- which is what makes the
+now-atomic evidence frontier plus this lock together provide the full
+CURRENT_STATE correctness guarantee: the frontier fixes evaluator-vs-writer
+snapshot coherence, the lock fixes evaluator-vs-evaluator Finding-ledger
+mutual exclusion. Neither alone is sufficient; both are always exercised
+together in `evaluate_current_state`.
 
-`evaluate_historical` is the one complete, safe, standalone entry point in
-this phase -- HISTORICAL mode never needs Finding authority (CDD-041 §23),
-so its evidence-frontier coherence rests only on evidence being immutable
-and horizon-filtered, exactly OQI1/OQI2's own HISTORICAL discipline.
-
-`select_input_frontier` and `determine_outcome` are the reusable building
-blocks OQI3-I3 will compose *inside* its advisory-lock authority for
-CURRENT_STATE evaluation -- calling them standalone, as this module's own
-HISTORICAL path and this phase's tests do, makes no CURRENT_STATE
-concurrency-safety claim whatsoever (see the OQI3-I2 report's honest
-concurrency-scope analysis, CDD-041 §21 steps 1-6)."""
+`select_input_frontier` and `determine_outcome` remain independently callable
+(as `evaluate_historical` and this module's own tests do) -- doing so makes
+no CURRENT_STATE concurrency-safety claim by itself (see the OQI3-I2/I2-R3
+reports' honest concurrency-scope analysis); only `evaluate_current_state`'s
+full sequence provides that guarantee."""
 
 from __future__ import annotations
 
@@ -42,9 +41,16 @@ from app.domain.oqi_business_rule.evaluation import (
     derive_business_rule_evaluation_id,
     input_evidence_digest,
 )
+from app.domain.oqi_business_rule.finding import (
+    BusinessRuleFinding,
+    apply_business_rule_finding_transition,
+    business_rule_finding_identity_material,
+    derive_business_rule_finding_id,
+)
 from app.domain.oqi_business_rule.rule import (
     AstNode,
     BusinessRule,
+    BusinessRuleStatus,
     ComparandKind,
     ComparatorNode,
     ExpectedType,
@@ -53,6 +59,13 @@ from app.domain.oqi_business_rule.rule import (
     validate_business_rule_shape,
 )
 from app.domain.shared.exceptions import ValidationException
+
+
+class OqiRuleNotActiveError(ValidationException):
+    """Raised when CURRENT_STATE evaluation is attempted against a
+    `BusinessRule` that is not the ACTIVE version for its
+    `business_condition_id` (CDD-041 §21 step 2)."""
+
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _BOOLEAN_TRUE = "true"
@@ -72,6 +85,12 @@ class OqiBusinessRuleEvaluationRepository(Protocol):
     ) -> tuple[bool, dict[str, UUID | None]]: ...
 
     def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool: ...
+
+    def acquire_evaluation_authority(self, identity: str) -> None: ...
+
+    def get_finding(self, finding_id: UUID) -> BusinessRuleFinding | None: ...
+
+    def upsert_finding(self, finding: BusinessRuleFinding) -> None: ...
 
 
 def parse_typed_value(expected_type: ExpectedType, raw: str) -> TypedValue | None:
@@ -424,4 +443,123 @@ class OqiBusinessRuleEvaluationService:
             evaluated_at=self._clock(),
         )
         self._repository.insert_evaluation_idempotent(evaluation)
+        return evaluation
+
+    def evaluate_current_state(
+        self,
+        *,
+        rule: BusinessRule,
+        subject: SingleRecordSubject,
+    ) -> BusinessRuleEvaluation | None:
+        """CDD-041 §21 steps 1-18 (OQI3-I3): the full CURRENT_STATE algorithm.
+        `rule` must be the caller-supplied, pre-loaded ACTIVE version -- it
+        is never re-queried after lock acquisition, mirroring OQI1/OQI2
+        exactly. Seed-3 authority is acquired before the trusted horizon is
+        established and before any evidence is selected (steps 4-7); it is
+        held through Finding mutation and commit (steps 17-18) -- the
+        caller's transaction boundary (commit/rollback) governs all-or-
+        nothing persistence and automatic lock release."""
+        if rule.status is not BusinessRuleStatus.ACTIVE:
+            raise OqiRuleNotActiveError(
+                f"business_condition_id {rule.business_condition_id!r} has no ACTIVE version "
+                "eligible for CURRENT_STATE evaluation"
+            )
+
+        subject_identity = canonical_single_record_subject_identity(
+            source_object_id=subject.source_object_id,
+            source_record_reference=subject.source_record_reference,
+        )
+        identity_material = business_rule_finding_identity_material(
+            tenant_id=subject.tenant_id,
+            business_condition_id=rule.business_condition_id,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+        )
+        # CDD-041 §21 step 5: authority MUST be acquired before the horizon
+        # is established and before evidence selection -- this is the very
+        # next line, unconditionally.
+        self._repository.acquire_evaluation_authority(identity_material)
+
+        # CDD-041 §21 step 6: defensive re-validation of whatever persisted
+        # rule shape was loaded happens inside `determine_outcome` below
+        # (mirrors OQI1's `validate_rule_shape` re-check precedent exactly)
+        # -- no second database query for ACTIVE status is authorized or
+        # needed, since `rule` is the caller's pre-loaded, never-re-queried
+        # in-memory object (CDD-041 §21 step 1-2).
+        horizon = self._clock()
+
+        inputs = select_input_frontier(
+            rule=rule,
+            subject=subject,
+            evaluation_horizon=horizon,
+            repository=self._repository,
+        )
+        if inputs is None:
+            # Subject unknown to CTEC: NOT_EVALUABLE. No Evaluation, no
+            # Finding mutation. Authority releases automatically on
+            # commit/rollback.
+            return None
+
+        raw_values = self._evidence_value_reader.read_values(inputs)
+        result = determine_outcome(rule=rule, inputs=inputs, raw_values=raw_values)
+        if result is None:
+            # NOT_EVALUABLE: no Evaluation, no Finding mutation.
+            return None
+        outcome, observations = result
+
+        finding_id = derive_business_rule_finding_id(
+            tenant_id=subject.tenant_id,
+            business_condition_id=rule.business_condition_id,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+        )
+        existing_finding = self._repository.get_finding(finding_id)
+
+        digest = input_evidence_digest(inputs)
+        evaluation_id = derive_business_rule_evaluation_id(
+            tenant_id=subject.tenant_id,
+            business_condition_id=rule.business_condition_id,
+            rule_version=rule.version,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+            evaluation_mode=EvaluationMode.CURRENT_STATE,
+            evaluation_horizon=horizon,
+            input_evidence_digest_value=digest,
+        )
+        next_finding = apply_business_rule_finding_transition(
+            existing=existing_finding,
+            outcome=outcome,
+            evaluation_id=evaluation_id,
+            evaluation_horizon=horizon,
+            tenant_id=subject.tenant_id,
+            business_condition_id=rule.business_condition_id,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+        )
+
+        evaluation = BusinessRuleEvaluation(
+            evaluation_id=evaluation_id,
+            tenant_id=subject.tenant_id,
+            business_condition_id=rule.business_condition_id,
+            rule_id=rule.rule_id,
+            rule_version=rule.version,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+            source_object_id=subject.source_object_id,
+            source_record_reference=subject.source_record_reference,
+            evaluation_mode=EvaluationMode.CURRENT_STATE,
+            evaluation_horizon=horizon,
+            inputs=inputs,
+            outcome=outcome,
+            observations=observations,
+            evaluated_at=self._clock(),
+        )
+
+        # CDD-041 §22: idempotent replay -- if this exact evaluation_id
+        # already exists, the ledger insert is a no-op and the Finding
+        # (already correctly mutated by the original application) MUST NOT
+        # be mutated a second time.
+        newly_inserted = self._repository.insert_evaluation_idempotent(evaluation)
+        if newly_inserted and next_finding is not None:
+            self._repository.upsert_finding(next_finding)
         return evaluation

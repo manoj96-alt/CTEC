@@ -6,8 +6,9 @@ matrix Artifact Authorization §9 requires."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -842,3 +843,648 @@ def test_field_comparison_compound_predicate_rejected() -> None:
             created_by="tester",
             created_on=NOW,
         )
+
+
+# --- OQI3-I3: CURRENT-STATE BusinessRuleFinding lifecycle + seed-3 authority
+# (CDD-041 §14-§15, §21-§23, §30; Artifact Authorization §9, §14 remainder).
+# A fake in-memory repository exercises the full `evaluate_current_state`
+# orchestration deterministically (single-threaded) -- real-Postgres
+# concurrency proofs (first-violation/resolution/reopen races, lock-before-
+# frontier ordering, atomicity rollback, tenant isolation, replay idempotency
+# under contention) live in test_oqi_business_rule_postgres.py.
+
+from app.application.oqi_business_rule_evaluation_service import (
+    OqiBusinessRuleEvaluationService,
+    OqiRuleNotActiveError,
+    SingleRecordSubject,
+)
+from app.domain.oqi.finding import QualityFindingStatus
+from app.domain.oqi_business_rule.evaluation import BusinessRuleEvaluation
+from app.domain.oqi_business_rule.finding import BusinessRuleFinding, ResolutionBasis
+
+
+class _FakeCurrentStateRepo:
+    """In-memory stand-in for `OqiBusinessRuleEvaluationRepository`. Field
+    state is `dict[input_role, str | None]` (`None` = known subject, zero
+    qualifying evidence for that role -- the frozen EMPTY sentinel);
+    `subject_known=False` makes `select_evidence_frontier` report an unknown
+    subject regardless of `fields`, exactly like real Postgres would for a
+    record with zero evidence anywhere."""
+
+    def __init__(self) -> None:
+        self.subject_known = True
+        self.fields: dict[str, str | None] = {}
+        self._evaluations: dict[UUID, BusinessRuleEvaluation] = {}
+        self._findings: dict[UUID, BusinessRuleFinding] = {}
+        self.call_order: list[str] = []
+        self._evidence_id_by_role_value: dict[tuple[str, str], UUID] = {}
+        self._by_evidence_id: dict[UUID, str] = {}
+
+    def select_evidence_frontier(
+        self,
+        *,
+        source_object_id: UUID,
+        source_record_reference: str,
+        evaluation_horizon: datetime,
+        bindings: Sequence[tuple[str, UUID]],
+    ) -> tuple[bool, dict[str, UUID | None]]:
+        self.call_order.append("select_evidence_frontier")
+        if not self.subject_known:
+            return False, {}
+        result: dict[str, UUID | None] = {}
+        for role, _field_id in bindings:
+            value = self.fields.get(role)
+            if value is None:
+                result[role] = None
+                continue
+            # Stable per (role, value): unchanged raw evidence content
+            # yields the same evidence_id across calls, exactly as real
+            # Postgres would for an unchanged FieldValueEvidence row --
+            # required for genuine replay-identity tests.
+            key = (role, value)
+            if key not in self._evidence_id_by_role_value:
+                self._evidence_id_by_role_value[key] = uuid4()
+            evidence_id = self._evidence_id_by_role_value[key]
+            self._by_evidence_id[evidence_id] = value
+            result[role] = evidence_id
+        return True, result
+
+    def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool:
+        if evaluation.evaluation_id in self._evaluations:
+            return False
+        self._evaluations[evaluation.evaluation_id] = evaluation
+        return True
+
+    def acquire_evaluation_authority(self, identity: str) -> None:
+        self.call_order.append("acquire_evaluation_authority")
+
+    def get_finding(self, finding_id: UUID) -> BusinessRuleFinding | None:
+        return self._findings.get(finding_id)
+
+    def upsert_finding(self, finding: BusinessRuleFinding) -> None:
+        self._findings[finding.finding_id] = finding
+
+
+class _FakeReader:
+    def __init__(self, repo: _FakeCurrentStateRepo) -> None:
+        self._repo = repo
+
+    def read_values(self, inputs: tuple[BusinessRuleEvaluationInputEntry, ...]) -> dict[str, str]:
+        return {
+            entry.input_role: self._repo._by_evidence_id[entry.evidence_id]
+            for entry in inputs
+            if entry.evidence_id is not None
+        }
+
+
+def _make_service(repo: _FakeCurrentStateRepo) -> OqiBusinessRuleEvaluationService:
+    return OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: NOW,
+    )
+
+
+def _subject(reference: str = "REC-1") -> SingleRecordSubject:
+    return SingleRecordSubject(
+        tenant_id="t1", source_object_id=uuid4(), source_record_reference=reference
+    )
+
+
+def test_no_finding_plus_violated_creates_open() -> None:
+    repo = _FakeCurrentStateRepo()
+    repo.fields = {"material_type": "HAZMAT"}
+    service = _make_service(repo)
+    subject = _subject()
+    evaluation = service.evaluate_current_state(rule=_hazmat_rule(), subject=subject)
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.resolution_basis is None
+    assert (
+        finding.occurrence_count == 1 and finding.reopen_count == 0 and finding.state_revision == 1
+    )
+    assert finding.first_seen_at == NOW and finding.last_seen_at == NOW
+    assert finding.latest_evaluation_id == evaluation.evaluation_id
+
+
+def test_no_finding_plus_satisfied_creates_no_finding() -> None:
+    repo = _FakeCurrentStateRepo()
+    repo.fields = {"material_type": "HAZMAT", "hazmat_classification": "CLASS-3"}
+    service = _make_service(repo)
+    service.evaluate_current_state(rule=_hazmat_rule(), subject=_subject())
+    assert repo._findings == {}
+
+
+def test_no_finding_plus_not_applicable_creates_no_finding() -> None:
+    repo = _FakeCurrentStateRepo()
+    repo.fields = {"material_type": "STANDARD"}
+    service = _make_service(repo)
+    service.evaluate_current_state(rule=_hazmat_rule(), subject=_subject())
+    assert repo._findings == {}
+
+
+def test_open_plus_violated_remains_open_and_updates_last_seen() -> None:
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    repo.fields = {"material_type": "HAZMAT"}
+    subject = _subject()
+    rule = _hazmat_rule()
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    t = [NOW]
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 2
+    assert finding.occurrence_count == 1 and finding.reopen_count == 0
+    assert finding.last_seen_at == NOW + timedelta(days=1)
+    assert finding.first_seen_at == NOW
+
+
+def test_open_plus_satisfied_resolves_basis_satisfied_last_seen_unchanged() -> None:
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {"material_type": "HAZMAT", "hazmat_classification": "CLASS-3"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.RESOLVED
+    assert finding.resolution_basis is ResolutionBasis.SATISFIED
+    assert finding.state_revision == 2
+    assert finding.last_seen_at == NOW  # never updated on SATISFIED
+
+
+def test_open_plus_not_applicable_resolves_basis_not_applicable() -> None:
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {"material_type": "STANDARD"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.RESOLVED
+    assert finding.resolution_basis is ResolutionBasis.NOT_APPLICABLE
+    assert finding.state_revision == 2
+
+
+def test_resolved_plus_satisfied_remains_resolved() -> None:
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {"material_type": "HAZMAT", "hazmat_classification": "CLASS-3"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=2)
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.RESOLVED
+    assert finding.resolution_basis is ResolutionBasis.SATISFIED
+    assert finding.state_revision == 3
+
+
+def test_resolved_plus_not_applicable_remains_resolved() -> None:
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {"material_type": "STANDARD"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=2)
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.RESOLVED
+    assert finding.resolution_basis is ResolutionBasis.NOT_APPLICABLE
+    assert finding.state_revision == 3
+
+
+def test_resolved_plus_violated_reopens_with_correct_counters() -> None:
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {"material_type": "HAZMAT", "hazmat_classification": "CLASS-3"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=2)
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.resolution_basis is None
+    assert finding.occurrence_count == 2 and finding.reopen_count == 1
+    assert finding.state_revision == 3
+    assert finding.last_seen_at == NOW + timedelta(days=2)
+    assert finding.first_seen_at == NOW
+
+
+def test_not_evaluable_leaves_existing_open_finding_completely_untouched() -> None:
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    service = _make_service(repo)
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (before,) = repo._findings.values()
+
+    repo.subject_known = False
+    evaluation = service.evaluate_current_state(rule=rule, subject=subject)
+    assert evaluation is None
+    (after,) = repo._findings.values()
+    assert before == after  # frozen dataclass equality: byte-identical
+
+
+def test_not_evaluable_creates_no_finding_when_none_exists() -> None:
+    repo = _FakeCurrentStateRepo()
+    repo.subject_known = False
+    service = _make_service(repo)
+    evaluation = service.evaluate_current_state(rule=_hazmat_rule(), subject=_subject())
+    assert evaluation is None
+    assert repo._findings == {}
+    assert repo._evaluations == {}
+
+
+def test_retirement_firewall_open_finding_unchanged_and_evaluation_rejected() -> None:
+    from dataclasses import replace
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    service = _make_service(repo)
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (before,) = repo._findings.values()
+
+    retired_rule = replace(rule, status=BusinessRuleStatus.RETIRED, retired_on=NOW)
+    with pytest.raises(OqiRuleNotActiveError):
+        service.evaluate_current_state(rule=retired_rule, subject=subject)
+    (after,) = repo._findings.values()
+    assert before == after
+
+
+def test_same_evaluation_replay_does_not_double_mutate_finding() -> None:
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    service = _make_service(repo)
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (first,) = repo._findings.values()
+    # Identical rule/subject/horizon/evidence -> identical evaluation_id ->
+    # replay must be a no-op for Finding counters/state.
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (second,) = repo._findings.values()
+    assert first == second
+    assert len(repo._evaluations) == 1
+
+
+def test_lock_acquired_before_evidence_selection() -> None:
+    repo = _FakeCurrentStateRepo()
+    repo.fields = {"material_type": "HAZMAT"}
+    service = _make_service(repo)
+    service.evaluate_current_state(rule=_hazmat_rule(), subject=_subject())
+    assert repo.call_order.index("acquire_evaluation_authority") < repo.call_order.index(
+        "select_evidence_frontier"
+    )
+
+
+def test_not_applicable_reapplicability_reopens_finding() -> None:
+    """CDD-041 §14, §30: HAZMAT -> OPEN; reclassified STANDARD -> RESOLVED/
+    NOT_APPLICABLE; reclassified back to HAZMAT with classification still
+    missing -> same Finding REOPENED with correct reopen_count. Mandatory
+    product regression (OQI3-I3-R directive)."""
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _hazmat_rule()
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {"material_type": "STANDARD"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (resolved,) = repo._findings.values()
+    assert resolved.status is QualityFindingStatus.RESOLVED
+    assert resolved.resolution_basis is ResolutionBasis.NOT_APPLICABLE
+
+    t[0] = NOW + timedelta(days=2)
+    repo.fields = {"material_type": "HAZMAT"}
+    service.evaluate_current_state(rule=rule, subject=subject)
+    (reopened,) = repo._findings.values()
+    assert reopened.status is QualityFindingStatus.OPEN
+    assert reopened.resolution_basis is None
+    assert reopened.occurrence_count == 2 and reopened.reopen_count == 1
+    assert reopened.finding_id == resolved.finding_id
+
+
+def _compound_required_rule(condition_id: str) -> BusinessRule:
+    applicability = ComparatorNode(
+        clause_id="applicable-lifecycle-active",
+        operator=Operator.EQ,
+        input_role="lifecycle_status",
+        comparand_kind=ComparandKind.LITERAL,
+        literal_type=ExpectedType.STRING,
+        literal_value="ACTIVE",
+    )
+    predicate = CompositionNode(
+        operator=Operator.AND,
+        children=(
+            ComparatorNode(
+                clause_id="planning-group-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="planning_group",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            ComparatorNode(
+                clause_id="procurement-type-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="procurement_type",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            ComparatorNode(
+                clause_id="base-uom-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="base_uom",
+                comparand_kind=ComparandKind.NONE,
+            ),
+        ),
+    )
+    bindings = (
+        BusinessRuleInputBinding(
+            input_role="lifecycle_status",
+            source_field_id=uuid4(),
+            required=True,
+            expected_type=ExpectedType.STRING,
+        ),
+    ) + tuple(
+        BusinessRuleInputBinding(
+            input_role=role,
+            source_field_id=uuid4(),
+            required=True,
+            expected_type=ExpectedType.STRING,
+        )
+        for role in ("planning_group", "procurement_type", "base_uom")
+    )
+    return BusinessRule.new(
+        business_condition_id=condition_id,
+        version=1,
+        tenant_id="t1",
+        rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+        applicability=applicability,
+        predicate=predicate,
+        input_bindings=bindings,
+        status=BusinessRuleStatus.ACTIVE,
+        created_by="tester",
+        created_on=NOW,
+    )
+
+
+def test_compound_partial_remediation_one_finding_throughout() -> None:
+    """CDD-041 §19, §21: A/B/C required; 3-missing -> 2-missing ->
+    1-missing -> resolved -> reopen, one Finding throughout, old
+    Observations immutable. Mandatory compound lifecycle regression."""
+    from datetime import timedelta
+
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _compound_required_rule(f"compound-{uuid4()}")
+    t = [NOW]
+    service = OqiBusinessRuleEvaluationService(
+        evaluation_repository=repo,
+        evidence_value_reader=_FakeReader(repo),
+        clock=lambda: t[0],
+    )
+
+    repo.fields = {
+        "lifecycle_status": "ACTIVE",
+        "planning_group": None,
+        "procurement_type": None,
+        "base_uom": None,
+    }
+    eval1 = service.evaluate_current_state(rule=rule, subject=subject)
+    assert eval1 is not None
+    assert len(eval1.observations) == 3
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.state_revision == 1
+    finding_id = finding.finding_id
+
+    t[0] = NOW + timedelta(days=1)
+    repo.fields = {
+        "lifecycle_status": "ACTIVE",
+        "planning_group": "PG1",
+        "procurement_type": None,
+        "base_uom": None,
+    }
+    eval2 = service.evaluate_current_state(rule=rule, subject=subject)
+    assert eval2 is not None
+    assert len(eval2.observations) == 2
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN and finding.state_revision == 2
+    assert finding.finding_id == finding_id
+
+    t[0] = NOW + timedelta(days=2)
+    repo.fields = {
+        "lifecycle_status": "ACTIVE",
+        "planning_group": "PG1",
+        "procurement_type": "PT1",
+        "base_uom": None,
+    }
+    eval3 = service.evaluate_current_state(rule=rule, subject=subject)
+    assert eval3 is not None
+    assert len(eval3.observations) == 1
+    assert eval3.observations[0].input_role == "base_uom"
+
+    t[0] = NOW + timedelta(days=3)
+    repo.fields = {
+        "lifecycle_status": "ACTIVE",
+        "planning_group": "PG1",
+        "procurement_type": "PT1",
+        "base_uom": "EA",
+    }
+    eval4 = service.evaluate_current_state(rule=rule, subject=subject)
+    assert eval4 is not None
+    assert eval4.outcome is EvaluationOutcome.SATISFIED
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.RESOLVED
+    assert finding.resolution_basis is ResolutionBasis.SATISFIED
+    assert finding.state_revision == 4
+
+    # Reopen: base_uom goes missing again.
+    t[0] = NOW + timedelta(days=4)
+    repo.fields = {
+        "lifecycle_status": "ACTIVE",
+        "planning_group": "PG1",
+        "procurement_type": "PT1",
+        "base_uom": None,
+    }
+    eval5 = service.evaluate_current_state(rule=rule, subject=subject)
+    assert eval5 is not None
+    assert eval5.observations[0].input_role == "base_uom"
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN
+    assert finding.occurrence_count == 2 and finding.reopen_count == 1
+    assert finding.finding_id == finding_id
+
+    # Old evaluations' own observations remain immutable (never rewritten).
+    assert len(eval1.observations) == 3
+    assert len(eval3.observations) == 1
+
+
+def _kleene_rule_two_required(condition_id: str) -> BusinessRule:
+    applicability = ComparatorNode(
+        clause_id="applicable-gate",
+        operator=Operator.EQ,
+        input_role="gate",
+        comparand_kind=ComparandKind.LITERAL,
+        literal_type=ExpectedType.STRING,
+        literal_value="YES",
+    )
+    # CONDITIONAL_PROHIBITED allows any comparator as a consequence leaf
+    # (unlike CONDITIONAL_REQUIRED, restricted to IS_NOT_NULL) -- needed
+    # here so clause "b" can be a typed EQ comparison.
+    predicate = CompositionNode(
+        operator=Operator.AND,
+        children=(
+            ComparatorNode(
+                clause_id="a-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="a",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            ComparatorNode(
+                clause_id="b-comparison",
+                operator=Operator.EQ,
+                input_role="b",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.DECIMAL,
+                literal_value="42",
+            ),
+        ),
+    )
+    bindings = (
+        BusinessRuleInputBinding(
+            input_role="gate",
+            source_field_id=uuid4(),
+            required=True,
+            expected_type=ExpectedType.STRING,
+        ),
+        BusinessRuleInputBinding(
+            input_role="a",
+            source_field_id=uuid4(),
+            required=True,
+            expected_type=ExpectedType.STRING,
+        ),
+        BusinessRuleInputBinding(
+            input_role="b",
+            source_field_id=uuid4(),
+            required=True,
+            expected_type=ExpectedType.DECIMAL,
+        ),
+    )
+    return BusinessRule.new(
+        business_condition_id=condition_id,
+        version=1,
+        tenant_id="t1",
+        rule_family=RuleFamily.CONDITIONAL_PROHIBITED,
+        applicability=applicability,
+        predicate=predicate,
+        input_bindings=bindings,
+        status=BusinessRuleStatus.ACTIVE,
+        created_by="tester",
+        created_on=NOW,
+    )
+
+
+def test_kleene_false_and_unknown_violated_finding_stays_open_known_observation_only() -> None:
+    """FALSE (a missing) AND UNKNOWN (b malformed DECIMAL) -> VIOLATED,
+    exactly one observation (for 'a'), none for the unknown clause 'b'."""
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _kleene_rule_two_required(f"kleene-fu-{uuid4()}")
+    service = _make_service(repo)
+    repo.fields = {"gate": "YES", "a": None, "b": "not-a-decimal"}
+    evaluation = service.evaluate_current_state(rule=rule, subject=subject)
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert len(evaluation.observations) == 1
+    assert evaluation.observations[0].input_role == "a"
+    (finding,) = repo._findings.values()
+    assert finding.status is QualityFindingStatus.OPEN
+
+
+def test_kleene_true_and_unknown_not_evaluable_finding_completely_unchanged() -> None:
+    """TRUE (a present) AND UNKNOWN (b malformed) -> NOT_EVALUABLE. No
+    Evaluation, no Finding created/mutated."""
+    repo = _FakeCurrentStateRepo()
+    subject = _subject()
+    rule = _kleene_rule_two_required(f"kleene-tu-{uuid4()}")
+    service = _make_service(repo)
+    repo.fields = {"gate": "YES", "a": "present", "b": "not-a-decimal"}
+    evaluation = service.evaluate_current_state(rule=rule, subject=subject)
+    assert evaluation is None
+    assert repo._findings == {}
+    assert repo._evaluations == {}

@@ -178,3 +178,166 @@ def test_current_state_style_violated_evaluation_creates_no_finding_row(
     assert evaluation is not None
     assert evaluation.outcome is EvaluationOutcome.VIOLATED
     assert before == after  # zero Finding rows created, regardless of how many already existed
+
+
+def test_full_provenance_chain_reconstructable_through_the_finding(
+    migrated_engine: Engine,
+) -> None:
+    """OQI3-I3 (CDD-041 §20, §34; Artifact Authorization §16): the complete
+    explanation chain `BusinessRuleFinding -> latest BusinessRuleEvaluation
+    -> Observations(clause_id, input_role) -> input snapshot ->
+    FieldValueEvidence -> SourceField -> SourceObject`, reconstructed from
+    persisted state alone, no generated prose, for a CURRENT_STATE VIOLATED
+    evaluation."""
+    from app.application.oqi_business_rule_evaluation_service import (
+        OqiBusinessRuleEvaluationService,
+    )
+    from app.domain.oqi_business_rule.rule import (
+        BusinessRule,
+        BusinessRuleInputBinding,
+        BusinessRuleStatus,
+        ComparandKind,
+        ComparatorNode,
+        ExpectedType,
+        Operator,
+        RuleFamily,
+    )
+    from app.infrastructure.persistence.models.oqi_business_rule_finding import (
+        BusinessRuleFindingORM,
+    )
+    from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
+        OqiBusinessRuleEvaluationRepositoryImpl,
+        OqiBusinessRuleEvidenceValueReader,
+    )
+    from app.tests.test_oqi_business_rule_postgres import _seed_field
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        object_id, material_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="MATERIAL_TYPE"
+        )
+        classification_field = _seed_field(
+            session, tenant_id=tenant_id, field_label="HAZMAT_CLASSIFICATION"
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=ComparatorNode(
+                clause_id="applicable-hazmat",
+                operator=Operator.EQ,
+                input_role="material_type",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.STRING,
+                literal_value="HAZMAT",
+            ),
+            predicate=ComparatorNode(
+                clause_id="classification-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="hazmat_classification",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            input_bindings=(
+                BusinessRuleInputBinding(
+                    input_role="material_type",
+                    source_field_id=material_field,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="hazmat_classification",
+                    source_field_id=classification_field,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+            ),
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=material_field,
+            source_record_reference="MAT-900",
+            observed_representation="HAZMAT",
+        )
+        # hazmat_classification deliberately never admitted -> EMPTY -> VIOLATED.
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-900"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        service = OqiBusinessRuleEvaluationService(
+            evaluation_repository=OqiBusinessRuleEvaluationRepositoryImpl(session),
+            evidence_value_reader=OqiBusinessRuleEvidenceValueReader(session),
+            clock=lambda: NOW,
+        )
+        evaluation = service.evaluate_current_state(rule=active_rule, subject=subject)
+        session.commit()
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+
+    with factory() as session:
+        finding = session.execute(
+            select(BusinessRuleFindingORM).where(
+                BusinessRuleFindingORM.tenant_id == tenant_id,
+                BusinessRuleFindingORM.business_condition_id == condition_id,
+            )
+        ).scalar_one()
+        assert finding.status == "OPEN"
+        assert finding.latest_evaluation_id == evaluation.evaluation_id
+
+        # Finding -> latest Evaluation (already have it) -> Observations.
+        observations = (
+            session.execute(
+                select(BusinessRuleEvaluationObservationORM).where(
+                    BusinessRuleEvaluationObservationORM.evaluation_id
+                    == finding.latest_evaluation_id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(observations) == 1
+        observation = observations[0]
+        assert observation.input_role == "hazmat_classification"
+        assert observation.clause_id == "classification-required"
+        assert observation.observation_type == ObservationType.REQUIRED_INPUT_MISSING.value
+
+        # -> input snapshot -> FieldValueEvidence -> SourceField -> SourceObject.
+        # The violated role's own input snapshot is EMPTY (no evidence_id) --
+        # its provenance is the binding itself. Reconstruct the *applicability*
+        # role's evidence chain instead, which does carry a real evidence link.
+        material_input = session.execute(
+            select(BusinessRuleEvaluationInputORM).where(
+                BusinessRuleEvaluationInputORM.evaluation_id == finding.latest_evaluation_id,
+                BusinessRuleEvaluationInputORM.input_role == "material_type",
+            )
+        ).scalar_one()
+        assert material_input.field_value_evidence_id is not None
+        evidence = session.get(FieldValueEvidenceORM, material_input.field_value_evidence_id)
+        assert evidence is not None
+        assert evidence.observed_representation == "HAZMAT"
+        source_field = session.get(SourceFieldORM, evidence.source_field_id)
+        assert source_field is not None
+        source_object = session.get(SourceObjectORM, source_field.source_object_id)
+        assert source_object is not None
+        assert source_object.tenant_id == tenant_id
+
+        classification_input = session.execute(
+            select(BusinessRuleEvaluationInputORM).where(
+                BusinessRuleEvaluationInputORM.evaluation_id == finding.latest_evaluation_id,
+                BusinessRuleEvaluationInputORM.input_role == "hazmat_classification",
+            )
+        ).scalar_one()
+        assert classification_input.field_value_evidence_id is None  # EMPTY, never manufactured
