@@ -682,6 +682,17 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_oqi_cross_source_evaluation_service.py",
     "backend/app/tests/test_oqi_cross_source_postgres.py",
     "backend/app/tests/test_oqi_cross_source_provenance.py",
+    # OQI3-I1 (CDD-041): Business-Rule Quality Intelligence foundation --
+    # governed BusinessRule/input-binding/AST domain, publication-time
+    # validation, and the single 6-table migration. No evaluation runtime,
+    # no Finding lifecycle (OQI3-I2/I3, separately authorized).
+    "backend/app/domain/oqi_business_rule/__init__.py",
+    "backend/app/domain/oqi_business_rule/rule.py",
+    "backend/app/infrastructure/persistence/models/oqi_business_rule.py",
+    "backend/app/infrastructure/persistence/oqi_business_rule_repository.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0022_oqi3_business_rule.py",
+    "backend/app/tests/test_oqi_business_rule_domain.py",
+    "backend/app/tests/test_oqi_business_rule_postgres.py",
 }
 
 
@@ -1147,3 +1158,114 @@ def test_oqi2_cross_source_consistency_respects_every_firewall() -> None:
     assert _construction_sites("QualityComparisonFindingORM") == [
         "infrastructure/persistence/oqi_cross_source_evaluation_repository.py"
     ], "QualityComparisonFindingORM constructed outside its single authorized site"
+
+
+def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
+    """CDD-041 §3, §27: OQI3-I1's BusinessRule foundation shares no code
+    with QualityRule, Gate T, Entity Resolution, Gate S, Gate V, or any
+    LLM/model-provider SDK; introduces no API route; and its two new ORM
+    classes are each constructed in exactly one authorized repository file."""
+    oqi_business_rule_paths = (
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_business_rule" / "rule.py",
+        REPOSITORY_ROOT
+        / "backend"
+        / "app"
+        / "infrastructure"
+        / "persistence"
+        / "oqi_business_rule_repository.py",
+    )
+    forbidden_prefixes = (
+        "app.domain.oqi.quality_rule",
+        "app.domain.gate_s",
+        "app.application.gate_s_approval_service",
+        "app.domain.gate_v",
+        "app.application.gate_v_agent_service",
+        "app.domain.identity_resolution",
+        "app.api",
+        "app.runtime",
+        "app.integration.adapters",
+        "openai",
+        "anthropic",
+        "azure",
+    )
+    forbidden_substrings = ("evidence_fitness", "gate_t")
+    for path in oqi_business_rule_paths:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imports = [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        ]
+        imports.extend(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            module.startswith(forbidden_prefixes) for module in imports
+        ), f"{path.name} bypasses an OQI3 firewall: {imports}"
+        assert not any(
+            fragment in module.lower() for module in imports for fragment in forbidden_substrings
+        ), f"{path.name} imports a Gate T-shaped module: {imports}"
+
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_business_rule.py",
+                "test_runtime_architecture.py",
+                # test_oqi_business_rule_postgres.py deliberately constructs a
+                # raw BusinessRuleORM row, bypassing the repository, in
+                # exactly the test proving the database-level partial unique
+                # index (one ACTIVE version per condition) and the
+                # (business_condition_id, version) uniqueness constraint
+                # reject it even when the application layer is bypassed --
+                # the same established pattern as
+                # test_oqi_quality_postgres.py's own direct QualityRuleORM
+                # construction.
+                "test_oqi_business_rule_postgres.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("BusinessRuleORM") == [
+        "infrastructure/persistence/oqi_business_rule_repository.py"
+    ], "BusinessRuleORM constructed outside its single authorized site"
+    assert _construction_sites("BusinessRuleInputBindingORM") == [
+        "infrastructure/persistence/oqi_business_rule_repository.py"
+    ], "BusinessRuleInputBindingORM constructed outside its single authorized site"
+
+
+def test_oqi3_business_rule_foundation_does_not_modify_quality_rule() -> None:
+    """CDD-041 §3, §6: OQI3 never reopens QualityRule -- `_ALLOWED_
+    COMBINATIONS` and `validate_rule_shape` remain byte-identical, and no
+    OQI3 module imports or extends `QualityRule`."""
+    quality_rule_path = REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi" / "quality_rule.py"
+    source = quality_rule_path.read_text(encoding="utf-8")
+    assert "_ALLOWED_COMBINATIONS" in source
+    assert "CONDITIONAL_REQUIRED" not in source
+    assert "CONDITIONAL_PROHIBITED" not in source
+    assert "FIELD_COMPARISON" not in source
+
+    business_rule_path = (
+        REPOSITORY_ROOT / "backend" / "app" / "domain" / "oqi_business_rule" / "rule.py"
+    )
+    tree = ast.parse(
+        business_rule_path.read_text(encoding="utf-8"), filename=str(business_rule_path)
+    )
+    imports = [
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    ]
+    assert not any(
+        module.startswith("app.domain.oqi.quality_rule") or module == "app.domain.oqi"
+        for module in imports
+    ), f"oqi_business_rule/rule.py must not import QualityRule: {imports}"
