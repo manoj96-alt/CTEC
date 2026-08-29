@@ -753,3 +753,116 @@ def test_14_full_lifecycle_conflict_missing_then_missing_then_resolved_then_reop
     assert finding.state_revision == 4
     assert finding.occurrence_count == 2
     assert finding.reopen_count == 1
+
+
+# --- N-Source Finding Representation Artifact Authorization Amendment
+# §20: mandatory N=10 regression -- proves repaired Observation generation
+# has no binary/two-participant cardinality assumption reintroduced by the
+# repair, at a cardinality double the largest case in the §9-14 matrix
+# above. ---
+
+_TEN_ROLES = tuple(f"S{i:02d}" for i in range(1, 11))
+
+
+def test_n10_a_all_agree_is_satisfied_with_zero_observations() -> None:
+    rule, correspondence, repo = _n_participant_scenario({role: "ABC123" for role in _TEN_ROLES})
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.SATISFIED
+    assert evaluation.observations == ()
+    assert repo.findings == {}
+
+
+def test_n10_b_nine_agree_one_dissents_flags_all_ten_no_winner() -> None:
+    """9 of 10 known participants agree; 1 dissents. All 10 -- including
+    the 9 that agree with each other -- are conflict participants, because
+    conflict-participation records deterministic disagreement, not blame.
+    The dissenting participant (S10) is not uniquely marked wrong, and no
+    participant is marked "correct" for agreeing with the majority."""
+    role_values: dict[str, str | None] = {role: "ABC123" for role in _TEN_ROLES[:9]}
+    role_values[_TEN_ROLES[9]] = "XYZ999"
+    rule, correspondence, repo = _n_participant_scenario(role_values)
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    conflict_roles = {
+        obs.participant_role
+        for obs in evaluation.observations
+        if obs.observation_type is ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT
+    }
+    missing_roles = {
+        obs.participant_role
+        for obs in evaluation.observations
+        if obs.observation_type is ComparisonObservationType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING
+    }
+    assert conflict_roles == set(_TEN_ROLES)
+    assert missing_roles == set()
+    assert len(evaluation.observations) == 10
+    # The dissenting participant is not uniquely singled out: it is one
+    # conflict observation among ten, not a distinct observation type.
+    assert set(evaluation.observations) == {_conflict(role) for role in _TEN_ROLES}
+
+
+def test_n10_c_eight_agree_one_dissents_one_missing() -> None:
+    role_values: dict[str, str | None] = {role: "ABC123" for role in _TEN_ROLES[:8]}
+    role_values[_TEN_ROLES[8]] = "XYZ999"
+    role_values[_TEN_ROLES[9]] = None
+    rule, correspondence, repo = _n_participant_scenario(role_values)
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    expected_conflicts = {_conflict(role) for role in _TEN_ROLES[:9]}
+    expected_missing = {_missing(_TEN_ROLES[9])}
+    assert set(evaluation.observations) == expected_conflicts | expected_missing
+    assert len(evaluation.observations) == 10
+    assert (
+        sum(
+            1
+            for obs in evaluation.observations
+            if obs.observation_type is ComparisonObservationType.CROSS_SOURCE_VALUE_CONFLICT
+        )
+        == 9
+    )
+    assert (
+        sum(
+            1
+            for obs in evaluation.observations
+            if obs.observation_type
+            is ComparisonObservationType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING
+        )
+        == 1
+    )
+
+
+def test_n10_d_seven_agree_one_dissents_two_missing() -> None:
+    role_values: dict[str, str | None] = {role: "ABC123" for role in _TEN_ROLES[:7]}
+    role_values[_TEN_ROLES[7]] = "XYZ999"
+    role_values[_TEN_ROLES[8]] = None
+    role_values[_TEN_ROLES[9]] = None
+    rule, correspondence, repo = _n_participant_scenario(role_values)
+    service = OqiCrossSourceEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
+    evaluation = service.evaluate_current_state(rule=rule, correspondence=correspondence)
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    expected_conflicts = {_conflict(role) for role in _TEN_ROLES[:8]}
+    # Both missing participants are recorded independently -- not
+    # collapsed into a single generic missing observation.
+    expected_missing = {_missing(_TEN_ROLES[8]), _missing(_TEN_ROLES[9])}
+    assert set(evaluation.observations) == expected_conflicts | expected_missing
+    assert len(evaluation.observations) == 10
+    assert (
+        sum(
+            1
+            for obs in evaluation.observations
+            if obs.observation_type
+            is ComparisonObservationType.CROSS_SOURCE_PARTICIPANT_VALUE_MISSING
+        )
+        == 2
+    )
