@@ -1,7 +1,17 @@
-"""OQI3-I2 evaluation-ledger persistence: evidence selection (reusing OQI1's
-proven "latest qualifying evidence" query exactly, CDD-039 §32) and atomic,
+"""OQI3-I2 evaluation-ledger persistence: evidence selection and atomic,
 idempotent insertion of a `BusinessRuleEvaluation` together with its input
 snapshot rows and observations (CDD-041 §16-§19, §21 steps 7-9, 13-16).
+
+CDD-041 Atomic Multi-Field Evidence Frontier Amendment (OQI3-I2-R3):
+`select_evidence_frontier` replaces the prior `select_known_lineage` +
+N-sequential-`select_latest_field_value` algorithm with exactly one
+PostgreSQL statement establishing every mutable evidence-state fact
+(subject-known, and the latest qualifying evidence for every bound role)
+from one READ COMMITTED statement snapshot -- closing the evaluator-vs-
+evidence-writer coherence gap discovered by OQI3-I3/OQI3-R3. This changes
+snapshot-acquisition mechanics only: the OQI1-derived latest-evidence
+ordering/filter predicates, `EMPTY` semantics, and `NOT_EVALUABLE`/
+unknown-subject semantics are all reproduced verbatim.
 
 Deliberately does NOT expose `acquire_evaluation_authority`, `get_finding`,
 or `upsert_finding` -- Finding-authority advisory locking (seed=3, CDD-041
@@ -9,19 +19,20 @@ or `upsert_finding` -- Finding-authority advisory locking (seed=3, CDD-041
 OQI3-I3 (CDD-041 §33 decomposition). This repository's persistence methods
 are safe building blocks for I3 to compose *inside* its lock; calling
 `insert_evaluation_idempotent` on its own (as this module's own HISTORICAL
-path and tests do) never claims CURRENT_STATE concurrency safety -- see the
-OQI3-I2 report's honest concurrency-scope analysis."""
+path and tests do) never claims CURRENT_STATE Finding-lifecycle safety --
+see the OQI3-I2/I2-R3 reports' honest concurrency-scope analysis."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import String, Uuid, and_, column, func, literal_column, or_, select, true, values
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from app.domain.oqi.evaluation import EvaluationMode
 from app.domain.oqi_business_rule.evaluation import (
@@ -44,13 +55,14 @@ from app.infrastructure.persistence.models.source_field import SourceFieldORM
 
 
 class OqiBusinessRuleEvaluationRepository(Protocol):
-    def select_known_lineage(
-        self, *, source_object_id: UUID, source_record_reference: str, evaluation_horizon: datetime
-    ) -> bool: ...
-
-    def select_latest_field_value(
-        self, *, source_field_id: UUID, source_record_reference: str, evaluation_horizon: datetime
-    ) -> tuple[UUID, str] | None: ...
+    def select_evidence_frontier(
+        self,
+        *,
+        source_object_id: UUID,
+        source_record_reference: str,
+        evaluation_horizon: datetime,
+        bindings: Sequence[tuple[str, UUID]],
+    ) -> tuple[bool, dict[str, UUID | None]]: ...
 
     def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool: ...
 
@@ -62,7 +74,11 @@ class OqiBusinessRuleEvidenceValueReader:
     (raw, unparsed) for exactly the evidence rows an already-selected input
     frontier references -- the only place OQI3-I2 touches evidence content,
     and it never mutates or reinterprets it (CDD-022 raw-evidence
-    immutability, CDD-041 §27 OQI1/OQI2 firewalls)."""
+    immutability, CDD-041 §27 OQI1/OQI2 firewalls). Reading it in a separate
+    statement after the atomic frontier is safe (not a lazy-load leak)
+    because `field_value_evidence` is insert-only -- a row's content
+    cannot change between the coherent-snapshot statement and this read
+    (CDD-041 Atomic Multi-Field Evidence Frontier Amendment §4.3)."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -82,63 +98,132 @@ class OqiBusinessRuleEvidenceValueReader:
         return {evidence_ids[row[0]]: row[1] for row in rows}
 
 
+def _build_evidence_frontier_statement(
+    *,
+    source_object_id: UUID,
+    source_record_reference: str,
+    evaluation_horizon: datetime,
+    bindings: Sequence[tuple[str, UUID]],
+    _test_only_delay_seconds: float | None = None,
+) -> Select[Any]:
+    """CDD-041 Atomic Multi-Field Evidence Frontier Amendment §4 (exact,
+    binding query shape): one top-level PostgreSQL statement returning
+    `(subject_known, input_role, field_value_evidence_id_or_NULL)` for
+    every bound role. The `subject_known` correlated `EXISTS` and the
+    per-role `ranked` window-function CTE are evaluated by PostgreSQL as
+    one query tree and therefore share one statement snapshot -- this is
+    what closes both the known-lineage race and the per-field race
+    simultaneously (Amendment §4, §11).
+
+    Preserves verbatim: the non-empty-representation filter, the
+    `received_at <= evaluation_horizon` boundary, and the
+    `observed_at DESC, received_at DESC` latest-evidence ordering --
+    byte-identical to OQI1's own `select_latest_target_field_value`
+    predicates (CDD-039 §32). No third tiebreaker is introduced for
+    exact-timestamp ties -- that inherited ambiguity is OQI-P3-006
+    (Amendment §5), not fixed here.
+
+    `_test_only_delay_seconds`, when set, adds a `pg_sleep`-gated CTE to
+    the statement's FROM clause so a test can force the statement to
+    remain in-flight for a controlled window while a concurrent writer
+    commits -- proving the one-statement-one-snapshot property against
+    real PostgreSQL rather than asserting it. It has zero effect on
+    production behavior; no production caller ever passes it."""
+    fve = FieldValueEvidenceORM.__table__
+    sf = SourceFieldORM.__table__
+
+    bound_roles = values(
+        column("input_role", String),
+        column("source_field_id", Uuid()),
+        name="bound_roles",
+    ).data(list(bindings))
+
+    ranked = (
+        select(
+            bound_roles.c.input_role,
+            fve.c.field_value_evidence_id,
+            func.row_number()
+            .over(
+                partition_by=bound_roles.c.input_role,
+                order_by=(fve.c.observed_at.desc(), fve.c.received_at.desc()),
+            )
+            .label("rn"),
+        )
+        .select_from(
+            bound_roles.outerjoin(
+                fve,
+                and_(
+                    fve.c.source_field_id == bound_roles.c.source_field_id,
+                    fve.c.source_record_reference == source_record_reference,
+                    fve.c.observed_representation != "",
+                    fve.c.received_at <= evaluation_horizon,
+                ),
+            )
+        )
+        .cte("ranked")
+    )
+
+    subject_known_expr = (
+        select(literal_column("1"))
+        .select_from(fve.join(sf, sf.c.source_field_id == fve.c.source_field_id))
+        .where(
+            sf.c.source_object_id == source_object_id,
+            fve.c.source_record_reference == source_record_reference,
+            fve.c.observed_representation != "",
+            fve.c.received_at <= evaluation_horizon,
+        )
+        .exists()
+    )
+
+    from_clause = bound_roles.outerjoin(
+        ranked,
+        and_(
+            ranked.c.input_role == bound_roles.c.input_role,
+            or_(ranked.c.rn == 1, ranked.c.rn.is_(None)),
+        ),
+    )
+    if _test_only_delay_seconds is not None:
+        delay_gate = select(func.pg_sleep(_test_only_delay_seconds).label("_ignore")).cte(
+            "delay_gate"
+        )
+        from_clause = from_clause.join(delay_gate, true())
+
+    return select(
+        subject_known_expr.label("subject_known"),
+        bound_roles.c.input_role,
+        ranked.c.field_value_evidence_id,
+    ).select_from(from_clause)
+
+
 class OqiBusinessRuleEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def select_known_lineage(
-        self, *, source_object_id: UUID, source_record_reference: str, evaluation_horizon: datetime
-    ) -> bool:
-        """CDD-041 §12/§6: is the single-record subject known to CTEC at
-        all under the evaluation horizon -- at least one admitted,
-        non-empty `FieldValueEvidence` observation for *any* `SourceField`
-        belonging to `source_object_id`, carrying `source_record_reference`?
-        Mirrors OQI1's `select_known_lineage_evidence_id` exactly (CDD-039
-        §12), generalized to a boolean since OQI3 has no single target
-        field."""
-        return (
-            self.session.execute(
-                select(FieldValueEvidenceORM.field_value_evidence_id)
-                .join(
-                    SourceFieldORM,
-                    SourceFieldORM.source_field_id == FieldValueEvidenceORM.source_field_id,
-                )
-                .where(
-                    SourceFieldORM.source_object_id == source_object_id,
-                    FieldValueEvidenceORM.source_record_reference == source_record_reference,
-                    FieldValueEvidenceORM.observed_representation != "",
-                    FieldValueEvidenceORM.received_at <= evaluation_horizon,
-                )
-                .limit(1)
-            ).scalar_one_or_none()
-            is not None
+    def select_evidence_frontier(
+        self,
+        *,
+        source_object_id: UUID,
+        source_record_reference: str,
+        evaluation_horizon: datetime,
+        bindings: Sequence[tuple[str, UUID]],
+    ) -> tuple[bool, dict[str, UUID | None]]:
+        """CDD-041 Atomic Multi-Field Evidence Frontier Amendment §4/§9
+        (OQI3-I2-R3). Returns `(subject_known, {input_role: evidence_id})`
+        -- every bound role is present in the mapping (value `None` is the
+        frozen `EMPTY` sentinel) whenever `subject_known` is True. When
+        `subject_known` is False the mapping is empty and the caller MUST
+        treat this as `NOT_EVALUABLE` (CDD-041 §6/§13) -- never manufacture
+        `EMPTY` entries for an unknown subject."""
+        stmt = _build_evidence_frontier_statement(
+            source_object_id=source_object_id,
+            source_record_reference=source_record_reference,
+            evaluation_horizon=evaluation_horizon,
+            bindings=bindings,
         )
-
-    def select_latest_field_value(
-        self, *, source_field_id: UUID, source_record_reference: str, evaluation_horizon: datetime
-    ) -> tuple[UUID, str] | None:
-        """CDD-041 §16: the single latest qualifying evidence row for one
-        bound input -- greatest `observed_at`, ties broken by greatest
-        `received_at`. Byte-identical selection rule to OQI1's
-        `select_latest_target_field_value` (CDD-039 §32) -- OQI3 does not
-        invent a different "current value" rule."""
-        row = self.session.execute(
-            select(
-                FieldValueEvidenceORM.field_value_evidence_id,
-                FieldValueEvidenceORM.observed_representation,
-            )
-            .where(
-                FieldValueEvidenceORM.source_field_id == source_field_id,
-                FieldValueEvidenceORM.source_record_reference == source_record_reference,
-                FieldValueEvidenceORM.observed_representation != "",
-                FieldValueEvidenceORM.received_at <= evaluation_horizon,
-            )
-            .order_by(
-                FieldValueEvidenceORM.observed_at.desc(), FieldValueEvidenceORM.received_at.desc()
-            )
-            .limit(1)
-        ).first()
-        return None if row is None else (row[0], row[1])
+        rows = self.session.execute(stmt).all()
+        if not rows or not bool(rows[0][0]):
+            return False, {}
+        return True, {row[1]: row[2] for row in rows}
 
     def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool:
         """CDD-041 §5.2 (OQI3-I2-R), §16, §22: returns True if a new

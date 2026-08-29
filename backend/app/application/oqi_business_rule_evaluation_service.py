@@ -23,7 +23,7 @@ concurrency-scope analysis, CDD-041 §21 steps 1-6)."""
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -62,13 +62,14 @@ TypedValue = str | Decimal | bool | date
 
 
 class OqiBusinessRuleEvaluationRepository(Protocol):
-    def select_known_lineage(
-        self, *, source_object_id: UUID, source_record_reference: str, evaluation_horizon: datetime
-    ) -> bool: ...
-
-    def select_latest_field_value(
-        self, *, source_field_id: UUID, source_record_reference: str, evaluation_horizon: datetime
-    ) -> tuple[UUID, str] | None: ...
+    def select_evidence_frontier(
+        self,
+        *,
+        source_object_id: UUID,
+        source_record_reference: str,
+        evaluation_horizon: datetime,
+        bindings: Sequence[tuple[str, UUID]],
+    ) -> tuple[bool, dict[str, UUID | None]]: ...
 
     def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool: ...
 
@@ -221,35 +222,40 @@ def select_input_frontier(
     evaluation_horizon: datetime,
     repository: OqiBusinessRuleEvaluationRepository,
 ) -> tuple[BusinessRuleEvaluationInputEntry, ...] | None:
-    """CDD-041 §21 steps 7-8: select ALL bound input evidence under one
-    governed horizon. Returns `None` if the subject itself is unknown to
-    CTEC (CDD-041 §6/§13's "absence of knowledge is not knowledge of
-    absence") -- the caller must treat that as `NOT_EVALUABLE`, never
-    manufacture a required-input violation for an unknown record.
+    """CDD-041 §21 steps 7-8 (CDD-041 Atomic Multi-Field Evidence Frontier
+    Amendment, OQI3-I2-R3): select ALL bound input evidence under one
+    governed horizon from one atomic PostgreSQL statement snapshot
+    (`repository.select_evidence_frontier`) -- subject-known and every
+    bound role's latest qualifying evidence are established together,
+    closing the multi-statement evaluator-vs-evidence-writer race the
+    prior sequential-SELECT algorithm could not (OQI3-I3/OQI3-R3 P1).
+    Returns `None` if the subject itself is unknown to CTEC (CDD-041
+    §6/§13's "absence of knowledge is not knowledge of absence") -- the
+    caller must treat that as `NOT_EVALUABLE`, never manufacture a
+    required-input violation for an unknown record.
 
-    Calling this function standalone (no lock held) makes no CURRENT_STATE
-    coherent-frontier guarantee -- see the OQI3-I2 report."""
-    if not repository.select_known_lineage(
+    Calling this function standalone (no seed-3 lock held) fixes evidence-
+    table snapshot coherence but makes no Finding-lifecycle serialization
+    guarantee -- that remains OQI3-I3's advisory-lock authority (CDD-041
+    Atomic Multi-Field Evidence Frontier Amendment §6)."""
+    subject_known, evidence_by_role = repository.select_evidence_frontier(
         source_object_id=subject.source_object_id,
         source_record_reference=subject.source_record_reference,
         evaluation_horizon=evaluation_horizon,
-    ):
+        bindings=tuple(
+            (binding.input_role, binding.source_field_id) for binding in rule.input_bindings
+        ),
+    )
+    if not subject_known:
         return None
 
-    entries: list[BusinessRuleEvaluationInputEntry] = []
-    for binding in rule.input_bindings:
-        latest = repository.select_latest_field_value(
-            source_field_id=binding.source_field_id,
-            source_record_reference=subject.source_record_reference,
-            evaluation_horizon=evaluation_horizon,
+    return tuple(
+        BusinessRuleEvaluationInputEntry(
+            input_role=binding.input_role,
+            evidence_id=evidence_by_role.get(binding.input_role),
         )
-        entries.append(
-            BusinessRuleEvaluationInputEntry(
-                input_role=binding.input_role,
-                evidence_id=(None if latest is None else latest[0]),
-            )
-        )
-    return tuple(entries)
+        for binding in rule.input_bindings
+    )
 
 
 def determine_outcome(

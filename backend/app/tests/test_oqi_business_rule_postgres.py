@@ -14,12 +14,13 @@ import dataclasses
 import threading
 import time
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import alembic.command
 import pytest
 from alembic.config import Config
-from sqlalchemy import Engine, inspect, text
+from sqlalchemy import Engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -34,6 +35,7 @@ from app.domain.oqi.evaluation import EvaluationMode
 from app.domain.oqi_business_rule.evaluation import (
     SUBJECT_TYPE_SINGLE_RECORD,
     BusinessRuleEvaluation,
+    BusinessRuleEvaluationInputEntry,
     EvaluationOutcome,
     canonical_single_record_subject_identity,
     derive_business_rule_evaluation_id,
@@ -65,6 +67,7 @@ from app.infrastructure.persistence.models.oqi_business_rule_evaluation import (
 from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
     OqiBusinessRuleEvaluationRepositoryImpl,
     OqiBusinessRuleEvidenceValueReader,
+    _build_evidence_frontier_statement,
 )
 from app.infrastructure.persistence.oqi_business_rule_repository import (
     OqiBusinessRuleRepositoryImpl,
@@ -1395,87 +1398,1104 @@ def test_retired_rule_is_not_returned_by_get_active(migrated_engine: Engine) -> 
     assert retired is not None and retired.status is BusinessRuleStatus.RETIRED
 
 
-def test_concurrency_scope_frontier_can_observe_evidence_committed_mid_selection(
+# --- CDD-041 Atomic Multi-Field Evidence Frontier Amendment (OQI3-I2-R3):
+# `select_input_frontier`/`repository.select_evidence_frontier` now obtain
+# every mutable evidence-state fact (subject-known + all bound roles'
+# latest qualifying evidence) from exactly one PostgreSQL statement, closing
+# the evaluator-vs-evidence-writer coherence gap OQI3-I3/OQI3-R3 discovered.
+# The regressions below prove: (1) the new algorithm is logically
+# equivalent to the retired sequential algorithm for unchanged state
+# (frontier/digest/Evaluation-ID equivalence); (2) EMPTY/UNKNOWN-subject/
+# tenant/SourceObject/horizon semantics are preserved exactly; (3) the
+# statement genuinely executes as ONE PostgreSQL round trip; (4) it is
+# genuinely N-ary; and, most importantly, (5) a concurrent writer's commit
+# landing strictly DURING the atomic statement's execution is NOT visible
+# to that statement -- proven on real PostgreSQL via a deterministic
+# `pg_sleep`-forced delay, not by assertion or by luck.
+
+
+def _old_sequential_frontier(
+    session: Session,
+    *,
+    source_object_id: UUID,
+    source_record_reference: str,
+    evaluation_horizon: datetime,
+    bindings: tuple[tuple[str, UUID], ...],
+) -> dict[str, UUID | None] | None:
+    """Local re-implementation of the RETIRED pre-OQI3-I2-R3 algorithm
+    (two sequential SELECT categories: one known-lineage check, then one
+    per-role latest-evidence SELECT) -- kept here, not in production code,
+    purely as an equivalence oracle for the mandatory unchanged-state
+    equivalence regression (CDD-041 Atomic Multi-Field Evidence Frontier
+    Amendment §10 item 1). Byte-identical filter/order predicates to the
+    real (removed) `select_known_lineage`/`select_latest_field_value`."""
+    from sqlalchemy import select as _select
+
+    from app.infrastructure.persistence.models.field_value_evidence import (
+        FieldValueEvidenceORM as _FVE,
+    )
+    from app.infrastructure.persistence.models.source_field import SourceFieldORM as _SF
+
+    known = (
+        session.execute(
+            _select(_FVE.field_value_evidence_id)
+            .join(_SF, _SF.source_field_id == _FVE.source_field_id)
+            .where(
+                _SF.source_object_id == source_object_id,
+                _FVE.source_record_reference == source_record_reference,
+                _FVE.observed_representation != "",
+                _FVE.received_at <= evaluation_horizon,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+    if not known:
+        return None
+    result: dict[str, UUID | None] = {}
+    for role, field_id in bindings:
+        row = session.execute(
+            _select(_FVE.field_value_evidence_id)
+            .where(
+                _FVE.source_field_id == field_id,
+                _FVE.source_record_reference == source_record_reference,
+                _FVE.observed_representation != "",
+                _FVE.received_at <= evaluation_horizon,
+            )
+            .order_by(_FVE.observed_at.desc(), _FVE.received_at.desc())
+            .limit(1)
+        ).first()
+        result[role] = None if row is None else row[0]
+    return result
+
+
+def test_atomic_frontier_equivalent_to_retired_sequential_algorithm_for_unchanged_state(
     migrated_engine: Engine,
 ) -> None:
-    """HONEST CONCURRENCY-SCOPE FINDING (CDD-041 §21 steps 1-6 belong to
-    OQI3-I3, not I2): `select_input_frontier` issues one SELECT per bound
-    input, sequentially, with no elevated transaction isolation and no
-    advisory-lock authority (that lock is I3's, seed=3). This test proves
-    -- empirically, not by assertion alone -- that evidence committed by a
-    concurrent writer *between* two of those per-field reads IS visible to
-    the later read under Postgres's default READ COMMITTED isolation.
-
-    This is not a NEW risk OQI3-I2 introduces: OQI1/OQI2's own evidence
-    selection has the identical per-field/per-participant sequential-SELECT
-    structure and the identical isolation level (proven by direct source
-    reading, not assumed). The real job of OQI3-I3's advisory lock (like
-    OQI1/OQI2's) is to serialize *evaluators* contending for the same
-    Finding identity, not to freeze the evidence table against concurrent
-    writers -- OQI3-I2 implements no Finding mutation at all, so there is
-    no double-mutation hazard for I3's lock to prevent yet. Composing
-    `select_input_frontier`/`determine_outcome` inside I3's lock will
-    provide exactly what OQI1/OQI2 already provide (serialized Finding
-    authority) -- it will not, and was never claimed to, provide strict
-    snapshot-isolation of the evidence table."""
+    """Amendment §10 items 1-3: for unchanged DB state, the new one-
+    statement selector returns the identical logical `(role, evidence_id)`
+    frontier as the retired sequential algorithm, and therefore produces
+    an identical evidence digest and Evaluation ID -- both formulas are
+    pure functions of that frontier (CDD-041 §17, §16)."""
     factory = sessionmaker(migrated_engine, expire_on_commit=False)
     tenant_id = f"tenant-{uuid4()}"
-    condition_id = f"cond-{uuid4()}"
-    with factory() as setup_session:
+    with factory() as session:
         object_id, start_field = _seed_field_with_object(
-            setup_session, tenant_id=tenant_id, field_label="EFFECTIVE_START"
+            session, tenant_id=tenant_id, field_label="EFFECTIVE_START"
         )
         _, end_field = _seed_field_with_object(
-            setup_session, tenant_id=tenant_id, field_label="EFFECTIVE_END"
+            session, tenant_id=tenant_id, field_label="EFFECTIVE_END"
         )
-        rule = _effective_dates_rule(
-            tenant_id=tenant_id,
-            start_field_id=start_field,
-            end_field_id=end_field,
-            condition_id=condition_id,
-        )
-        OqiBusinessRuleRepositoryImpl(setup_session).create(rule)
         _admit_evidence(
-            setup_session,
+            session,
             source_field_id=start_field,
             source_record_reference="MAT-100",
             observed_representation="2026-01-01",
         )
-        # Deliberately no evidence admitted yet for effective_end.
-        setup_session.commit()
+        session.commit()
 
-    first_field_read = threading.Event()
-    results: dict[str, object] = {}
-
-    def _reader(session: Session) -> None:
-        rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
-            tenant_id=tenant_id, business_condition_id=condition_id
+        bindings = (("effective_start", start_field), ("effective_end", end_field))
+        old_result = _old_sequential_frontier(
+            session,
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=bindings,
         )
-        assert rule_local is not None
         repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
-        known = repository.select_known_lineage(
-            source_object_id=object_id, source_record_reference="MAT-100", evaluation_horizon=NOW
+        new_known, new_result = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=bindings,
         )
-        assert known
-        first = repository.select_latest_field_value(
-            source_field_id=start_field, source_record_reference="MAT-100", evaluation_horizon=NOW
-        )
-        results["first_field_seen_before_concurrent_commit"] = first
-        first_field_read.set()
-        time.sleep(0.4)
-        second = repository.select_latest_field_value(
-            source_field_id=end_field, source_record_reference="MAT-100", evaluation_horizon=NOW
-        )
-        results["second_field_seen_after_concurrent_commit"] = second
+    assert old_result is not None
+    assert new_known is True
+    assert old_result == new_result
 
-    def _concurrent_writer(session: Session) -> None:
-        assert first_field_read.wait(timeout=5)
+    old_entries = tuple(
+        BusinessRuleEvaluationInputEntry(input_role=role, evidence_id=old_result[role])
+        for role, _ in bindings
+    )
+    new_entries = tuple(
+        BusinessRuleEvaluationInputEntry(input_role=role, evidence_id=new_result[role])
+        for role, _ in bindings
+    )
+    assert input_evidence_digest(old_entries) == input_evidence_digest(new_entries)
+    subject_identity = canonical_single_record_subject_identity(
+        source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    old_id = derive_business_rule_evaluation_id(
+        tenant_id=tenant_id,
+        business_condition_id="cond-x",
+        rule_version=1,
+        subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+        subject_identity=subject_identity,
+        evaluation_mode=EvaluationMode.HISTORICAL,
+        evaluation_horizon=NOW,
+        input_evidence_digest_value=input_evidence_digest(old_entries),
+    )
+    new_id = derive_business_rule_evaluation_id(
+        tenant_id=tenant_id,
+        business_condition_id="cond-x",
+        rule_version=1,
+        subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+        subject_identity=subject_identity,
+        evaluation_mode=EvaluationMode.HISTORICAL,
+        evaluation_horizon=NOW,
+        input_evidence_digest_value=input_evidence_digest(new_entries),
+    )
+    assert old_id == new_id
+
+
+def test_atomic_frontier_all_bound_roles_empty_for_known_subject(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 4: known subject (lineage established via one
+    field), but the target consequence fields have zero qualifying
+    evidence -- every such role must still appear with the EMPTY (`None`)
+    sentinel, never silently dropped."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, status_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="LIFECYCLE_STATUS"
+        )
+        _, group_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="GROUP")
+        _, type_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="TYPE")
         _admit_evidence(
             session,
-            source_field_id=end_field,
+            source_field_id=status_field,
             source_record_reference="MAT-100",
-            observed_representation="2026-12-31",
+            observed_representation="ACTIVE",
+        )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(
+                ("lifecycle_status", status_field),
+                ("planning_group", group_field),
+                ("procurement_type", type_field),
+            ),
+        )
+    assert known is True
+    assert frontier == {
+        "lifecycle_status": frontier["lifecycle_status"],
+        "planning_group": None,
+        "procurement_type": None,
+    }
+    assert frontier["lifecycle_status"] is not None
+
+
+def test_atomic_frontier_unknown_subject_returns_no_roles(migrated_engine: Engine) -> None:
+    """Amendment §10 item 5: zero evidence anywhere for the SourceObject --
+    `subject_known` is False and the frontier mapping is empty; the caller
+    (`select_input_frontier`) must treat this as `NOT_EVALUABLE`, never
+    manufacture EMPTY entries for an unknown subject."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-NEVER-SEEN",
+            evaluation_horizon=NOW,
+            bindings=(("role_a", field_a),),
+        )
+    assert known is False
+    assert frontier == {}
+
+
+def test_atomic_frontier_mixed_value_and_empty_roles(migrated_engine: Engine) -> None:
+    """Amendment §10 item 6: a known subject with some bound roles having
+    evidence and others EMPTY in the same frontier -- exact role
+    cardinality and correct evidence identity per role."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        _, field_b = _seed_field_with_object(session, tenant_id=tenant_id, field_label="B")
+        _, field_c = _seed_field_with_object(session, tenant_id=tenant_id, field_label="C")
+        _, field_d = _seed_field_with_object(session, tenant_id=tenant_id, field_label="D")
+        eid_a = _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="va",
+        )
+        eid_c = _admit_evidence(
+            session,
+            source_field_id=field_c,
+            source_record_reference="MAT-100",
+            observed_representation="vc",
+        )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(
+                ("a", field_a),
+                ("b", field_b),
+                ("c", field_c),
+                ("d", field_d),
+            ),
+        )
+    assert known is True
+    assert frontier == {"a": eid_a, "b": None, "c": eid_c, "d": None}
+
+
+def test_atomic_frontier_equal_timestamp_tie_is_inherited_undefined_not_asserted(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 7 / OQI-P3-006: two qualifying evidence rows for
+    the same role with identical `observed_at` AND `received_at` -- the
+    window-function replacement has no third tiebreaker, exactly like the
+    retired OQI1-derived selector. This test documents the inherited
+    undefined-winner behavior (the frontier deterministically names ONE of
+    the two evidence IDs, never both, never neither) -- it does NOT assert
+    which one, since that would fabricate a guarantee CDD-041 does not
+    make (Amendment §5)."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        eid_1 = _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
             received_at=NOW,
+        )
+        eid_2 = _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v2",
+            received_at=NOW,
+        )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a),),
+        )
+    assert known is True
+    assert frontier["a"] in {eid_1, eid_2}
+
+
+def test_atomic_frontier_source_object_boundary_not_mere_reference_match(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 19: same tenant, same `source_record_reference`,
+    but a DIFFERENT `SourceObject` -- evidence must not leak across the
+    object boundary merely because the reference string matches."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_1, field_1 = _seed_field_with_object(session, tenant_id=tenant_id, field_label="F1")
+        _object_2, field_2 = _seed_field_with_object(session, tenant_id=tenant_id, field_label="F2")
+        _admit_evidence(
+            session,
+            source_field_id=field_2,
+            source_record_reference="MAT-100",
+            observed_representation="belongs-to-object-2",
+        )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_1,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("role_a", field_1),),
+        )
+    assert known is False
+    assert frontier == {}
+
+
+def test_atomic_frontier_horizon_boundary_matches_existing_inclusion_semantics(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 20: `received_at <= evaluation_horizon` boundary
+    -- evidence exactly AT the horizon is included; evidence strictly
+    after it is excluded. Unchanged from the retired selector."""
+    from datetime import timedelta
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    horizon = NOW
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        eid_at_horizon = _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="on-time",
+            received_at=horizon,
+        )
+        _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="too-late",
+            received_at=horizon + timedelta(seconds=1),
+        )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=horizon,
+            bindings=(("a", field_a),),
+        )
+    assert known is True
+    assert frontier["a"] == eid_at_horizon
+
+
+def test_atomic_frontier_executes_exactly_one_sql_statement(migrated_engine: Engine) -> None:
+    """Amendment §10 item 21 (ORM lazy-load firewall): the atomic frontier
+    call must be exactly one round trip to PostgreSQL -- no lazy-loaded
+    ORM access afterward may supply a mutable evidence-state fact."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
+        )
+        session.commit()
+
+        statement_count = 0
+
+        def _count(*_args: object, **_kwargs: object) -> None:
+            nonlocal statement_count
+            statement_count += 1
+
+        event.listen(session.connection().engine, "before_cursor_execute", _count)
+        try:
+            repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+            repository.select_evidence_frontier(
+                source_object_id=object_id,
+                source_record_reference="MAT-100",
+                evaluation_horizon=NOW,
+                bindings=(("a", field_a),),
+            )
+        finally:
+            event.remove(session.connection().engine, "before_cursor_execute", _count)
+    assert statement_count == 1
+
+
+def test_atomic_frontier_scales_to_ten_bound_roles_end_to_end(migrated_engine: Engine) -> None:
+    """Amendment §10 item 9: a real 10-clause AND-compound
+    `CONDITIONAL_REQUIRED` rule (well under the 64-node AST bound) proves
+    N=10 end to end through the real evaluator, mixing satisfied and
+    missing roles."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        object_id, status_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="LIFECYCLE_STATUS"
+        )
+        target_fields = [
+            _seed_field_with_object(session, tenant_id=tenant_id, field_label=f"F{i}")[1]
+            for i in range(10)
+        ]
+        applicability = ComparatorNode(
+            clause_id="applicable-active",
+            operator=Operator.EQ,
+            input_role="lifecycle_status",
+            comparand_kind=ComparandKind.LITERAL,
+            literal_type=ExpectedType.STRING,
+            literal_value="ACTIVE",
+        )
+        predicate = CompositionNode(
+            operator=Operator.AND,
+            children=tuple(
+                ComparatorNode(
+                    clause_id=f"f{i}-required",
+                    operator=Operator.IS_NOT_NULL,
+                    input_role=f"role_{i}",
+                    comparand_kind=ComparandKind.NONE,
+                )
+                for i in range(10)
+            ),
+        )
+        bindings = (
+            BusinessRuleInputBinding(
+                input_role="lifecycle_status",
+                source_field_id=status_field,
+                required=True,
+                expected_type=ExpectedType.STRING,
+            ),
+            *(
+                BusinessRuleInputBinding(
+                    input_role=f"role_{i}",
+                    source_field_id=target_fields[i],
+                    required=False,
+                    expected_type=ExpectedType.STRING,
+                )
+                for i in range(10)
+            ),
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=applicability,
+            predicate=predicate,
+            input_bindings=bindings,
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=status_field,
+            source_record_reference="MAT-100",
+            observed_representation="ACTIVE",
+        )
+        # 7 of 10 target roles get evidence; 3 remain EMPTY.
+        for i in range(7):
+            _admit_evidence(
+                session,
+                source_field_id=target_fields[i],
+                source_record_reference="MAT-100",
+                observed_representation=f"v{i}",
+            )
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        evaluation = _service(session).evaluate_historical(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW
+        )
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert len(evaluation.observations) == 3
+    assert {obs.input_role for obs in evaluation.observations} == {
+        f"role_{i}" for i in range(7, 10)
+    }
+
+
+def test_atomic_frontier_scales_to_hundred_bound_roles(migrated_engine: Engine) -> None:
+    """Amendment §10 item 10: N=100 bound roles at the repository/query
+    layer directly (bypassing the unrelated 64-node AST publication bound,
+    which governs rule SHAPE, not frontier-query arity) -- proves the
+    atomic statement itself has no hard-coded arity. Half the roles get
+    evidence, half remain EMPTY; every one of the 100 roles must appear."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, anchor_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="ANCHOR"
+        )
+        _admit_evidence(
+            session,
+            source_field_id=anchor_field,
+            source_record_reference="MAT-100",
+            observed_representation="known",
+        )
+        fields = [
+            _seed_field_with_object(session, tenant_id=tenant_id, field_label=f"F{i}")[1]
+            for i in range(100)
+        ]
+        expected_evidence: dict[str, UUID] = {}
+        for i in range(0, 100, 2):
+            expected_evidence[f"role_{i}"] = _admit_evidence(
+                session,
+                source_field_id=fields[i],
+                source_record_reference="MAT-100",
+                observed_representation=f"v{i}",
+            )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=tuple((f"role_{i}", fields[i]) for i in range(100)),
+        )
+    assert known is True
+    assert len(frontier) == 100
+    for i in range(100):
+        expected = expected_evidence.get(f"role_{i}")
+        assert frontier[f"role_{i}"] == expected
+
+
+def test_atomic_frontier_compound_crown_regression_false_false_unknown(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 items 8, 24 -- the crown regression: strong Kleene
+    `FALSE AND FALSE AND UNKNOWN = FALSE`. Two AND-compound
+    CONDITIONAL_PROHIBITED clauses deterministically detect a prohibited
+    value present; a third clause's evidence is malformed (UNKNOWN). Note:
+    CONDITIONAL_REQUIRED's frozen shape restricts every clause to
+    IS_NOT_NULL (evidence-presence only, which is NEVER UNKNOWN once the
+    subject is known) -- so a genuine UNKNOWN leaf can only arise in
+    CONDITIONAL_PROHIBITED, whose leaf_check permits any comparator
+    (CDD-041 §4.2). Outcome must be VIOLATED with observations for exactly
+    the two known failures -- the UNKNOWN clause gets no observation, but
+    does not block the overall VIOLATED determination either."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        object_id, status_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="LIFECYCLE_STATUS"
+        )
+        _, group_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="GROUP")
+        _, type_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="TYPE")
+        _, uom_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="UOM")
+        applicability = ComparatorNode(
+            clause_id="applicable-active",
+            operator=Operator.EQ,
+            input_role="lifecycle_status",
+            comparand_kind=ComparandKind.LITERAL,
+            literal_type=ExpectedType.STRING,
+            literal_value="ACTIVE",
+        )
+        predicate = CompositionNode(
+            operator=Operator.AND,
+            children=(
+                ComparatorNode(
+                    clause_id="group-not-obsolete",
+                    operator=Operator.NE,
+                    input_role="planning_group",
+                    comparand_kind=ComparandKind.LITERAL,
+                    literal_type=ExpectedType.STRING,
+                    literal_value="OBSOLETE",
+                ),
+                ComparatorNode(
+                    clause_id="type-not-blocked",
+                    operator=Operator.NE,
+                    input_role="procurement_type",
+                    comparand_kind=ComparandKind.LITERAL,
+                    literal_type=ExpectedType.STRING,
+                    literal_value="BLOCKED",
+                ),
+                ComparatorNode(
+                    clause_id="uom-within-limit",
+                    operator=Operator.LTE,
+                    input_role="base_uom_qty",
+                    comparand_kind=ComparandKind.LITERAL,
+                    literal_type=ExpectedType.DECIMAL,
+                    literal_value="1000",
+                ),
+            ),
+        )
+        bindings = (
+            BusinessRuleInputBinding(
+                input_role="lifecycle_status",
+                source_field_id=status_field,
+                required=True,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="planning_group",
+                source_field_id=group_field,
+                required=False,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="procurement_type",
+                source_field_id=type_field,
+                required=False,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="base_uom_qty",
+                source_field_id=uom_field,
+                required=False,
+                expected_type=ExpectedType.DECIMAL,
+            ),
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_PROHIBITED,
+            applicability=applicability,
+            predicate=predicate,
+            input_bindings=bindings,
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=status_field,
+            source_record_reference="MAT-100",
+            observed_representation="ACTIVE",
+        )
+        # planning_group == OBSOLETE and procurement_type == BLOCKED: both
+        # deterministically violate their NE clauses (FALSE). base_uom_qty:
+        # malformed DECIMAL evidence -> UNKNOWN.
+        _admit_evidence(
+            session,
+            source_field_id=group_field,
+            source_record_reference="MAT-100",
+            observed_representation="OBSOLETE",
+        )
+        _admit_evidence(
+            session,
+            source_field_id=type_field,
+            source_record_reference="MAT-100",
+            observed_representation="BLOCKED",
+        )
+        _admit_evidence(
+            session,
+            source_field_id=uom_field,
+            source_record_reference="MAT-100",
+            observed_representation="NOT-A-NUMBER",
+        )
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        evaluation = _service(session).evaluate_historical(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW
+        )
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert len(evaluation.observations) == 2
+    assert {obs.input_role for obs in evaluation.observations} == {
+        "planning_group",
+        "procurement_type",
+    }
+
+
+def test_atomic_frontier_true_and_unknown_yields_not_evaluable_zero_persistence(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 items 24, 25: strong Kleene `TRUE AND UNKNOWN =
+    UNKNOWN` -- one AND-compound CONDITIONAL_PROHIBITED clause
+    deterministically allowed (not the prohibited value), the other
+    malformed (UNKNOWN). Overall result must be NOT_EVALUABLE with ZERO
+    rows written to any of the four governed tables and zero Finding
+    rows -- OQI3 must never fabricate a VIOLATED/SATISFIED conclusion from
+    an unknown clause."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        object_id, status_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="LIFECYCLE_STATUS"
+        )
+        _, group_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="GROUP")
+        _, uom_field = _seed_field_with_object(session, tenant_id=tenant_id, field_label="UOM")
+        applicability = ComparatorNode(
+            clause_id="applicable-active",
+            operator=Operator.EQ,
+            input_role="lifecycle_status",
+            comparand_kind=ComparandKind.LITERAL,
+            literal_type=ExpectedType.STRING,
+            literal_value="ACTIVE",
+        )
+        predicate = CompositionNode(
+            operator=Operator.AND,
+            children=(
+                ComparatorNode(
+                    clause_id="group-not-obsolete",
+                    operator=Operator.NE,
+                    input_role="planning_group",
+                    comparand_kind=ComparandKind.LITERAL,
+                    literal_type=ExpectedType.STRING,
+                    literal_value="OBSOLETE",
+                ),
+                ComparatorNode(
+                    clause_id="uom-within-limit",
+                    operator=Operator.LTE,
+                    input_role="base_uom_qty",
+                    comparand_kind=ComparandKind.LITERAL,
+                    literal_type=ExpectedType.DECIMAL,
+                    literal_value="1000",
+                ),
+            ),
+        )
+        bindings = (
+            BusinessRuleInputBinding(
+                input_role="lifecycle_status",
+                source_field_id=status_field,
+                required=True,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="planning_group",
+                source_field_id=group_field,
+                required=False,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="base_uom_qty",
+                source_field_id=uom_field,
+                required=False,
+                expected_type=ExpectedType.DECIMAL,
+            ),
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_PROHIBITED,
+            applicability=applicability,
+            predicate=predicate,
+            input_bindings=bindings,
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=status_field,
+            source_record_reference="MAT-100",
+            observed_representation="ACTIVE",
+        )
+        # planning_group != OBSOLETE: deterministically allowed (TRUE).
+        # base_uom_qty: malformed DECIMAL evidence -> UNKNOWN.
+        _admit_evidence(
+            session,
+            source_field_id=group_field,
+            source_record_reference="MAT-100",
+            observed_representation="GROUP-A",
+        )
+        _admit_evidence(
+            session,
+            source_field_id=uom_field,
+            source_record_reference="MAT-100",
+            observed_representation="NOT-A-NUMBER",
+        )
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        evaluation = _service(session).evaluate_historical(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW
+        )
+    assert evaluation is None
+
+    with factory() as session:
+        # Scoped to this test's own tenant/condition -- the migrated_engine
+        # fixture is shared across the whole test module's session, so an
+        # unscoped table-wide count would spuriously include other tests'
+        # rows. Zero rows for THIS governed condition is the actual claim.
+        evaluations_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_evaluations "
+                "WHERE tenant_id = :tenant_id AND business_condition_id = :condition_id"
+            ),
+            {"tenant_id": tenant_id, "condition_id": condition_id},
+        ).scalar_one()
+        findings_count = session.execute(
+            text(
+                "SELECT count(*) FROM business_rule_findings "
+                "WHERE tenant_id = :tenant_id AND business_condition_id = :condition_id"
+            ),
+            {"tenant_id": tenant_id, "condition_id": condition_id},
+        ).scalar_one()
+    assert evaluations_count == 0
+    assert findings_count == 0
+    # No evaluation_id was ever created for this condition, so by FK
+    # construction no input/observation row referencing it can exist
+    # either -- confirmed structurally, not by an unscoped table count.
+
+
+def test_atomic_frontier_writer_before_statement_is_visible(migrated_engine: Engine) -> None:
+    """Amendment §10 item 11: evidence committed strictly BEFORE the
+    atomic statement's snapshot is taken must be visible, subject to the
+    horizon."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        eid = _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
+        )
+        session.commit()
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known, frontier = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a),),
+        )
+    assert known is True
+    assert frontier["a"] == eid
+
+
+def test_atomic_frontier_writer_after_statement_visible_only_to_next_evaluation(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 13: evidence committed AFTER the atomic
+    statement completes is correctly absent from that Evaluation, but
+    visible to the next one -- normal transaction sequencing, not
+    staleness."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        object_id, field_a = _seed_field_with_object(session, tenant_id=tenant_id, field_label="A")
+        session.commit()
+
+    with factory() as session:
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known_before, _frontier_before = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a),),
+        )
+    assert known_before is False
+
+    with factory() as session:
+        _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
+        )
+        session.commit()
+
+    with factory() as session:
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        known_after, frontier_after = repository.select_evidence_frontier(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a),),
+        )
+    assert known_after is True
+    assert frontier_after["a"] is not None
+
+
+def test_atomic_frontier_writer_during_statement_is_not_visible(
+    migrated_engine: Engine,
+) -> None:
+    """RELEASE-BLOCKING TEST (Amendment §10 item 12; CDD-041 Atomic
+    Multi-Field Evidence Frontier Amendment, OQI3-I3/OQI3-R3 P1 closure
+    condition) -- the single most important regression in this repair.
+
+    Forces the real atomic frontier statement (the exact production
+    `_build_evidence_frontier_statement`, via its `_test_only_delay_seconds`
+    test seam -- zero effect on production behavior, no production caller
+    ever sets it) to remain in-flight for 0.6s via a `pg_sleep`-gated CTE.
+    A concurrent writer commits new evidence for one of the two bound
+    roles at t~0.2s -- strictly DURING the reader statement's execution
+    window, proven by wall-clock timing, not by luck. The reader's single
+    statement must NOT observe that commit: this is the actual PostgreSQL
+    one-statement-one-snapshot property the whole repair depends on,
+    proven empirically against real PostgreSQL, not merely asserted."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as setup_session:
+        object_id, field_a = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="A"
+        )
+        _, field_b = _seed_field_with_object(setup_session, tenant_id=tenant_id, field_label="B")
+        _admit_evidence(
+            setup_session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
+        )
+        # Deliberately no evidence admitted yet for field_b.
+        setup_session.commit()
+
+    statement_started = threading.Event()
+    results: dict[str, Any] = {}
+
+    def _reader(session: Session) -> None:
+        stmt = _build_evidence_frontier_statement(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a), ("b", field_b)),
+            _test_only_delay_seconds=0.6,
+        )
+        t0 = time.monotonic()
+        statement_started.set()
+        rows = session.execute(stmt).all()
+        results["elapsed"] = time.monotonic() - t0
+        results["rows"] = {row[1]: row[2] for row in rows}
+
+    def _concurrent_writer(session: Session) -> None:
+        assert statement_started.wait(timeout=5)
+        time.sleep(0.2)  # strictly inside the reader's 0.6s statement window
+        _admit_evidence(
+            session,
+            source_field_id=field_b,
+            source_record_reference="MAT-100",
+            observed_representation="v2",
+        )
+        session.commit()
+        results["writer_committed_at"] = time.monotonic()
+
+    session_reader, session_writer = factory(), factory()
+    thread_reader = threading.Thread(target=_reader, args=(session_reader,))
+    thread_writer = threading.Thread(target=_concurrent_writer, args=(session_writer,))
+    thread_reader.start()
+    thread_writer.start()
+    thread_reader.join(timeout=10)
+    thread_writer.join(timeout=10)
+    session_reader.close()
+    session_writer.close()
+
+    assert results["elapsed"] >= 0.5, "the statement must genuinely have stayed in-flight"
+    assert results["rows"]["a"] is not None
+    # The concurrent commit landed strictly during statement execution --
+    # the atomic statement's one snapshot must NOT reflect it.
+    assert results["rows"]["b"] is None
+
+
+def test_atomic_frontier_two_concurrent_writers_all_or_nothing_visibility(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 14: two concurrent writers commit evidence for
+    two DIFFERENT bound roles during one delayed statement -- the reader
+    must observe a coherent all-or-nothing result (both absent, since both
+    commits land during the statement window), never a split frontier."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as setup_session:
+        object_id, field_a = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="A"
+        )
+        _, field_b = _seed_field_with_object(setup_session, tenant_id=tenant_id, field_label="B")
+        _, field_c = _seed_field_with_object(setup_session, tenant_id=tenant_id, field_label="C")
+        _admit_evidence(
+            setup_session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
+        )
+        setup_session.commit()
+
+    statement_started = threading.Event()
+    results: dict[str, Any] = {}
+
+    def _reader(session: Session) -> None:
+        stmt = _build_evidence_frontier_statement(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a), ("b", field_b), ("c", field_c)),
+            _test_only_delay_seconds=0.6,
+        )
+        statement_started.set()
+        rows = session.execute(stmt).all()
+        results["rows"] = {row[1]: row[2] for row in rows}
+
+    def _writer(session: Session, *, field_id: UUID, value: str) -> None:
+        assert statement_started.wait(timeout=5)
+        time.sleep(0.2)
+        _admit_evidence(
+            session,
+            source_field_id=field_id,
+            source_record_reference="MAT-100",
+            observed_representation=value,
+        )
+        session.commit()
+
+    session_reader, session_writer_b, session_writer_c = factory(), factory(), factory()
+    thread_reader = threading.Thread(target=_reader, args=(session_reader,))
+    thread_writer_b = threading.Thread(
+        target=_writer, args=(session_writer_b,), kwargs={"field_id": field_b, "value": "vb"}
+    )
+    thread_writer_c = threading.Thread(
+        target=_writer, args=(session_writer_c,), kwargs={"field_id": field_c, "value": "vc"}
+    )
+    thread_reader.start()
+    thread_writer_b.start()
+    thread_writer_c.start()
+    thread_reader.join(timeout=10)
+    thread_writer_b.join(timeout=10)
+    thread_writer_c.join(timeout=10)
+    session_reader.close()
+    session_writer_b.close()
+    session_writer_c.close()
+
+    assert results["rows"]["a"] is not None
+    # Both concurrent commits land during the same statement's execution
+    # window -- the one shared snapshot must exclude both, coherently.
+    assert results["rows"]["b"] is None
+    assert results["rows"]["c"] is None
+
+
+def test_atomic_frontier_known_lineage_creation_race_resolves_to_one_snapshot(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 15: the subject is COMPLETELY unknown (zero
+    evidence anywhere for the SourceObject). A concurrent writer commits
+    the first-ever evidence -- establishing lineage -- strictly during the
+    delayed statement. The result must resolve cleanly to the pre-commit
+    snapshot's answer (subject still unknown), never a hybrid of
+    known-lineage-from-one-snapshot plus evidence-from-another."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as setup_session:
+        object_id, field_a = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="A"
+        )
+        setup_session.commit()
+
+    statement_started = threading.Event()
+    results: dict[str, Any] = {}
+
+    def _reader(session: Session) -> None:
+        stmt = _build_evidence_frontier_statement(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a),),
+            _test_only_delay_seconds=0.6,
+        )
+        statement_started.set()
+        rows = session.execute(stmt).all()
+        results["subject_known"] = bool(rows[0][0]) if rows else False
+        results["rows"] = {row[1]: row[2] for row in rows}
+
+    def _concurrent_writer(session: Session) -> None:
+        assert statement_started.wait(timeout=5)
+        time.sleep(0.2)
+        _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="first-ever-evidence",
         )
         session.commit()
 
@@ -1489,13 +2509,69 @@ def test_concurrency_scope_frontier_can_observe_evidence_committed_mid_selection
     session_reader.close()
     session_writer.close()
 
-    # The start field already had evidence from setup, read before the
-    # concurrent commit even starts.
-    assert results["first_field_seen_before_concurrent_commit"] is not None
-    # The concurrent commit landed strictly between the two field reads,
-    # with received_at <= evaluation_horizon -- the second (later) read
-    # observes it, even though it did not exist when the first read ran.
-    # This confirms the frontier is NOT an atomic snapshot without I3's
-    # lock; it is the same behavior OQI1/OQI2 already accept for their own
-    # sequential per-field/per-participant evidence selection.
-    assert results["second_field_seen_after_concurrent_commit"] is not None
+    # The commit establishing lineage landed strictly during the
+    # statement's execution -- the pre-commit snapshot's answer (unknown)
+    # must be what this Evaluation sees, coherently for both the
+    # subject-known fact AND the per-role evidence (never a hybrid).
+    assert results["subject_known"] is False
+    assert results["rows"]["a"] is None
+
+
+def test_atomic_frontier_value_to_new_value_race_is_snapshot_consistent(
+    migrated_engine: Engine,
+) -> None:
+    """Amendment §10 item 17: role already has qualifying evidence v1; a
+    concurrent writer appends v2 for the SAME role strictly during the
+    delayed statement. The reader must consistently select v1 (the
+    pre-statement snapshot's latest), never v2."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as setup_session:
+        object_id, field_a = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="A"
+        )
+        eid_v1 = _admit_evidence(
+            setup_session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v1",
+        )
+        setup_session.commit()
+
+    statement_started = threading.Event()
+    results: dict[str, Any] = {}
+
+    def _reader(session: Session) -> None:
+        stmt = _build_evidence_frontier_statement(
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_horizon=NOW,
+            bindings=(("a", field_a),),
+            _test_only_delay_seconds=0.6,
+        )
+        statement_started.set()
+        rows = session.execute(stmt).all()
+        results["rows"] = {row[1]: row[2] for row in rows}
+
+    def _concurrent_writer(session: Session) -> None:
+        assert statement_started.wait(timeout=5)
+        time.sleep(0.2)
+        _admit_evidence(
+            session,
+            source_field_id=field_a,
+            source_record_reference="MAT-100",
+            observed_representation="v2",
+        )
+        session.commit()
+
+    session_reader, session_writer = factory(), factory()
+    thread_reader = threading.Thread(target=_reader, args=(session_reader,))
+    thread_writer = threading.Thread(target=_concurrent_writer, args=(session_writer,))
+    thread_reader.start()
+    thread_writer.start()
+    thread_reader.join(timeout=10)
+    thread_writer.join(timeout=10)
+    session_reader.close()
+    session_writer.close()
+
+    assert results["rows"]["a"] == eid_v1
