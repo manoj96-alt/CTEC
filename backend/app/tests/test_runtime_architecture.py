@@ -710,6 +710,24 @@ AUTHORIZED_CHANGED_PATHS = {
     # (remainder), 10 (remainder), 14-16 (remainder), 17.
     "backend/app/domain/oqi_business_rule/finding.py",
     "backend/app/infrastructure/persistence/models/oqi_business_rule_finding.py",
+    # OQI4-I (CDD-042): Ontology Impact Intelligence -- Finding-family
+    # adapter, direct-impact resolution via existing entity-resolution
+    # provenance (zero new lineage tables, CDD-042 §4.7), the single
+    # recursive-CTE propagation statement, and the immutable ledger +
+    # mutable current-impact projection -- Artifact Authorization §2
+    # rows 1-12.
+    "backend/app/domain/oqi_ontology_impact/__init__.py",
+    "backend/app/domain/oqi_ontology_impact/policy.py",
+    "backend/app/domain/oqi_ontology_impact/evaluation.py",
+    "backend/app/infrastructure/persistence/models/oqi_ontology_impact_policy.py",
+    "backend/app/infrastructure/persistence/models/oqi_ontology_impact_evaluation.py",
+    "backend/app/infrastructure/persistence/oqi_ontology_impact_policy_repository.py",
+    "backend/app/infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py",
+    "backend/app/application/oqi_ontology_impact_evaluation_service.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0023_oqi4_ontology_impact.py",
+    "backend/app/tests/test_oqi_ontology_impact_domain.py",
+    "backend/app/tests/test_oqi_ontology_impact_service.py",
+    "backend/app/tests/test_oqi_ontology_impact_postgres.py",
 }
 
 
@@ -1286,6 +1304,42 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
     assert _construction_sites("BusinessRuleFindingORM") == [
         "infrastructure/persistence/oqi_business_rule_evaluation_repository.py"
     ], "BusinessRuleFindingORM constructed outside its single authorized site"
+
+
+def test_oqi4_ontology_impact_orms_have_single_construction_site() -> None:
+    """CDD-042 Artifact Authorization §2 row 17: single-construction-site
+    firewall for the 5 new OQI4 ORM classes, mirroring OQI1/2/3's own
+    established pattern."""
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_ontology_impact_policy.py",
+                "oqi_ontology_impact_evaluation.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("ImpactPropagationPolicyORM") == [
+        "infrastructure/persistence/oqi_ontology_impact_policy_repository.py"
+    ], "ImpactPropagationPolicyORM constructed outside its single authorized site"
+    assert _construction_sites("OntologyImpactEvaluationORM") == [
+        "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
+    ], "OntologyImpactEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("OntologyImpactObservationORM") == [
+        "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
+    ], "OntologyImpactObservationORM constructed outside its single authorized site"
+    assert _construction_sites("OntologyImpactPathORM") == [
+        "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
+    ], "OntologyImpactPathORM constructed outside its single authorized site"
+    assert _construction_sites("CurrentOntologyImpactORM") == [
+        "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
+    ], "CurrentOntologyImpactORM constructed outside its single authorized site"
 
 
 def test_oqi3_business_rule_foundation_does_not_modify_quality_rule() -> None:

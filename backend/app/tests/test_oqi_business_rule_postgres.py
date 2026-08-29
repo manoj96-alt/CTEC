@@ -323,13 +323,17 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
     with migrated_engine.connect():
         tables = set(inspect(migrated_engine).get_table_names())
         assert "business_rules" not in tables
-    alembic.command.upgrade(alembic_cfg, "0022_oqi3_business_rule")
+    alembic.command.upgrade(alembic_cfg, "0023_oqi4_ontology_impact")
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0022_oqi3_business_rule"
+    assert revision == "0023_oqi4_ontology_impact"
 
 
-def test_table_count_is_81(migrated_engine: Engine) -> None:
+def test_table_count_is_86(migrated_engine: Engine) -> None:
+    # Mechanical migration-head consequence (CDD-042 Artifact Authorization
+    # §2 row 13): this file's own literal table-count expectation, distinct
+    # from `test_persistence_integration.py`'s, must track the current head
+    # the same way its Alembic-head literal already does.
     with migrated_engine.connect() as connection:
         table_count = connection.execute(
             text(
@@ -337,7 +341,7 @@ def test_table_count_is_81(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 81
+    assert table_count == 86
 
 
 # --- database constraints ---
