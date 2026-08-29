@@ -366,6 +366,58 @@ class TestPathDeduplicationAndCap:
         assert len(result) == 1
         assert len(result[0].retained_paths) == 2
 
+    def test_exact_duplicate_ordered_path_deduplicates_to_one(self) -> None:
+        """CDD-042 §9 (Ordered Relationship-Instance Path clarification):
+        the exact same ordered relationship-instance sequence discovered
+        twice by query mechanics must dedupe to one path proof."""
+        target = uuid4()
+        rel_a, rel_b = uuid4(), uuid4()
+        policy = uuid4()
+
+        def make() -> PropagatedPathCandidate:
+            return PropagatedPathCandidate(
+                entity_id=target,
+                depth=2,
+                relationship_ids=(rel_a, rel_b),
+                policy_ids=(policy, policy),
+                policy_versions=(1, 1),
+                directions=("FORWARD", "FORWARD"),
+            )
+
+        result = _deduplicate_and_cap_paths((make(), make()))
+        assert len(result) == 1
+        assert len(result[0].retained_paths) == 1
+
+    def test_same_edges_different_order_are_distinct_paths(self) -> None:
+        """CDD-042 §9 (Ordered Relationship-Instance Path clarification):
+        path identity is order-sensitive. Two candidates sharing the exact
+        same relationship-instance membership but traversed in a different
+        order are distinct proofs, not the same proof -- this is precisely
+        what distinguishes an ordered relationship-instance sequence from
+        an unordered edge-set (or a literal node-set)."""
+        target = uuid4()
+        rel_a, rel_b = uuid4(), uuid4()
+        policy = uuid4()
+        forward = PropagatedPathCandidate(
+            entity_id=target,
+            depth=2,
+            relationship_ids=(rel_a, rel_b),
+            policy_ids=(policy, policy),
+            policy_versions=(1, 1),
+            directions=("FORWARD", "FORWARD"),
+        )
+        reversed_order = PropagatedPathCandidate(
+            entity_id=target,
+            depth=2,
+            relationship_ids=(rel_b, rel_a),
+            policy_ids=(policy, policy),
+            policy_versions=(1, 1),
+            directions=("FORWARD", "FORWARD"),
+        )
+        result = _deduplicate_and_cap_paths((forward, reversed_order))
+        assert len(result) == 1
+        assert len(result[0].retained_paths) == 2
+
     def test_more_than_three_paths_capped_deterministically(self) -> None:
         target = uuid4()
         candidates = tuple(

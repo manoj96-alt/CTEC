@@ -6,16 +6,16 @@ CTE (graph AND policy), exactly-one-mutable-statement instrumentation,
 concurrent-replay idempotency, tenant isolation, and one bounded-graph
 performance sanity check.
 
-Disclosed scope note: the OQI1 Finding-family adapter branch is proven
-end-to-end against a real persisted `quality_findings` row + a real
-`EnterpriseEntityResolutionRecord` (the simplest cascade). The OQI2/OQI3
-adapter branches were verified by direct code review against their real
-ORM schemas (column names/types/FKs) and by the fake-repo service tests'
-generic outcome-handling logic (family-agnostic once `resolve_finding_
-subject` returns) -- a dedicated real-Postgres fixture cascade for OQI2
-(QualityRule->Evaluation->Finding) and OQI3 (BusinessRule->Evaluation->
-Finding) was not completed in this phase given time constraints. This is
-disclosed honestly rather than presented as covered."""
+OQI4-I-R1 (P2-001 closure): all three Finding-family adapter branches are
+now proven end-to-end against real persisted cascades -- OQI1 against a
+real `quality_findings` row, OQI2 against a real 5-participant
+QualityRule->Correspondence->Evaluation->Finding cascade (agreement,
+missingness, and disagreement together, proving OQI4 never treats
+majority agreement or an `authoritative` participant flag as entity-
+identity truth), and OQI3 against a real BusinessRule->Evaluation->
+Finding cascade using the same AND-compound `FALSE AND FALSE AND UNKNOWN`
+crown shape proven in CDD-041, proving OQI4 never converts an OQI3
+UNKNOWN clause into proven impact and never fragments impact by clause."""
 
 # isort: skip_file
 from __future__ import annotations
@@ -449,6 +449,604 @@ def test_no_impact_for_unresolved_outcome(migrated_engine: Engine) -> None:
         assert evaluation is not None
         assert evaluation.outcome is ImpactOutcome.NO_IMPACT
         assert evaluation.observations == ()
+
+
+# --- OQI2/OQI3 Finding-family adapter, end to end against real persistence
+# (closes the OQI4-I P2-001 disclosed gap: AA §8 requires executable proof
+# for all three Finding families, not code review alone) ---
+
+
+def test_oqi2_adapter_five_source_disagreement_never_selects_a_truth_entity(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-042 §4.6: a real 5-participant OQI2 N-source Finding (SAP/PLM/
+    MES agree on value, PIM missing, Supplier Portal dissents -- the exact
+    OQI2 N-source shape) is fed through the real adapter. Two participants
+    resolve to two *different* enterprise entities. OQI4 must never treat
+    "most participants agree" or "this source is authoritative" as truth:
+    disagreement on entity identity resolves to IMPACT_UNKNOWN, never the
+    majority's or any single participant's entity."""
+    from app.domain.identity_resolution.model import (
+        BusinessConfidence,
+        EnterpriseEntityResolutionRecord,
+        ResolutionOutcome,
+    )
+    from app.domain.oqi.quality_rule import (
+        QualityDimension,
+        QualityFindingType,
+        QualityRule,
+        QualityRuleStatus,
+    )
+    from app.domain.oqi_cross_source.correspondence import (
+        ComparisonSubjectCorrespondence,
+        ComparisonSubjectCorrespondenceMember,
+        ComparisonSubjectCorrespondenceStatus,
+    )
+    from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+    from app.infrastructure.persistence.field_value_evidence_repository import (
+        FieldValueEvidenceRepositoryImpl,
+    )
+    from app.domain.integration.field_value_evidence import FieldValueEvidence
+    from app.domain.shared.value_objects import Identifier
+    from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
+        OqiCrossSourceCorrespondenceRepositoryImpl,
+    )
+    from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
+        OqiCrossSourceEvaluationRepositoryImpl,
+    )
+    from app.infrastructure.persistence.oqi_quality_rule_repository import (
+        OqiQualityRuleRepositoryImpl,
+    )
+    from app.application.oqi_cross_source_evaluation_service import (
+        OqiCrossSourceEvaluationService,
+    )
+    from app.infrastructure.persistence.source_field_repository import (
+        SourceFieldRepositoryImpl,
+    )
+    from app.tests.test_source_field_persistence_postgres import _source_field
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    subject_id = uuid4()
+    roles = ["SAP", "PLM", "PIM", "MES", "SUPPLIER_PORTAL"]
+
+    with factory() as session:
+        objects: dict[str, UUID] = {}
+        fields: dict[str, UUID] = {}
+        for role in roles:
+            object_id = _seed_source_object(session, tenant_id=tenant_id)
+            field = _source_field(source_object_id=object_id, field_label=f"MPN-{role}")
+            SourceFieldRepositoryImpl(session).create(field)
+            session.flush()
+            objects[role] = object_id
+            fields[role] = field.source_field_id.value
+
+        OqiQualityRuleRepositoryImpl(session).create(
+            QualityRule.new(
+                quality_condition_id=condition_id,
+                version=1,
+                dimension=QualityDimension.CONSISTENCY,
+                finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+                validity_primitive=None,
+                information_element_requirement_id="ier-mpn",
+                rule_parameters={
+                    "participants": [
+                        {
+                            "role": role,
+                            "source_field_id": str(fields[role]),
+                            "eligible": True,
+                            "expected": True,
+                            "authoritative": role == "SAP",
+                        }
+                        for role in roles
+                    ]
+                },
+                status=QualityRuleStatus.ACTIVE,
+                created_by="steward",
+                created_on=NOW,
+            )
+        )
+        OqiCrossSourceCorrespondenceRepositoryImpl(session).create(
+            ComparisonSubjectCorrespondence.new(
+                comparison_subject_id=subject_id,
+                tenant_id=tenant_id,
+                version=1,
+                status=ComparisonSubjectCorrespondenceStatus.ACTIVE,
+                members=tuple(
+                    ComparisonSubjectCorrespondenceMember(
+                        participant_role=role,
+                        source_object_id=objects[role],
+                        source_record_reference=f"REF-{role}",
+                    )
+                    for role in roles
+                ),
+                created_by="steward",
+                created_on=NOW,
+            )
+        )
+        # SAP, PLM, MES agree ("ABC123"); PIM left with zero evidence
+        # (missing); SUPPLIER_PORTAL dissents ("XYZ999"). Classic OQI2
+        # N-source shape: agreement + missingness + disagreement together.
+        for role, value in (
+            ("SAP", "ABC123"),
+            ("PLM", "ABC123"),
+            ("MES", "ABC123"),
+            ("SUPPLIER_PORTAL", "XYZ999"),
+        ):
+            evidence = FieldValueEvidence.new(
+                source_field_id=Identifier(fields[role]),
+                source_record_reference=f"REF-{role}",
+                observed_representation=value,
+                observed_at=NOW,
+                received_at=NOW,
+            )
+            FieldValueEvidenceRepositoryImpl(session).create_or_get_existing(evidence)
+
+        # Entity resolution: SAP and PLM (2 of the 5 -- not a majority)
+        # resolve to entity_x; MES (deliberately, despite value-agreeing
+        # with SAP/PLM) resolves to a *different* entity_y. This proves
+        # OQI4 does not conflate "these sources agree on the value" with
+        # "these sources agree on entity identity", and does not let the
+        # SAP participant's `authoritative=True` flag override disagreement.
+        entity_x, entity_y = _entity(session, tenant_id=tenant_id, name="X"), _entity(
+            session, tenant_id=tenant_id, name="Y"
+        )
+        for role, entity_id in (("SAP", entity_x), ("PLM", entity_x), ("MES", entity_y)):
+            EntityResolutionStore(session).append(
+                EnterpriseEntityResolutionRecord(
+                    record_id=uuid4(),
+                    tenant_id=tenant_id,
+                    enterprise_entity_id=entity_id,
+                    supporting_source_object_ids=(objects[role],),
+                    outcome=ResolutionOutcome.RESOLVED,
+                    business_confidence=BusinessConfidence.HIGH,
+                    structured_reasons=("exact match",),
+                    narrative_explanation="Deterministic test fixture resolution.",
+                    produced_at=NOW,
+                    policy_version="v1",
+                )
+            )
+        session.commit()
+
+    with factory() as session:
+        rule = OqiQualityRuleRepositoryImpl(session).get_active(condition_id)
+        correspondence = OqiCrossSourceCorrespondenceRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, comparison_subject_id=subject_id
+        )
+        assert rule is not None and correspondence is not None
+        service = OqiCrossSourceEvaluationService(
+            evaluation_repository=OqiCrossSourceEvaluationRepositoryImpl(session),
+            clock=lambda: NOW,
+        )
+        cross_source_evaluation = service.evaluate_current_state(
+            rule=rule, correspondence=correspondence
+        )
+        assert cross_source_evaluation is not None
+        session.commit()
+
+    finding_id = derive_comparison_finding_id(
+        tenant_id=tenant_id, quality_condition_id=condition_id, comparison_subject_id=subject_id
+    )
+    with factory() as session:
+        evaluation = _service(session).evaluate_current_state(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI2, finding_id=finding_id
+        )
+        session.commit()
+        assert evaluation is not None
+        # Firewall: disagreement across resolved entities (2 sources say X,
+        # 1 says Y) must never resolve to IMPACTED(X) merely because X has
+        # more supporting participants, nor to IMPACTED(Y) merely because
+        # no participant is marked authoritative for entity resolution.
+        assert evaluation.outcome is ImpactOutcome.IMPACT_UNKNOWN
+        assert evaluation.observations == ()
+
+
+def test_oqi2_adapter_agreeing_entity_resolution_is_directly_impacted(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-042 §4.6 positive case: when every participant that *does*
+    resolve agrees on the same enterprise entity, OQI4 proves entity-
+    identity Direct Impact through the real OQI2 adapter -- without ever
+    reading which comparison value the participants disagreed on."""
+    from app.domain.identity_resolution.model import (
+        BusinessConfidence,
+        EnterpriseEntityResolutionRecord,
+        ResolutionOutcome,
+    )
+    from app.domain.oqi.quality_rule import (
+        QualityDimension,
+        QualityFindingType,
+        QualityRule,
+        QualityRuleStatus,
+    )
+    from app.domain.oqi_cross_source.correspondence import (
+        ComparisonSubjectCorrespondence,
+        ComparisonSubjectCorrespondenceMember,
+        ComparisonSubjectCorrespondenceStatus,
+    )
+    from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+    from app.infrastructure.persistence.field_value_evidence_repository import (
+        FieldValueEvidenceRepositoryImpl,
+    )
+    from app.domain.integration.field_value_evidence import FieldValueEvidence
+    from app.domain.shared.value_objects import Identifier
+    from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
+        OqiCrossSourceCorrespondenceRepositoryImpl,
+    )
+    from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
+        OqiCrossSourceEvaluationRepositoryImpl,
+    )
+    from app.infrastructure.persistence.oqi_quality_rule_repository import (
+        OqiQualityRuleRepositoryImpl,
+    )
+    from app.application.oqi_cross_source_evaluation_service import (
+        OqiCrossSourceEvaluationService,
+    )
+    from app.infrastructure.persistence.source_field_repository import (
+        SourceFieldRepositoryImpl,
+    )
+    from app.tests.test_source_field_persistence_postgres import _source_field
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    subject_id = uuid4()
+    roles = ["SAP", "PLM", "PIM", "MES", "SUPPLIER_PORTAL"]
+
+    with factory() as session:
+        objects: dict[str, UUID] = {}
+        fields: dict[str, UUID] = {}
+        for role in roles:
+            object_id = _seed_source_object(session, tenant_id=tenant_id)
+            field = _source_field(source_object_id=object_id, field_label=f"MPN-{role}")
+            SourceFieldRepositoryImpl(session).create(field)
+            session.flush()
+            objects[role] = object_id
+            fields[role] = field.source_field_id.value
+
+        OqiQualityRuleRepositoryImpl(session).create(
+            QualityRule.new(
+                quality_condition_id=condition_id,
+                version=1,
+                dimension=QualityDimension.CONSISTENCY,
+                finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+                validity_primitive=None,
+                information_element_requirement_id="ier-mpn",
+                rule_parameters={
+                    "participants": [
+                        {
+                            "role": role,
+                            "source_field_id": str(fields[role]),
+                            "eligible": True,
+                            "expected": True,
+                            "authoritative": False,
+                        }
+                        for role in roles
+                    ]
+                },
+                status=QualityRuleStatus.ACTIVE,
+                created_by="steward",
+                created_on=NOW,
+            )
+        )
+        OqiCrossSourceCorrespondenceRepositoryImpl(session).create(
+            ComparisonSubjectCorrespondence.new(
+                comparison_subject_id=subject_id,
+                tenant_id=tenant_id,
+                version=1,
+                status=ComparisonSubjectCorrespondenceStatus.ACTIVE,
+                members=tuple(
+                    ComparisonSubjectCorrespondenceMember(
+                        participant_role=role,
+                        source_object_id=objects[role],
+                        source_record_reference=f"REF-{role}",
+                    )
+                    for role in roles
+                ),
+                created_by="steward",
+                created_on=NOW,
+            )
+        )
+        for role, value in (
+            ("SAP", "ABC123"),
+            ("PLM", "ABC123"),
+            ("MES", "ABC123"),
+            ("SUPPLIER_PORTAL", "XYZ999"),
+        ):
+            evidence = FieldValueEvidence.new(
+                source_field_id=Identifier(fields[role]),
+                source_record_reference=f"REF-{role}",
+                observed_representation=value,
+                observed_at=NOW,
+                received_at=NOW,
+            )
+            FieldValueEvidenceRepositoryImpl(session).create_or_get_existing(evidence)
+
+        entity_id = _entity(session, tenant_id=tenant_id, name="AgreedEntity")
+        for role in ("SAP", "PLM"):
+            EntityResolutionStore(session).append(
+                EnterpriseEntityResolutionRecord(
+                    record_id=uuid4(),
+                    tenant_id=tenant_id,
+                    enterprise_entity_id=entity_id,
+                    supporting_source_object_ids=(objects[role],),
+                    outcome=ResolutionOutcome.RESOLVED,
+                    business_confidence=BusinessConfidence.HIGH,
+                    structured_reasons=("exact match",),
+                    narrative_explanation="Deterministic test fixture resolution.",
+                    produced_at=NOW,
+                    policy_version="v1",
+                )
+            )
+        session.commit()
+
+    with factory() as session:
+        rule = OqiQualityRuleRepositoryImpl(session).get_active(condition_id)
+        correspondence = OqiCrossSourceCorrespondenceRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, comparison_subject_id=subject_id
+        )
+        assert rule is not None and correspondence is not None
+        service = OqiCrossSourceEvaluationService(
+            evaluation_repository=OqiCrossSourceEvaluationRepositoryImpl(session),
+            clock=lambda: NOW,
+        )
+        cross_source_evaluation = service.evaluate_current_state(
+            rule=rule, correspondence=correspondence
+        )
+        assert cross_source_evaluation is not None
+        session.commit()
+
+    finding_id = derive_comparison_finding_id(
+        tenant_id=tenant_id, quality_condition_id=condition_id, comparison_subject_id=subject_id
+    )
+    with factory() as session:
+        evaluation = _service(session).evaluate_current_state(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI2, finding_id=finding_id
+        )
+        session.commit()
+        assert evaluation is not None
+        assert evaluation.outcome is ImpactOutcome.IMPACTED
+        assert len(evaluation.observations) == 1
+        assert evaluation.observations[0].ontology_element_id == entity_id
+
+
+def test_oqi3_adapter_compound_finding_unknown_clause_never_becomes_proven_impact(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-042 §4.5: a real OQI3 CURRENT_STATE BusinessRuleFinding, built
+    through a compound AND rule where two clauses are deterministically
+    FALSE and a third clause's evidence is malformed (UNKNOWN -- strong
+    Kleene `FALSE AND FALSE AND UNKNOWN = FALSE`), fed through the real
+    adapter. The adapter must resolve subject/entity identity exactly as
+    for any other OQI3 Finding -- it must never treat the UNKNOWN clause
+    as proven impact, and must never mark an unrelated bound input as
+    impacted merely for having participated in evaluation (OQI4 identifies
+    the *entity*, not individual clause inputs, so this also proves OQI4
+    doesn't fragment impact by BusinessRule clause)."""
+    from app.application.oqi_business_rule_evaluation_service import SingleRecordSubject
+    from app.domain.oqi_business_rule.evaluation import (
+        SUBJECT_TYPE_SINGLE_RECORD,
+        canonical_single_record_subject_identity,
+    )
+    from app.domain.oqi_business_rule.finding import derive_business_rule_finding_id
+    from app.domain.oqi_business_rule.rule import (
+        BusinessRule,
+        BusinessRuleInputBinding,
+        BusinessRuleStatus,
+        ComparandKind,
+        ComparatorNode,
+        CompositionNode,
+        ExpectedType,
+        Operator,
+        RuleFamily,
+    )
+    from app.infrastructure.persistence.oqi_business_rule_repository import (
+        OqiBusinessRuleRepositoryImpl,
+    )
+    from app.application.oqi_business_rule_evaluation_service import (
+        OqiBusinessRuleEvaluationService,
+    )
+    from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
+        OqiBusinessRuleEvaluationRepositoryImpl,
+        OqiBusinessRuleEvidenceValueReader,
+    )
+    from app.domain.integration.field_value_evidence import FieldValueEvidence
+    from app.domain.shared.value_objects import Identifier
+    from app.infrastructure.persistence.field_value_evidence_repository import (
+        FieldValueEvidenceRepositoryImpl,
+    )
+    from app.infrastructure.persistence.source_field_repository import (
+        SourceFieldRepositoryImpl,
+    )
+    from app.tests.test_source_field_persistence_postgres import _source_field
+
+    def _admit_evidence(
+        session: Session,
+        *,
+        source_field_id: UUID,
+        source_record_reference: str,
+        observed_representation: str,
+    ) -> None:
+        evidence = FieldValueEvidence.new(
+            source_field_id=Identifier(source_field_id),
+            source_record_reference=source_record_reference,
+            observed_representation=observed_representation,
+            observed_at=NOW,
+            received_at=NOW,
+        )
+        FieldValueEvidenceRepositoryImpl(session).create_or_get_existing(evidence)
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+
+    with factory() as session:
+        object_id = _seed_source_object(session, tenant_id=tenant_id)
+
+        def _field(label: str) -> UUID:
+            field = _source_field(source_object_id=object_id, field_label=label)
+            SourceFieldRepositoryImpl(session).create(field)
+            session.flush()
+            return field.source_field_id.value
+
+        status_field = _field("LIFECYCLE_STATUS")
+        group_field = _field("PLANNING_GROUP")
+        type_field = _field("PROCUREMENT_TYPE")
+        uom_field = _field("BASE_UOM_QTY")
+
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_PROHIBITED,
+            applicability=ComparatorNode(
+                clause_id="applicable-active",
+                operator=Operator.EQ,
+                input_role="lifecycle_status",
+                comparand_kind=ComparandKind.LITERAL,
+                literal_type=ExpectedType.STRING,
+                literal_value="ACTIVE",
+            ),
+            predicate=CompositionNode(
+                operator=Operator.AND,
+                children=(
+                    ComparatorNode(
+                        clause_id="group-not-obsolete",
+                        operator=Operator.NE,
+                        input_role="planning_group",
+                        comparand_kind=ComparandKind.LITERAL,
+                        literal_type=ExpectedType.STRING,
+                        literal_value="OBSOLETE",
+                    ),
+                    ComparatorNode(
+                        clause_id="type-not-blocked",
+                        operator=Operator.NE,
+                        input_role="procurement_type",
+                        comparand_kind=ComparandKind.LITERAL,
+                        literal_type=ExpectedType.STRING,
+                        literal_value="BLOCKED",
+                    ),
+                    ComparatorNode(
+                        clause_id="uom-within-limit",
+                        operator=Operator.LTE,
+                        input_role="base_uom_qty",
+                        comparand_kind=ComparandKind.LITERAL,
+                        literal_type=ExpectedType.DECIMAL,
+                        literal_value="1000",
+                    ),
+                ),
+            ),
+            input_bindings=(
+                BusinessRuleInputBinding(
+                    input_role="lifecycle_status",
+                    source_field_id=status_field,
+                    required=True,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="planning_group",
+                    source_field_id=group_field,
+                    required=False,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="procurement_type",
+                    source_field_id=type_field,
+                    required=False,
+                    expected_type=ExpectedType.STRING,
+                ),
+                BusinessRuleInputBinding(
+                    input_role="base_uom_qty",
+                    source_field_id=uom_field,
+                    required=False,
+                    expected_type=ExpectedType.DECIMAL,
+                ),
+            ),
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=status_field,
+            source_record_reference="MAT-100",
+            observed_representation="ACTIVE",
+        )
+        # planning_group == OBSOLETE and procurement_type == BLOCKED: both
+        # deterministically FALSE. base_uom_qty: malformed DECIMAL -> UNKNOWN.
+        _admit_evidence(
+            session,
+            source_field_id=group_field,
+            source_record_reference="MAT-100",
+            observed_representation="OBSOLETE",
+        )
+        _admit_evidence(
+            session,
+            source_field_id=type_field,
+            source_record_reference="MAT-100",
+            observed_representation="BLOCKED",
+        )
+        _admit_evidence(
+            session,
+            source_field_id=uom_field,
+            source_record_reference="MAT-100",
+            observed_representation="NOT-A-NUMBER",
+        )
+        entity_id = _entity(session, tenant_id=tenant_id, name=f"Material-{uuid4()}")
+        _resolve_entity(
+            session, tenant_id=tenant_id, source_object_id=object_id, entity_id=entity_id
+        )
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        service = OqiBusinessRuleEvaluationService(
+            evaluation_repository=OqiBusinessRuleEvaluationRepositoryImpl(session),
+            evidence_value_reader=OqiBusinessRuleEvidenceValueReader(session),
+            clock=lambda: NOW,
+        )
+        current_evaluation = service.evaluate_current_state(rule=active_rule, subject=subject)
+        assert current_evaluation is not None
+        # Confirm at the OQI3 layer itself: the crown Kleene regression --
+        # VIOLATED with exactly the two known-FALSE clause observations,
+        # the UNKNOWN uom clause produces no observation of its own.
+        assert len(current_evaluation.observations) == 2
+        assert {o.input_role for o in current_evaluation.observations} == {
+            "planning_group",
+            "procurement_type",
+        }
+        session.commit()
+
+    finding_id = derive_business_rule_finding_id(
+        tenant_id=tenant_id,
+        business_condition_id=condition_id,
+        subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+        subject_identity=canonical_single_record_subject_identity(
+            source_object_id=object_id, source_record_reference="MAT-100"
+        ),
+    )
+
+    with factory() as session:
+        evaluation = _service(session).evaluate_current_state(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI3, finding_id=finding_id
+        )
+        session.commit()
+        assert evaluation is not None
+        # OQI4 identifies the entity once, via governed identity lineage --
+        # it does not fragment impact by BusinessRule clause, and it does
+        # not treat the malformed base_uom_qty clause (UNKNOWN at the OQI3
+        # layer) as proven impact of any kind.
+        assert evaluation.outcome is ImpactOutcome.IMPACTED
+        assert len(evaluation.observations) == 1
+        assert evaluation.observations[0].ontology_element_id == entity_id
 
 
 # --- propagation correctness ---

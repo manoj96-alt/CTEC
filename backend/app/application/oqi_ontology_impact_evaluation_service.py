@@ -44,20 +44,24 @@ class _RetainedElementPaths:
 def _deduplicate_and_cap_paths(
     candidates: tuple[PropagatedPathCandidate, ...],
 ) -> tuple[_RetainedElementPaths, ...]:
-    """CDD-042 §9: one current-impact row per impacted element regardless
-    of path count; path evidence deduplicated by node-set (two paths that
-    visit the identical set of intermediate entities are the same proof)
-    and capped at the shortest 3 distinct paths per element. Fully
-    deterministic post-processing of an already-snapshotted result set --
-    performing this in Python does not reopen the one-statement snapshot
-    invariant, since no further database read occurs here."""
+    """CDD-042 §9 (Ordered Relationship-Instance Path clarification): one
+    current-impact row per impacted element regardless of path count; path
+    identity is the ordered sequence of relationship instances traversed
+    (two paths are the same proof only if their relationship-instance
+    sequence is identical in both membership and order -- parallel edges
+    to the same target, or the same edges traversed in a different order,
+    are distinct proofs) and capped at the shortest 3 distinct paths per
+    element. Fully deterministic post-processing of an already-snapshotted
+    result set -- performing this in Python does not reopen the
+    one-statement snapshot invariant, since no further database read
+    occurs here."""
     by_element: dict[UUID, list[PropagatedPathCandidate]] = {}
     for candidate in candidates:
         by_element.setdefault(candidate.entity_id, []).append(candidate)
 
     result: list[_RetainedElementPaths] = []
     for element_id, element_candidates in sorted(by_element.items(), key=lambda pair: str(pair[0])):
-        seen_node_sets: set[frozenset[UUID]] = set()
+        seen_ordered_paths: set[tuple[UUID, ...]] = set()
         deduped: list[PropagatedPathCandidate] = []
         # Deterministic ordering: shortest depth first, then canonical
         # relationship-id sequence -- database row order never matters.
@@ -65,10 +69,10 @@ def _deduplicate_and_cap_paths(
             element_candidates,
             key=lambda c: (c.depth, tuple(str(r) for r in c.relationship_ids)),
         ):
-            node_set = frozenset(candidate.relationship_ids)
-            if node_set in seen_node_sets:
+            ordered_path = candidate.relationship_ids
+            if ordered_path in seen_ordered_paths:
                 continue
-            seen_node_sets.add(node_set)
+            seen_ordered_paths.add(ordered_path)
             deduped.append(candidate)
         retained = tuple(deduped[:MAX_RETAINED_PATHS_PER_ELEMENT])
         result.append(
