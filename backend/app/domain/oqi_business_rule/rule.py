@@ -486,6 +486,42 @@ def _validate_comparator_against_bindings(
             )
 
 
+def _validate_and_only_conditional_consequence(
+    predicate: AstNode,
+    *,
+    leaf_check: Any,
+    family_label: str,
+    leaf_shape_description: str,
+) -> None:
+    """CDD-041 §4.2 (OQI3-I2-R): a `CONDITIONAL_REQUIRED`/`CONDITIONAL_
+    PROHIBITED` predicate is either a single `ComparatorNode` (the original
+    singular shape, unchanged, fully backward compatible) or an `AND`-only
+    `CompositionNode` whose direct children are each a single, family-
+    appropriate `ComparatorNode` -- no nesting, no mixed connective. `OR`,
+    `NOT`, and nested `IMPLIES` are never authorized as compound consequence
+    composition (CDD-041 §4.2/§4.10) regardless of leaf shape."""
+    if isinstance(predicate, ComparatorNode):
+        if not leaf_check(predicate):
+            raise OqiMalformedBusinessRuleError(
+                f"{family_label}'s predicate must be exactly one {leaf_shape_description}, "
+                "or an AND-only compound of such comparators"
+            )
+        return
+    if isinstance(predicate, CompositionNode) and predicate.operator is Operator.AND:
+        for child in predicate.children:
+            if not isinstance(child, ComparatorNode) or not leaf_check(child):
+                raise OqiMalformedBusinessRuleError(
+                    f"{family_label}'s AND-compound predicate children must each be "
+                    f"{leaf_shape_description} -- no nesting, no mixed connective"
+                )
+        return
+    raise OqiMalformedBusinessRuleError(
+        f"{family_label}'s predicate must be exactly one {leaf_shape_description}, "
+        "or an AND-only compound of such comparators (OR/NOT/IMPLIES are not "
+        "authorized as compound consequence composition, CDD-041 §4.2/§4.10)"
+    )
+
+
 def validate_business_rule_shape(
     *,
     rule_family: RuleFamily,
@@ -538,23 +574,23 @@ def validate_business_rule_shape(
             raise OqiMalformedBusinessRuleError(
                 "CONDITIONAL_REQUIRED requires an explicit applicability predicate"
             )
-        if not (
-            isinstance(predicate, ComparatorNode) and predicate.operator is Operator.IS_NOT_NULL
-        ):
-            raise OqiMalformedBusinessRuleError(
-                "CONDITIONAL_REQUIRED's predicate must be exactly one "
-                "IS_NOT_NULL comparator naming the required input_role"
-            )
+        _validate_and_only_conditional_consequence(
+            predicate,
+            leaf_check=lambda leaf: leaf.operator is Operator.IS_NOT_NULL,
+            family_label="CONDITIONAL_REQUIRED",
+            leaf_shape_description="IS_NOT_NULL comparator naming the required input_role",
+        )
     elif rule_family is RuleFamily.CONDITIONAL_PROHIBITED:
         if applicability is None:
             raise OqiMalformedBusinessRuleError(
                 "CONDITIONAL_PROHIBITED requires an explicit applicability predicate"
             )
-        if not isinstance(predicate, ComparatorNode):
-            raise OqiMalformedBusinessRuleError(
-                "CONDITIONAL_PROHIBITED's predicate must be exactly one comparator "
-                "naming the prohibited state"
-            )
+        _validate_and_only_conditional_consequence(
+            predicate,
+            leaf_check=lambda _leaf: True,
+            family_label="CONDITIONAL_PROHIBITED",
+            leaf_shape_description="comparator naming the prohibited state",
+        )
     elif rule_family is RuleFamily.FIELD_COMPARISON:
         if not (
             isinstance(predicate, ComparatorNode)

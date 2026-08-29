@@ -184,6 +184,7 @@ class BusinessRuleEvaluation:
     rule_version: int
     subject_type: str
     subject_identity: str
+    source_object_id: UUID
     source_record_reference: str
     evaluation_mode: EvaluationMode
     evaluation_horizon: datetime
@@ -217,10 +218,24 @@ class BusinessRuleEvaluation:
             1 <= len(self.subject_identity) <= _MAX_SUBJECT_IDENTITY_LENGTH
         ):
             raise ValidationException("subject_identity must be non-empty bounded text")
+        if not isinstance(self.source_object_id, UUID):
+            raise ValidationException("source_object_id must be a UUID")
         if not isinstance(self.source_record_reference, str) or not (
             1 <= len(self.source_record_reference) <= _MAX_SUBJECT_IDENTITY_LENGTH
         ):
             raise ValidationException("source_record_reference must be non-empty bounded text")
+        # CDD-041 §3.1 (OQI3-I2-R): source_object_id and source_record_reference
+        # are the two constituents subject_identity was always computed from at
+        # write time -- this is an internal-consistency check, not a new
+        # identity formula. It does not change derive_business_rule_evaluation_id.
+        expected_subject_identity = canonical_single_record_subject_identity(
+            source_object_id=self.source_object_id,
+            source_record_reference=self.source_record_reference,
+        )
+        if self.subject_identity != expected_subject_identity:
+            raise ValidationException(
+                "subject_identity is inconsistent with source_object_id/" "source_record_reference"
+            )
         if not isinstance(self.evaluation_mode, EvaluationMode):
             raise ValidationException("evaluation_mode must be an EvaluationMode")
         if self.evaluation_horizon is None or self.evaluation_horizon.tzinfo is None:

@@ -89,6 +89,15 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("subject_type", sa.String(32), nullable=False),
+        sa.Column(
+            "source_object_id",
+            sa.Uuid(),
+            sa.ForeignKey(
+                "source_objects.source_object_id",
+                name="fk_business_rule_evaluations_source_object_id",
+            ),
+            nullable=False,
+        ),
         sa.Column("source_record_reference", sa.String(1000), nullable=False),
         sa.Column("evaluation_mode", sa.String(16), nullable=False),
         sa.Column("evaluation_horizon", sa.DateTime(timezone=True), nullable=False),

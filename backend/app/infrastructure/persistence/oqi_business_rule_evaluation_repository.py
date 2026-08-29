@@ -20,6 +20,7 @@ from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.domain.oqi.evaluation import EvaluationMode
@@ -29,6 +30,7 @@ from app.domain.oqi_business_rule.evaluation import (
     BusinessRuleEvaluationObservation,
     EvaluationOutcome,
     ObservationType,
+    canonical_single_record_subject_identity,
     input_evidence_digest,
 )
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
@@ -139,32 +141,66 @@ class OqiBusinessRuleEvaluationRepositoryImpl:
         return None if row is None else (row[0], row[1])
 
     def insert_evaluation_idempotent(self, evaluation: BusinessRuleEvaluation) -> bool:
-        """CDD-041 §16, §22: returns True if a new immutable ledger row
-        (and its input snapshot + observation rows) were inserted; False if
-        `evaluation.evaluation_id` already existed -- a byte-identical
-        logical replay is a genuine no-op, never a duplicate row and never
-        an error. Evaluation + inputs + observations are added to the same
-        session/transaction atomically -- the caller's `commit()` (or its
-        absence on an injected failure) governs all-or-nothing persistence."""
-        existing = self.session.get(BusinessRuleEvaluationORM, evaluation.evaluation_id)
-        if existing is not None:
+        """CDD-041 §5.2 (OQI3-I2-R), §16, §22: returns True if a new
+        immutable ledger row (and its input snapshot + observation rows)
+        were inserted; False if `evaluation.evaluation_id` already
+        existed -- a byte-identical logical replay is a genuine no-op,
+        never a duplicate row and never an error.
+
+        Parent-gated conflict ownership (CDD-041 §5.2, OQI3-G2): the parent
+        `business_rule_evaluations` row is inserted via `ON CONFLICT
+        (evaluation_id) DO NOTHING RETURNING evaluation_id`, atomically at
+        the database level -- a plain check-then-insert (`session.get` then
+        `session.add`) cannot close this race, since two concurrent
+        transactions under READ COMMITTED can both observe "no existing
+        row" before either commits. Only the transaction that receives a
+        returned `evaluation_id` (this transaction won the race, or no
+        prior row existed) proceeds to insert children. A transaction that
+        loses the conflict (`RETURNING` yields no row) returns `False`
+        immediately and MUST NOT attempt to insert any child row -- doing
+        so would either violate the children's own natural-key constraints
+        or silently duplicate an already-complete child set. This is the
+        exact reason `ON CONFLICT DO NOTHING` is applied ONLY to the parent
+        table, never independently to each child table (CDD-041 §5.2
+        explicitly rejects that unconditional variant as unsafe): gating
+        ownership at the single authoritative natural-key check, before any
+        child table is touched, is what makes the pattern safe across all
+        four tables without per-child conflict handling.
+
+        `parent_row` is constructed via the ORM class exactly as before
+        (the single authorized construction site, `test_runtime_
+        architecture.py`'s firewall assertion) purely as a typed value
+        holder -- its mapped columns are read back to build the Core
+        `INSERT ... ON CONFLICT` statement, since `Session.add()` cannot
+        express `ON CONFLICT DO NOTHING RETURNING`."""
+        parent_row = BusinessRuleEvaluationORM(
+            evaluation_id=evaluation.evaluation_id,
+            tenant_id=evaluation.tenant_id,
+            business_condition_id=evaluation.business_condition_id,
+            rule_id=evaluation.rule_id,
+            subject_type=evaluation.subject_type,
+            source_object_id=evaluation.source_object_id,
+            source_record_reference=evaluation.source_record_reference,
+            evaluation_mode=evaluation.evaluation_mode.value,
+            evaluation_horizon=evaluation.evaluation_horizon,
+            input_evidence_digest=_input_evidence_digest_of(evaluation),
+            outcome=evaluation.outcome.value,
+            evaluated_at=evaluation.evaluated_at,
+        )
+        parent_values = {
+            column.name: getattr(parent_row, column.name)
+            for column in BusinessRuleEvaluationORM.__table__.columns
+        }
+        insert_stmt = (
+            pg_insert(BusinessRuleEvaluationORM)
+            .values(**parent_values)
+            .on_conflict_do_nothing(index_elements=["evaluation_id"])
+            .returning(BusinessRuleEvaluationORM.evaluation_id)
+        )
+        won_ownership = self.session.execute(insert_stmt).first() is not None
+        if not won_ownership:
             return False
 
-        self.session.add(
-            BusinessRuleEvaluationORM(
-                evaluation_id=evaluation.evaluation_id,
-                tenant_id=evaluation.tenant_id,
-                business_condition_id=evaluation.business_condition_id,
-                rule_id=evaluation.rule_id,
-                subject_type=evaluation.subject_type,
-                source_record_reference=evaluation.source_record_reference,
-                evaluation_mode=evaluation.evaluation_mode.value,
-                evaluation_horizon=evaluation.evaluation_horizon,
-                input_evidence_digest=_input_evidence_digest_of(evaluation),
-                outcome=evaluation.outcome.value,
-                evaluated_at=evaluation.evaluated_at,
-            )
-        )
         # Staged flushes, not one combined flush: without an ORM
         # `relationship()` between these mapped classes (deliberately --
         # this repository is a thin, explicit persistence layer, mirroring
@@ -234,44 +270,40 @@ def _to_domain(
     input_rows: Sequence[BusinessRuleEvaluationInputORM],
     observation_rows: Sequence[BusinessRuleEvaluationObservationORM],
 ) -> BusinessRuleEvaluation:
-    """Reconstructs a read-side `BusinessRuleEvaluation` view via
-    `object.__new__` (bypassing `__post_init__`'s strict evaluation_id
-    re-derivation) because `business_rule_evaluations` (CDD-041 Artifact
-    Authorization §5, frozen) persists only `source_record_reference`, not
-    `source_object_id` -- so the true canonical `subject_identity` (which
-    CDD-041 §6 requires to include `source_object_id`, mirroring OQI1's
-    `SourceRecordLineageIdentity` verbatim) cannot be recomputed from the
-    row alone. This is a disclosed, real schema gap relative to CDD-041 §6
-    (flagged in the OQI3-I2 report as a P2 for a future narrow AA
-    amendment, not silently patched here) -- writes are unaffected and
-    remain fully identity-correct; only this read-back reconstruction is
-    unable to re-validate identity, so it is deliberately not attempted."""
-    evaluation = object.__new__(BusinessRuleEvaluation)
-    object.__setattr__(evaluation, "evaluation_id", model.evaluation_id)
-    object.__setattr__(evaluation, "tenant_id", model.tenant_id)
-    object.__setattr__(evaluation, "business_condition_id", model.business_condition_id)
-    object.__setattr__(evaluation, "rule_id", model.rule_id)
-    object.__setattr__(evaluation, "rule_version", rule_version)
-    object.__setattr__(evaluation, "subject_type", model.subject_type)
-    object.__setattr__(evaluation, "subject_identity", model.source_record_reference)
-    object.__setattr__(evaluation, "source_record_reference", model.source_record_reference)
-    object.__setattr__(evaluation, "evaluation_mode", EvaluationMode(model.evaluation_mode))
-    object.__setattr__(evaluation, "evaluation_horizon", model.evaluation_horizon)
-    object.__setattr__(
-        evaluation,
-        "inputs",
-        tuple(
+    """Reconstructs a read-side `BusinessRuleEvaluation` via the normal,
+    fully-validating constructor (CDD-041 §3.1/§3.2, OQI3-I2-R): with
+    `source_object_id` now persisted directly on `business_rule_evaluations`
+    (the OQI3-G2/I2-R provenance correction), the true canonical
+    `subject_identity` is recomputed from `source_object_id` +
+    `source_record_reference` exactly as at write time, and
+    `evaluation_id`/`subject_identity` are both re-derived and verified by
+    `__post_init__` -- no bypass, no placeholder, no dependency on
+    non-empty evidence-link presence or on mutable current `SourceField`
+    state (subject provenance comes entirely from this row's own
+    `source_object_id`/`source_record_reference` columns)."""
+    return BusinessRuleEvaluation(
+        evaluation_id=model.evaluation_id,
+        tenant_id=model.tenant_id,
+        business_condition_id=model.business_condition_id,
+        rule_id=model.rule_id,
+        rule_version=rule_version,
+        subject_type=model.subject_type,
+        subject_identity=canonical_single_record_subject_identity(
+            source_object_id=model.source_object_id,
+            source_record_reference=model.source_record_reference,
+        ),
+        source_object_id=model.source_object_id,
+        source_record_reference=model.source_record_reference,
+        evaluation_mode=EvaluationMode(model.evaluation_mode),
+        evaluation_horizon=model.evaluation_horizon,
+        inputs=tuple(
             BusinessRuleEvaluationInputEntry(
                 input_role=row.input_role, evidence_id=row.field_value_evidence_id
             )
             for row in input_rows
         ),
-    )
-    object.__setattr__(evaluation, "outcome", EvaluationOutcome(model.outcome))
-    object.__setattr__(
-        evaluation,
-        "observations",
-        tuple(
+        outcome=EvaluationOutcome(model.outcome),
+        observations=tuple(
             BusinessRuleEvaluationObservation(
                 clause_id=row.clause_id,
                 observation_type=ObservationType(row.observation_type),
@@ -279,6 +311,5 @@ def _to_domain(
             )
             for row in observation_rows
         ),
+        evaluated_at=model.evaluated_at,
     )
-    object.__setattr__(evaluation, "evaluated_at", model.evaluated_at)
-    return evaluation

@@ -26,16 +26,26 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.application.oqi_business_rule_evaluation_service import (
     OqiBusinessRuleEvaluationService,
     SingleRecordSubject,
+    determine_outcome,
+    select_input_frontier,
 )
 from app.domain.integration.field_value_evidence import FieldValueEvidence
 from app.domain.oqi.evaluation import EvaluationMode
-from app.domain.oqi_business_rule.evaluation import EvaluationOutcome
+from app.domain.oqi_business_rule.evaluation import (
+    SUBJECT_TYPE_SINGLE_RECORD,
+    BusinessRuleEvaluation,
+    EvaluationOutcome,
+    canonical_single_record_subject_identity,
+    derive_business_rule_evaluation_id,
+    input_evidence_digest,
+)
 from app.domain.oqi_business_rule.rule import (
     BusinessRule,
     BusinessRuleInputBinding,
     BusinessRuleStatus,
     ComparandKind,
     ComparatorNode,
+    CompositionNode,
     ExpectedType,
     Operator,
     OqiMalformedBusinessRuleError,
@@ -146,6 +156,76 @@ def _service(session: Session) -> OqiBusinessRuleEvaluationService:
         evaluation_repository=repository,
         evidence_value_reader=OqiBusinessRuleEvidenceValueReader(session),
         clock=lambda: NOW,
+    )
+
+
+def _multi_required_rule(
+    *,
+    tenant_id: str,
+    status_field_id: UUID,
+    group_field_id: UUID,
+    type_field_id: UUID,
+    condition_id: str,
+) -> BusinessRule:
+    """CDD-041 §4.2/§4.5 (OQI3-G2/I2-R): AND-compound CONDITIONAL_REQUIRED
+    -- one governed policy, two independently observable required-input
+    clauses."""
+    applicability = ComparatorNode(
+        clause_id="applicable-active",
+        operator=Operator.EQ,
+        input_role="lifecycle_status",
+        comparand_kind=ComparandKind.LITERAL,
+        literal_type=ExpectedType.STRING,
+        literal_value="ACTIVE",
+    )
+    predicate = CompositionNode(
+        operator=Operator.AND,
+        children=(
+            ComparatorNode(
+                clause_id="planning-group-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="planning_group",
+                comparand_kind=ComparandKind.NONE,
+            ),
+            ComparatorNode(
+                clause_id="procurement-type-required",
+                operator=Operator.IS_NOT_NULL,
+                input_role="procurement_type",
+                comparand_kind=ComparandKind.NONE,
+            ),
+        ),
+    )
+    bindings = (
+        BusinessRuleInputBinding(
+            input_role="lifecycle_status",
+            source_field_id=status_field_id,
+            required=True,
+            expected_type=ExpectedType.STRING,
+        ),
+        BusinessRuleInputBinding(
+            input_role="planning_group",
+            source_field_id=group_field_id,
+            required=False,
+            expected_type=ExpectedType.STRING,
+        ),
+        BusinessRuleInputBinding(
+            input_role="procurement_type",
+            source_field_id=type_field_id,
+            required=False,
+            expected_type=ExpectedType.STRING,
+        ),
+    )
+    return BusinessRule.new(
+        business_condition_id=condition_id,
+        version=1,
+        tenant_id=tenant_id,
+        rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+        applicability=applicability,
+        predicate=predicate,
+        input_bindings=bindings,
+        status=BusinessRuleStatus.ACTIVE,
+        created_by="tester",
+        created_on=NOW,
     )
 
 
@@ -543,6 +623,204 @@ def test_historical_evaluation_violated_persists_one_observation(migrated_engine
         assert observation_rows[0].observation_type == "CLAUSE_VIOLATED"
 
 
+def test_evaluation_reconstructs_source_object_id_when_all_consequence_inputs_are_empty(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §3-§3.1 (OQI3-G2/I2-R), P2-A closure: the case indirect
+    reconstruction could never handle -- the bound consequence input has
+    zero qualifying evidence (EMPTY, no evidence-link row at all), so
+    `EvaluationInput -> SourceField -> SourceObject` has no path. Read-back
+    must still reconstruct the exact original `source_object_id` because it
+    is persisted directly on `business_rule_evaluations`, not derived from
+    evidence links."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        object_id, material_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="MATERIAL_TYPE"
+        )
+        _, classification_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="HAZMAT_CLASSIFICATION"
+        )
+        applicability = ComparatorNode(
+            clause_id="applicable-hazmat",
+            operator=Operator.EQ,
+            input_role="material_type",
+            comparand_kind=ComparandKind.LITERAL,
+            literal_type=ExpectedType.STRING,
+            literal_value="HAZMAT",
+        )
+        predicate = ComparatorNode(
+            clause_id="classification-required",
+            operator=Operator.IS_NOT_NULL,
+            input_role="hazmat_classification",
+            comparand_kind=ComparandKind.NONE,
+        )
+        bindings = (
+            BusinessRuleInputBinding(
+                input_role="material_type",
+                source_field_id=material_field,
+                required=True,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="hazmat_classification",
+                source_field_id=classification_field,
+                required=False,
+                expected_type=ExpectedType.STRING,
+            ),
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=applicability,
+            predicate=predicate,
+            input_bindings=bindings,
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=material_field,
+            source_record_reference="MAT-100",
+            observed_representation="HAZMAT",
+        )
+        # Deliberately no evidence at all for hazmat_classification -- the
+        # required consequence input is completely EMPTY.
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        evaluation = _service(session).evaluate_historical(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW
+        )
+        session.commit()
+
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+    assert evaluation.source_object_id == object_id  # write-time value, in-memory
+
+    with factory() as session:
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        reloaded = repository.get_evaluation(evaluation.evaluation_id)
+    assert reloaded is not None
+    # Read-back reconstruction: not derived from any evidence-link FK path
+    # (there is none -- the consequence input is EMPTY), purely from the
+    # persisted source_object_id column.
+    assert reloaded.source_object_id == object_id
+    assert reloaded.subject_identity == evaluation.subject_identity
+
+
+def test_evaluation_source_object_id_is_the_subjects_not_derived_from_bindings(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §3 (OQI3-G2/I2-R), P2-A closure: proves no cross-SourceObject
+    ambiguity route exists -- a rule's bound consequence field may belong
+    to a SourceObject entirely different from the evaluation subject's own
+    `source_object_id` (nothing in publication validation or the evaluator
+    enforces they match); the persisted/read-back `source_object_id` must
+    always be exactly the subject's explicit value, never inferred from
+    whichever bound field happens to have evidence."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        subject_object_id, gate_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="GATE"
+        )
+        # A deliberately DIFFERENT SourceObject owns the bound consequence
+        # field -- nothing prevents this today, and the persisted subject
+        # identity must not be affected by it either way.
+        _other_object_id, target_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="TARGET"
+        )
+        applicability = ComparatorNode(
+            clause_id="applicable-gate",
+            operator=Operator.EQ,
+            input_role="gate",
+            comparand_kind=ComparandKind.LITERAL,
+            literal_type=ExpectedType.STRING,
+            literal_value="YES",
+        )
+        predicate = ComparatorNode(
+            clause_id="target-required",
+            operator=Operator.IS_NOT_NULL,
+            input_role="target",
+            comparand_kind=ComparandKind.NONE,
+        )
+        bindings = (
+            BusinessRuleInputBinding(
+                input_role="gate",
+                source_field_id=gate_field,
+                required=True,
+                expected_type=ExpectedType.STRING,
+            ),
+            BusinessRuleInputBinding(
+                input_role="target",
+                source_field_id=target_field,
+                required=False,
+                expected_type=ExpectedType.STRING,
+            ),
+        )
+        rule = BusinessRule.new(
+            business_condition_id=condition_id,
+            version=1,
+            tenant_id=tenant_id,
+            rule_family=RuleFamily.CONDITIONAL_REQUIRED,
+            applicability=applicability,
+            predicate=predicate,
+            input_bindings=bindings,
+            status=BusinessRuleStatus.ACTIVE,
+            created_by="tester",
+            created_on=NOW,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=gate_field,
+            source_record_reference="MAT-100",
+            observed_representation="YES",
+        )
+        # target field's evidence, if any, would belong to the OTHER
+        # SourceObject -- deliberately none admitted (EMPTY), so there is
+        # no evidence-link path to any SourceObject at all.
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=subject_object_id, source_record_reference="MAT-100"
+    )
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        evaluation = _service(session).evaluate_historical(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW
+        )
+        session.commit()
+
+    assert evaluation is not None
+    assert evaluation.source_object_id == subject_object_id
+
+    with factory() as session:
+        reloaded = OqiBusinessRuleEvaluationRepositoryImpl(session).get_evaluation(
+            evaluation.evaluation_id
+        )
+    assert reloaded is not None
+    assert reloaded.source_object_id == subject_object_id
+
+
 def test_historical_evaluation_unknown_subject_persists_nothing(migrated_engine: Engine) -> None:
     factory = sessionmaker(migrated_engine, expire_on_commit=False)
     tenant_id = f"tenant-{uuid4()}"
@@ -650,25 +928,16 @@ def test_evaluation_idempotent_replay_creates_no_duplicate_rows(migrated_engine:
     assert input_count == 2
 
 
-def test_concurrent_identical_evaluation_replay_without_lock_can_race(
+def test_concurrent_identical_historical_replay_converges_without_integrity_error(
     migrated_engine: Engine,
 ) -> None:
-    """HONEST CONCURRENCY-SCOPE FINDING, not a claimed guarantee: OQI3-I2's
-    `evaluate_historical` never acquires Finding authority (correctly --
-    HISTORICAL mode never does, CDD-041 §23), so two truly concurrent
-    identical replays racing the same "does evaluation_id already exist"
-    check both observe no existing row and both attempt to INSERT --
-    exactly the same unresolved race OQI1 itself never protects against
-    for its own `evaluate_historical` (OQI1's own concurrent-replay-safety
-    test, `test_identical_evaluation_replayed_under_real_concurrency_does_
-    not_double_mutate` in `test_oqi_quality_postgres.py`, deliberately
-    exercises `evaluate_current_state` -- the *locked* path -- never
-    `evaluate_historical`). This test proves the race is real (one worker's
-    commit fails with a real `IntegrityError`, not a graceful no-op) so a
-    future OQI3-I3 composing this repository's `insert_evaluation_
-    idempotent` under its seed=3 advisory lock is a genuine correctness
-    prerequisite for CURRENT_STATE concurrent-replay safety, not optional
-    polish -- consistent with, not worse than, OQI1/OQI2 precedent."""
+    """CDD-041 §5.1-§5.2 (OQI3-G2/I2-R): two truly concurrent identical
+    `evaluate_historical` replays must converge on one immutable ledger
+    row-set and never expose a uniqueness `IntegrityError` to the caller.
+    The parent-gated `INSERT ... ON CONFLICT (evaluation_id) DO NOTHING
+    RETURNING` pattern closes the race the previous (pre-I2-R) check-then-
+    insert implementation could not: both workers now commit successfully,
+    and exactly one complete, non-duplicated child row-set exists."""
     factory = sessionmaker(migrated_engine, expire_on_commit=False)
     tenant_id = f"tenant-{uuid4()}"
     condition_id = f"cond-{uuid4()}"
@@ -733,12 +1002,239 @@ def test_concurrent_identical_evaluation_replay_without_lock_can_race(
     session_a.close()
     session_b.close()
 
-    results = {outcomes["a"][0], outcomes["b"][0]}
-    # At least one worker must succeed; without a lock it is legitimate
-    # (and, per this test, empirically observed) for the other to hit a
-    # real IntegrityError instead of silently converging -- this is the
-    # documented gap I3's lock exists to close.
-    assert "committed" in results
+    assert outcomes["a"][0] == "committed"
+    assert outcomes["b"][0] == "committed"
+    assert outcomes["a"][1] == outcomes["b"][1]  # same deterministic evaluation_id
+
+    with factory() as session:
+        evaluation_count = session.execute(
+            text("SELECT count(*) FROM business_rule_evaluations WHERE evaluation_id = :id"),
+            {"id": outcomes["a"][1]},
+        ).scalar_one()
+        input_count = session.execute(
+            text("SELECT count(*) FROM business_rule_evaluation_inputs WHERE evaluation_id = :id"),
+            {"id": outcomes["a"][1]},
+        ).scalar_one()
+    assert evaluation_count == 1
+    assert input_count == 2  # one row per bound input, never duplicated
+
+
+def test_concurrent_identical_historical_replay_violated_compound_converges(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §5.1-§5.2/§4 (OQI3-G2/I2-R): the strongest historical-replay
+    regression -- two concurrent identical replays of a compound VIOLATED
+    rule converge on one Evaluation with the complete expected multi-
+    observation set, never a partial or duplicated child ledger."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as setup_session:
+        object_id, status_field = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="LIFECYCLE_STATUS"
+        )
+        _, group_field = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="PLANNING_GROUP"
+        )
+        _, type_field = _seed_field_with_object(
+            setup_session, tenant_id=tenant_id, field_label="PROCUREMENT_TYPE"
+        )
+        rule = _multi_required_rule(
+            tenant_id=tenant_id,
+            status_field_id=status_field,
+            group_field_id=group_field,
+            type_field_id=type_field,
+            condition_id=condition_id,
+        )
+        OqiBusinessRuleRepositoryImpl(setup_session).create(rule)
+        _admit_evidence(
+            setup_session,
+            source_field_id=status_field,
+            source_record_reference="MAT-100",
+            observed_representation="ACTIVE",
+        )
+        # Deliberately no evidence for planning_group/procurement_type --
+        # both must be independently observed as missing.
+        setup_session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    barrier = threading.Barrier(2)
+    outcomes: dict[str, tuple[str, object]] = {}
+
+    def _worker(session: Session, key: str) -> None:
+        rule_local = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert rule_local is not None
+        barrier.wait(timeout=5)
+        try:
+            evaluation = _service(session).evaluate_historical(
+                rule=rule_local, subject=subject, evaluation_horizon=NOW
+            )
+            assert evaluation is not None
+            session.commit()
+            outcomes[key] = ("committed", evaluation.evaluation_id)
+        except IntegrityError:
+            session.rollback()
+            outcomes[key] = ("integrity_error", None)
+
+    session_a, session_b = factory(), factory()
+    thread_a = threading.Thread(target=_worker, args=(session_a, "a"))
+    thread_b = threading.Thread(target=_worker, args=(session_b, "b"))
+    thread_a.start()
+    thread_b.start()
+    thread_a.join(timeout=10)
+    thread_b.join(timeout=10)
+    session_a.close()
+    session_b.close()
+
+    assert outcomes["a"][0] == "committed"
+    assert outcomes["b"][0] == "committed"
+    assert outcomes["a"][1] == outcomes["b"][1]
+
+    with factory() as session:
+        observation_rows = (
+            session.query(BusinessRuleEvaluationObservationORM)
+            .filter_by(evaluation_id=outcomes["a"][1])
+            .all()
+        )
+    assert {row.input_role for row in observation_rows} == {"planning_group", "procurement_type"}
+
+
+def test_rollback_after_parent_ownership_leaves_no_poisoned_parent(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-041 §5.2 (OQI3-G2/I2-R): a transaction that wins parent
+    ownership via `ON CONFLICT DO NOTHING RETURNING` but fails before
+    inserting its children must roll back completely -- the parent row
+    must not survive without its children (no poisoned parent). A retry
+    must then be able to become the new owner and persist the complete
+    ledger."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    condition_id = f"cond-{uuid4()}"
+    with factory() as session:
+        object_id, start_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="EFFECTIVE_START"
+        )
+        _, end_field = _seed_field_with_object(
+            session, tenant_id=tenant_id, field_label="EFFECTIVE_END"
+        )
+        rule = _effective_dates_rule(
+            tenant_id=tenant_id,
+            start_field_id=start_field,
+            end_field_id=end_field,
+            condition_id=condition_id,
+        )
+        OqiBusinessRuleRepositoryImpl(session).create(rule)
+        _admit_evidence(
+            session,
+            source_field_id=start_field,
+            source_record_reference="MAT-100",
+            observed_representation="2026-01-01",
+        )
+        _admit_evidence(
+            session,
+            source_field_id=end_field,
+            source_record_reference="MAT-100",
+            observed_representation="2026-12-31",
+        )
+        session.commit()
+
+    subject = SingleRecordSubject(
+        tenant_id=tenant_id, source_object_id=object_id, source_record_reference="MAT-100"
+    )
+    evaluation_id = None
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        repository = OqiBusinessRuleEvaluationRepositoryImpl(session)
+        inputs = select_input_frontier(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW, repository=repository
+        )
+        assert inputs is not None
+        raw_values = OqiBusinessRuleEvidenceValueReader(session).read_values(inputs)
+        result = determine_outcome(rule=active_rule, inputs=inputs, raw_values=raw_values)
+        assert result is not None
+        outcome, observations = result
+        subject_identity = canonical_single_record_subject_identity(
+            source_object_id=object_id, source_record_reference="MAT-100"
+        )
+        digest = input_evidence_digest(inputs)
+        evaluation_id = derive_business_rule_evaluation_id(
+            tenant_id=tenant_id,
+            business_condition_id=condition_id,
+            rule_version=active_rule.version,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+            evaluation_mode=EvaluationMode.HISTORICAL,
+            evaluation_horizon=NOW,
+            input_evidence_digest_value=digest,
+        )
+        evaluation = BusinessRuleEvaluation(
+            evaluation_id=evaluation_id,
+            tenant_id=tenant_id,
+            business_condition_id=condition_id,
+            rule_id=active_rule.rule_id,
+            rule_version=active_rule.version,
+            subject_type=SUBJECT_TYPE_SINGLE_RECORD,
+            subject_identity=subject_identity,
+            source_object_id=object_id,
+            source_record_reference="MAT-100",
+            evaluation_mode=EvaluationMode.HISTORICAL,
+            evaluation_horizon=NOW,
+            inputs=inputs,
+            outcome=outcome,
+            observations=observations,
+            evaluated_at=NOW,
+        )
+        won = repository.insert_evaluation_idempotent(evaluation)
+        assert won
+        # Force failure before commit -- e.g. a bogus, never-admitted
+        # evidence id smuggled into a second orphan input row that
+        # violates the evidence FK -- proving the whole transaction,
+        # including the already-"owned" parent row, rolls back together.
+        session.add(
+            BusinessRuleEvaluationInputORM(
+                evaluation_id=evaluation_id,
+                input_role="__poison__",
+                field_value_evidence_id=uuid4(),  # references no FieldValueEvidence row
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+    with factory() as session:
+        count = session.execute(
+            text("SELECT count(*) FROM business_rule_evaluations WHERE evaluation_id = :id"),
+            {"id": evaluation_id},
+        ).scalar_one()
+    assert count == 0  # no poisoned parent survives
+
+    # Retry: a fresh insert_evaluation_idempotent call must be able to
+    # become the new owner and persist the complete ledger.
+    with factory() as session:
+        active_rule = OqiBusinessRuleRepositoryImpl(session).get_active(
+            tenant_id=tenant_id, business_condition_id=condition_id
+        )
+        assert active_rule is not None
+        retried_evaluation = _service(session).evaluate_historical(
+            rule=active_rule, subject=subject, evaluation_horizon=NOW
+        )
+        session.commit()
+    assert retried_evaluation is not None
+    assert retried_evaluation.evaluation_id == evaluation_id
+    with factory() as session:
+        input_count = session.execute(
+            text("SELECT count(*) FROM business_rule_evaluation_inputs WHERE evaluation_id = :id"),
+            {"id": evaluation_id},
+        ).scalar_one()
+    assert input_count == 2
 
 
 def test_rollback_leaves_zero_orphan_rows(migrated_engine: Engine) -> None:

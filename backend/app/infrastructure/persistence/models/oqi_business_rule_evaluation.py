@@ -38,6 +38,14 @@ class BusinessRuleEvaluationORM(BaseEntity):
         nullable=False,
     )
     subject_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_object_id: Mapped[UUID] = mapped_column(
+        Uuid(),
+        ForeignKey(
+            "source_objects.source_object_id",
+            name="fk_business_rule_evaluations_source_object_id",
+        ),
+        nullable=False,
+    )
     source_record_reference: Mapped[str] = mapped_column(String(1000), nullable=False)
     evaluation_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     evaluation_horizon: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -194,6 +194,19 @@ def _evaluate_tree(
     )  # pragma: no cover
 
 
+def _predicate_leaves(predicate: AstNode) -> tuple[ComparatorNode, ...]:
+    """CDD-041 §4.2 (OQI3-G2/I2-R): a `CONDITIONAL_REQUIRED`/
+    `CONDITIONAL_PROHIBITED`/`FIELD_COMPARISON` predicate, after
+    `validate_business_rule_shape`, is exactly one `ComparatorNode` or an
+    `AND`-only `CompositionNode` of `ComparatorNode` leaves -- never
+    nested, never a mixed connective. This is the single point that
+    depends on that closed shape to enumerate the independently
+    observable consequence clauses."""
+    if isinstance(predicate, ComparatorNode):
+        return (predicate,)
+    return tuple(child for child in predicate.children if isinstance(child, ComparatorNode))
+
+
 @dataclass(frozen=True, slots=True)
 class SingleRecordSubject:
     tenant_id: str
@@ -285,8 +298,14 @@ def determine_outcome(
     if applicability_result is False:
         return EvaluationOutcome.NOT_APPLICABLE, ()
 
-    assert isinstance(rule.predicate, ComparatorNode)  # CDD-041 §26: enforced at publication time
-    predicate_result = _evaluate_leaf(
+    # CDD-041 §4.2/§4.5-§4.8 (OQI3-G2/I2-R): predicate is either a single
+    # ComparatorNode (unchanged, backward compatible) or an AND-only
+    # CompositionNode of ComparatorNode leaves (enforced by
+    # validate_business_rule_shape above -- never nested, never
+    # OR/NOT/IMPLIES). `_evaluate_tree` already implements strong Kleene
+    # AND (FALSE beats UNKNOWN beats TRUE), so the top-level result is
+    # correct for both shapes with no special-casing.
+    predicate_result = _evaluate_tree(
         rule.predicate, present_roles=present_roles, typed_values=typed_values
     )
     if predicate_result is None:
@@ -299,12 +318,26 @@ def determine_outcome(
         if rule.rule_family is RuleFamily.CONDITIONAL_REQUIRED
         else ObservationType.CLAUSE_VIOLATED
     )
-    observation = BusinessRuleEvaluationObservation(
-        clause_id=rule.predicate.clause_id,
-        observation_type=observation_type,
-        input_role=rule.predicate.input_role,
+    # CDD-041 §4.5/§4.8: complete failure-set semantics -- collect an
+    # Observation for every leaf that is deterministically FALSE, never
+    # for a leaf that is TRUE (it succeeded) or UNKNOWN (absence of
+    # knowledge is not knowledge of absence, applied per-clause). Strong
+    # Kleene AND guarantees at least one leaf is FALSE whenever the
+    # top-level result is FALSE, so this tuple is never empty.
+    violated_leaves = tuple(
+        leaf
+        for leaf in _predicate_leaves(rule.predicate)
+        if _evaluate_leaf(leaf, present_roles=present_roles, typed_values=typed_values) is False
     )
-    return EvaluationOutcome.VIOLATED, (observation,)
+    observations = tuple(
+        BusinessRuleEvaluationObservation(
+            clause_id=leaf.clause_id,
+            observation_type=observation_type,
+            input_role=leaf.input_role,
+        )
+        for leaf in violated_leaves
+    )
+    return EvaluationOutcome.VIOLATED, observations
 
 
 class EvidenceValueReader(Protocol):
@@ -375,6 +408,7 @@ class OqiBusinessRuleEvaluationService:
             rule_version=rule.version,
             subject_type=SUBJECT_TYPE_SINGLE_RECORD,
             subject_identity=subject_identity,
+            source_object_id=subject.source_object_id,
             source_record_reference=subject.source_record_reference,
             evaluation_mode=EvaluationMode.HISTORICAL,
             evaluation_horizon=evaluation_horizon,

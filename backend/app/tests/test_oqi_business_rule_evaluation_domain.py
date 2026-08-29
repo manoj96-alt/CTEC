@@ -61,6 +61,7 @@ def _make_evaluation(
         rule_version=1,
         subject_type=SUBJECT_TYPE_SINGLE_RECORD,
         subject_identity=subject_identity,
+        source_object_id=_FIXED_SOURCE_OBJECT_ID,
         source_record_reference="MAT-100",
         evaluation_mode=EvaluationMode.CURRENT_STATE,
         evaluation_horizon=NOW,
