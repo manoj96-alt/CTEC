@@ -97,6 +97,10 @@ class OqiBusinessRuleEvaluationRepository(Protocol):
 
     def upsert_finding(self, finding: BusinessRuleFinding) -> None: ...
 
+    def has_any_evaluation_for_source_objects(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
+    ) -> bool: ...
+
 
 class OqiBusinessRuleEvidenceValueReader:
     """CDD-041 §10, §20: reads `FieldValueEvidence.observed_representation`
@@ -256,6 +260,31 @@ class OqiBusinessRuleEvaluationRepositoryImpl:
         model.state_revision = finding.state_revision
         model.first_seen_at = finding.first_seen_at
         model.last_seen_at = finding.last_seen_at
+
+    def has_any_evaluation_for_source_objects(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
+    ) -> bool:
+        """CDD-044 §49.1 (OQI6 Artifact Authorization §2.2 row 14): narrow,
+        additive, read-only. Reports whether at least one OQI3
+        `BusinessRuleEvaluation` row -- regardless of outcome -- has ever
+        been persisted whose `source_object_id` is one of the given,
+        already-resolved `source_object_ids`. An OQI3 `NOT_EVALUABLE`
+        result produces zero persisted row (CDD-041 §13) and therefore
+        never counts toward coverage by itself, per CDD-044 §18. No other
+        method's behavior changes; no write path."""
+        if not source_object_ids:
+            return False
+        return (
+            self.session.execute(
+                select(BusinessRuleEvaluationORM.evaluation_id)
+                .where(
+                    BusinessRuleEvaluationORM.tenant_id == tenant_id,
+                    BusinessRuleEvaluationORM.source_object_id.in_(source_object_ids),
+                )
+                .limit(1)
+            ).first()
+            is not None
+        )
 
     def select_evidence_frontier(
         self,

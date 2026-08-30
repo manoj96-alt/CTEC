@@ -123,6 +123,14 @@ class OqiOntologyImpactEvaluationRepository(Protocol):
         self, *, tenant_id: str, finding_family: FindingFamily, finding_id: UUID
     ) -> tuple[CurrentOntologyImpact, ...]: ...
 
+    def get_current_impacts_for_subject(
+        self,
+        *,
+        tenant_id: str,
+        ontology_element_type: OntologyElementType,
+        ontology_element_id: UUID,
+    ) -> tuple[CurrentOntologyImpact, ...]: ...
+
 
 class OqiOntologyImpactEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
@@ -433,6 +441,45 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
                 CurrentOntologyImpactORM.tenant_id == tenant_id,
                 CurrentOntologyImpactORM.finding_family == finding_family.value,
                 CurrentOntologyImpactORM.finding_id == finding_id,
+            )
+        ).all()
+        return tuple(
+            CurrentOntologyImpact(
+                current_impact_id=row.current_impact_id,
+                tenant_id=row.tenant_id,
+                finding_family=FindingFamily(row.finding_family),
+                finding_id=row.finding_id,
+                ontology_element_type=OntologyElementType(row.ontology_element_type),
+                ontology_element_id=row.ontology_element_id,
+                impact_kind=ImpactClass(row.impact_kind),
+                status=CurrentImpactStatus(row.status),
+                latest_evaluation_id=row.latest_evaluation_id,
+                first_seen_at=row.first_seen_at,
+                last_seen_at=row.last_seen_at,
+            )
+            for row in rows
+        )
+
+    def get_current_impacts_for_subject(
+        self,
+        *,
+        tenant_id: str,
+        ontology_element_type: OntologyElementType,
+        ontology_element_id: UUID,
+    ) -> tuple[CurrentOntologyImpact, ...]:
+        """CDD-044 §49 (OQI6 Artifact Authorization §2.2 row 11): narrow,
+        additive, read-only. Returns every `CurrentOntologyImpact` row
+        naming this ontology subject, across every Finding that resolved
+        to it -- OQI6's own subject-level Reliance/Business-Impact
+        derivation, never a write path, never a change to any existing
+        method's behavior."""
+        from sqlalchemy import select
+
+        rows = self.session.scalars(
+            select(CurrentOntologyImpactORM).where(
+                CurrentOntologyImpactORM.tenant_id == tenant_id,
+                CurrentOntologyImpactORM.ontology_element_type == ontology_element_type.value,
+                CurrentOntologyImpactORM.ontology_element_id == ontology_element_id,
             )
         ).all()
         return tuple(

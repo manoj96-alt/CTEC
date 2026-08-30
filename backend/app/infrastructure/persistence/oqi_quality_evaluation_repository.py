@@ -81,6 +81,10 @@ class OqiQualityEvaluationRepository(Protocol):
         self, *, source_field_id: UUID, source_record_reference: str, evaluation_horizon: datetime
     ) -> tuple[UUID, str] | None: ...
 
+    def has_any_evaluation_for_source_objects(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
+    ) -> bool: ...
+
 
 class OqiQualityEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
@@ -219,6 +223,30 @@ class OqiQualityEvaluationRepositoryImpl:
             .limit(1)
         ).first()
         return None if row is None else (row[0], row[1])
+
+    def has_any_evaluation_for_source_objects(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
+    ) -> bool:
+        """CDD-044 §49.1 (OQI6 Artifact Authorization §2.2 row 12): narrow,
+        additive, read-only. Reports whether at least one OQI1
+        `QualityEvaluation` row -- regardless of outcome -- has ever been
+        persisted whose resolved evidence is one of the given
+        `source_object_ids` (already resolved by the caller). Coverage is
+        a boolean existence predicate over real persisted rows, never a
+        percentage. No other method's behavior changes; no write path."""
+        if not source_object_ids:
+            return False
+        return (
+            self.session.execute(
+                select(QualityEvaluationORM.evaluation_id)
+                .where(
+                    QualityEvaluationORM.tenant_id == tenant_id,
+                    QualityEvaluationORM.source_object_id.in_(source_object_ids),
+                )
+                .limit(1)
+            ).first()
+            is not None
+        )
 
 
 def _evidence_digest_of(evaluation: QualityEvaluation) -> str:

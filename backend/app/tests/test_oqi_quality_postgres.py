@@ -187,7 +187,7 @@ def test_migration_creates_expected_schema(migrated_engine: Engine) -> None:
 def test_migration_head_revision(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0025_oqi5_agent_reasoning"
+    assert revision == "0026_oqi6_reliance"
 
 
 # --- database constraints ---

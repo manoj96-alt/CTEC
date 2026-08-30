@@ -323,10 +323,10 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
     with migrated_engine.connect():
         tables = set(inspect(migrated_engine).get_table_names())
         assert "business_rules" not in tables
-    alembic.command.upgrade(alembic_cfg, "0025_oqi5_agent_reasoning")
+    alembic.command.upgrade(alembic_cfg, "0026_oqi6_reliance")
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0025_oqi5_agent_reasoning"
+    assert revision == "0026_oqi6_reliance"
 
 
 def test_table_count_is_86(migrated_engine: Engine) -> None:
@@ -341,7 +341,7 @@ def test_table_count_is_86(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 94
+    assert table_count == 100
 
 
 # --- database constraints ---
