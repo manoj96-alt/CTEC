@@ -234,10 +234,10 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
     with migrated_engine.connect():
         tables = set(inspect(migrated_engine).get_table_names())
         assert "comparison_subject_correspondences" not in tables
-    alembic.command.upgrade(alembic_cfg, "0024_oqi5_remediation")
+    alembic.command.upgrade(alembic_cfg, "0025_oqi5_agent_reasoning")
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0024_oqi5_remediation"
+    assert revision == "0025_oqi5_agent_reasoning"
 
 
 # --- database constraints ---

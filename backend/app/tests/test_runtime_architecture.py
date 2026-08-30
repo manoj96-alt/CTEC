@@ -742,6 +742,22 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/oqi_remediation_service.py",
     "backend/app/infrastructure/persistence/migrations/versions/0024_oqi5_remediation_foundation.py",
     "backend/app/tests/test_oqi_remediation_i1.py",
+    # OQI5-I2 (CDD-043): Governed Real Agent Reasoning -- narrow
+    # OQI5-local ModelProvider, versioned AgentRole, immutable AgentRun,
+    # deterministic AgentEvidencePacket, the M2 parallel-specialist
+    # topology, and the deterministic AgentRecommendationValidator
+    # firewall -- Artifact Authorization §3 rows 1-9 plus the
+    # accounting-corrected mechanical migration-head bump (GC1).
+    "backend/app/domain/oqi_remediation_agent/__init__.py",
+    "backend/app/domain/oqi_remediation_agent/role.py",
+    "backend/app/domain/oqi_remediation_agent/run.py",
+    "backend/app/domain/oqi_remediation_agent/recommendation.py",
+    "backend/app/infrastructure/model_provider/provider.py",
+    "backend/app/infrastructure/persistence/models/oqi_remediation_agent.py",
+    "backend/app/infrastructure/persistence/oqi_remediation_agent_repository.py",
+    "backend/app/application/oqi_remediation_agent_service.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0025_oqi5_agent_reasoning.py",
+    "backend/app/tests/test_oqi_remediation_agent_i2.py",
 }
 
 
@@ -1376,6 +1392,41 @@ def test_oqi4_ontology_impact_orms_have_single_construction_site() -> None:
     assert _construction_sites("CurrentOntologyImpactORM") == [
         "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
     ], "CurrentOntologyImpactORM constructed outside its single authorized site"
+
+
+def test_oqi5_i2_agent_orms_have_single_construction_site() -> None:
+    """CDD-043 Artifact Authorization §3 row 6 / GC1: single-construction-
+    site firewall for the 4 new OQI5-I2 ORM classes, mirroring OQI1-4's
+    own established pattern (OQI5-I1 itself did not add this class of
+    check for its own 4 ORM classes; I2 restores the pattern as
+    additional, purely defensive test coverage -- adding a firewall
+    assertion is never a production behavior change)."""
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_remediation_agent.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("AgentRoleORM") == [
+        "infrastructure/persistence/oqi_remediation_agent_repository.py"
+    ], "AgentRoleORM constructed outside its single authorized site"
+    assert _construction_sites("AgentRunORM") == [
+        "infrastructure/persistence/oqi_remediation_agent_repository.py"
+    ], "AgentRunORM constructed outside its single authorized site"
+    assert _construction_sites("AgentAssessmentORM") == [
+        "infrastructure/persistence/oqi_remediation_agent_repository.py"
+    ], "AgentAssessmentORM constructed outside its single authorized site"
+    assert _construction_sites("AgentRecommendationORM") == [
+        "infrastructure/persistence/oqi_remediation_agent_repository.py"
+    ], "AgentRecommendationORM constructed outside its single authorized site"
 
 
 def test_oqi3_business_rule_foundation_does_not_modify_quality_rule() -> None:

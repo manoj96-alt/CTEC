@@ -366,11 +366,21 @@ def test_migration_round_trips_86_90_86_90(migrated_engine: Engine) -> None:
                 ).scalar_one()
             )
 
-    assert _table_count() == 90
+    assert _table_count() == 94
     alembic.command.downgrade(config, "0023_oqi4_ontology_impact")
     assert _table_count() == 86
     alembic.command.upgrade(config, "0024_oqi5_remediation")
     assert _table_count() == 90
+    # Restore the session-scoped `migrated_engine` fixture to full head
+    # before returning control -- this test intentionally lands mid-chain
+    # at I1's own revision to prove its own isolated round trip, but the
+    # fixture is shared (scope="session") across the entire suite; leaving
+    # the database parked at 0024 would silently break every later test
+    # in the same session that expects the true current head (94 tables),
+    # a latent defect only OQI5-I2's own migration 0025 exposes (until now
+    # 0024 always coincided with head, since I1 was the last migration).
+    alembic.command.upgrade(config, "head")
+    assert _table_count() == 94
 
 
 # --- OQI1 / OQI3: zero candidates by design ---
