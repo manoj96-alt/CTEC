@@ -385,5 +385,5 @@ def test_governance_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'governance_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0023_oqi4_ontology_impact"
+    assert revision == "0024_oqi5_remediation"
     assert trigger_count == 1

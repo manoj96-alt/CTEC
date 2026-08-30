@@ -728,6 +728,20 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/tests/test_oqi_ontology_impact_domain.py",
     "backend/app/tests/test_oqi_ontology_impact_service.py",
     "backend/app/tests/test_oqi_ontology_impact_postgres.py",
+    # OQI5-I1 (CDD-043): Deterministic Remediation Foundation --
+    # RemediationCase/RemediationCandidate/RemediationInstruction/
+    # RemediationAuthorization, their persistence, the deterministic
+    # candidate-extraction/authorization-lifecycle service, and the
+    # mandatory test matrix -- Artifact Authorization §2 rows 1-9.
+    "backend/app/domain/oqi_remediation/__init__.py",
+    "backend/app/domain/oqi_remediation/case.py",
+    "backend/app/domain/oqi_remediation/candidate.py",
+    "backend/app/domain/oqi_remediation/authorization.py",
+    "backend/app/infrastructure/persistence/models/oqi_remediation.py",
+    "backend/app/infrastructure/persistence/oqi_remediation_repository.py",
+    "backend/app/application/oqi_remediation_service.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0024_oqi5_remediation_foundation.py",
+    "backend/app/tests/test_oqi_remediation_i1.py",
 }
 
 
@@ -1065,6 +1079,12 @@ def test_oqi1_quality_foundation_respects_every_firewall() -> None:
                 # own direct FieldValueEvidenceORM construction for its
                 # identity-conflict test.
                 "test_oqi_quality_postgres.py",
+                # test_oqi_remediation_i1.py (OQI5-I1, CDD-043) directly
+                # constructs a raw QualityFindingORM row, bypassing the
+                # repository, purely as read-only fixture setup for its own
+                # candidate-extraction tests -- it never writes through
+                # this ORM class as part of OQI5's own production code path.
+                "test_oqi_remediation_i1.py",
             }
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
@@ -1168,6 +1188,14 @@ def test_oqi2_cross_source_consistency_respects_every_firewall() -> None:
                 # test_oqi_quality_postgres.py's own direct QualityRuleORM
                 # construction.
                 "test_oqi_cross_source_postgres.py",
+                # test_oqi_remediation_i1.py (OQI5-I1, CDD-043) directly
+                # constructs raw evaluation/participant/evidence/
+                # observation/finding rows, bypassing the repository,
+                # purely as read-only fixture setup for its own candidate-
+                # extraction tests -- the same established pattern as
+                # test_oqi_cross_source_postgres.py's own direct
+                # construction above.
+                "test_oqi_remediation_i1.py",
             }
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
@@ -1282,6 +1310,14 @@ def test_oqi3_business_rule_foundation_respects_every_firewall() -> None:
                 # test_oqi_quality_postgres.py's own direct QualityRuleORM
                 # construction.
                 "test_oqi_business_rule_postgres.py",
+                # test_oqi_remediation_i1.py (OQI5-I1, CDD-043) directly
+                # constructs raw BusinessRuleORM/BusinessRuleEvaluationORM/
+                # BusinessRuleFindingORM rows, bypassing the repository,
+                # purely as read-only fixture setup for its own zero-
+                # candidate/STEWARD_INVESTIGATION test -- the same
+                # established pattern as test_oqi_business_rule_postgres.py's
+                # own direct construction above.
+                "test_oqi_remediation_i1.py",
             }
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
