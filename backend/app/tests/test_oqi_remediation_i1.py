@@ -21,7 +21,7 @@ independently re-evaluated `RESOLVED` status does."""
 from __future__ import annotations
 
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import alembic.command
@@ -30,7 +30,12 @@ from alembic.config import Config
 from sqlalchemy import Engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
 from app.application.oqi_remediation_service import OqiRemediationError, OqiRemediationService
+from app.domain.oqi.evaluation import EvaluationOutcome
+from app.domain.oqi.quality_rule import QualityRule
+from app.domain.oqi_cross_source.correspondence import ComparisonSubjectCorrespondence
+from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
 from app.domain.oqi_remediation.case import FindingFamily, RemediationCaseStatus
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.oqi_business_rule import BusinessRuleORM
@@ -51,6 +56,9 @@ from app.infrastructure.persistence.models.oqi_quality_finding import QualityFin
 from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
     OqiCrossSourceCorrespondenceRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
+    OqiCrossSourceEvaluationRepositoryImpl,
+)
 from app.infrastructure.persistence.oqi_quality_rule_repository import OqiQualityRuleRepositoryImpl
 from app.infrastructure.persistence.oqi_remediation_repository import (
     OqiRemediationParticipantReader,
@@ -59,6 +67,7 @@ from app.infrastructure.persistence.oqi_remediation_repository import (
 from app.tests.test_oqi_cross_source_postgres import _correspondence, _rule, _seed_field
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+LATER = NOW + timedelta(days=1)
 
 
 def _service(session: Session) -> OqiRemediationService:
@@ -69,7 +78,13 @@ def _service(session: Session) -> OqiRemediationService:
 
 
 def _admit_field_value_evidence(
-    session: Session, *, source_field_id: UUID, value: str, reference: str
+    session: Session,
+    *,
+    source_field_id: UUID,
+    value: str,
+    reference: str,
+    observed_at: datetime = NOW,
+    received_at: datetime = NOW,
 ) -> UUID:
     evidence_id = uuid4()
     session.add(
@@ -78,8 +93,8 @@ def _admit_field_value_evidence(
             source_field_id=source_field_id,
             source_record_reference=reference,
             observed_representation=value,
-            observed_at=NOW,
-            received_at=NOW,
+            observed_at=observed_at,
+            received_at=received_at,
         )
     )
     session.flush()
@@ -232,23 +247,36 @@ def _seed_oqi2_finding(
     )
     session.flush()
 
+    # Roles the correspondence itself names (only ever "SAP"/"PLM", fixed
+    # by `_correspondence()`) get their evidence admitted under that same
+    # correspondence-declared `source_record_reference` -- the exact
+    # lineage key the real OQI2 evaluator's evidence-selection queries
+    # key off of. Extra roles beyond the correspondence's two members
+    # (e.g. the N=5 dissent test's R1-R5) fall back to a synthetic
+    # per-role reference, since no real evaluator call is ever exercised
+    # against those roles.
+    reference_by_role = {
+        member.participant_role: member.source_record_reference for member in correspondence.members
+    }
+
     evidence_by_role: dict[str, UUID] = {}
     for role, value in roles.items():
         object_id, field_id = (object_a, field_a) if role == role_names[0] else (object_b, field_b)
+        reference = reference_by_role.get(role, f"REC-{role}")
         session.add(
             QualityComparisonEvaluationParticipantORM(
                 evaluation_id=evaluation_id,
                 participant_role=role,
                 source_field_id=field_id,
                 source_object_id=object_id,
-                source_record_reference=f"REC-{role}",
+                source_record_reference=reference,
                 expected=True,
                 authoritative=(role == authoritative_role),
             )
         )
         if value is not None:
             evidence_id = _admit_field_value_evidence(
-                session, source_field_id=field_id, value=value, reference=f"REC-{role}"
+                session, source_field_id=field_id, value=value, reference=reference
             )
             evidence_by_role[role] = evidence_id
             session.add(
@@ -278,7 +306,15 @@ def _seed_oqi2_finding(
             )
         )
 
-    finding_id = uuid4()
+    # Real, deterministic Finding identity (CDD-040 §32) -- not a random
+    # UUID. This is what lets a later real `evaluate_current_state` call
+    # find and resolve *this exact* Finding rather than fabricate a new
+    # one under an identity it cannot recognize.
+    finding_id = derive_comparison_finding_id(
+        tenant_id=tenant_id,
+        quality_condition_id=condition_id,
+        comparison_subject_id=subject_id,
+    )
     session.add(
         QualityComparisonFindingORM(
             finding_id=finding_id,
@@ -700,9 +736,177 @@ def test_finding_state_read_is_tenant_isolated(migrated_engine: Engine) -> None:
 # --- re-evaluation invariant ---
 
 
-def test_execution_report_alone_never_resolves_only_fresh_evaluation_read_does(
+def _load_rule_and_correspondence(
+    session: Session, *, tenant_id: str, finding_id: UUID
+) -> tuple[QualityRule, ComparisonSubjectCorrespondence]:
+    finding = session.get(QualityComparisonFindingORM, finding_id)
+    assert finding is not None
+    rule = OqiQualityRuleRepositoryImpl(session).get_active(finding.quality_condition_id)
+    assert rule is not None
+    correspondence = OqiCrossSourceCorrespondenceRepositoryImpl(session).get_active(
+        tenant_id=tenant_id, comparison_subject_id=finding.comparison_subject_id
+    )
+    assert correspondence is not None
+    return rule, correspondence
+
+
+def _participant_target(
+    *, rule: QualityRule, correspondence: ComparisonSubjectCorrespondence, role: str
+) -> tuple[UUID, str]:
+    """The exact `(source_field_id, source_record_reference)` pair the real
+    OQI2 evaluator itself uses to select a participant's evidence (field id
+    from the rule's participant configuration, record reference from the
+    ACTIVE correspondence) -- never a test-only shortcut identifier."""
+    field_id = next(
+        UUID(entry["source_field_id"])
+        for entry in rule.rule_parameters["participants"]
+        if entry["role"] == role
+    )
+    reference = next(
+        member.source_record_reference
+        for member in correspondence.members
+        if member.participant_role == role
+    )
+    return field_id, reference
+
+
+def test_fresh_evidence_and_real_oqi2_evaluator_resolve_finding_execution_report_does_not(
     migrated_engine: Engine,
 ) -> None:
+    """Positive crown proof (CDD-043 governing principle): an external/
+    manual remediation report carries no truth weight by itself. Only
+    fresh, genuinely new immutable `FieldValueEvidence` followed by a real,
+    unmodified invocation of OQI2's own `OqiCrossSourceEvaluationService.
+    evaluate_current_state` -- never a direct Finding mutation -- resolves
+    the Finding, and OQI5's case read-linkage observes that same result."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        finding_id, instruction_id, authorization_id = _seed_authorization(
+            session, tenant_id=tenant_id
+        )
+
+    with factory() as session:
+        _service(session).approve(
+            tenant_id=tenant_id, authorization_id=authorization_id, decided_by="approver"
+        )
+        session.commit()
+
+    with factory() as session:
+        case = _service(session).report_external_execution(
+            tenant_id=tenant_id, authorization_id=authorization_id
+        )
+        session.commit()
+    assert case.status is RemediationCaseStatus.EXTERNAL_EXECUTION_REPORTED
+
+    with factory() as session:
+        authorization_before = OqiRemediationRepositoryImpl(session).get_authorization_by_id(
+            authorization_id
+        )
+        assert authorization_before is not None
+
+    # The execution report alone changes nothing about the Finding: a
+    # fresh read (new session, not the already-loaded object) proves it
+    # is still OPEN. This is the "execution success != quality success"
+    # midpoint.
+    with factory() as session:
+        finding_before = session.get(QualityComparisonFindingORM, finding_id)
+        assert finding_before is not None
+        assert finding_before.status == "OPEN"
+        original_state_revision = finding_before.state_revision
+
+    with factory() as session:
+        refreshed = _service(session).refresh_case(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI2, finding_id=finding_id
+        )
+        session.commit()
+    assert refreshed.status is RemediationCaseStatus.EXTERNAL_EXECUTION_REPORTED
+
+    # Fresh, genuinely new immutable evidence arrives -- SAP now agrees
+    # with PLM's authoritative value ("NEW"). The original "OLD" evidence
+    # row is never mutated. `observed_at`/`received_at` are unambiguously
+    # later than the original evidence's `NOW`, avoiding the known
+    # OQI-P3-006 equal-timestamp tie ambiguity.
+    with factory() as session:
+        rule, correspondence = _load_rule_and_correspondence(
+            session, tenant_id=tenant_id, finding_id=finding_id
+        )
+        sap_field_id, sap_reference = _participant_target(
+            rule=rule, correspondence=correspondence, role="SAP"
+        )
+        _admit_field_value_evidence(
+            session,
+            source_field_id=sap_field_id,
+            value="NEW",
+            reference=sap_reference,
+            observed_at=LATER,
+            received_at=LATER,
+        )
+        session.commit()
+
+    # The real, existing, unmodified OQI2 evaluator -- not a fake
+    # lifecycle helper, not a direct Finding mutation -- is what decides.
+    with factory() as session:
+        rule, correspondence = _load_rule_and_correspondence(
+            session, tenant_id=tenant_id, finding_id=finding_id
+        )
+        evaluator = OqiCrossSourceEvaluationService(
+            evaluation_repository=OqiCrossSourceEvaluationRepositoryImpl(session),
+            clock=lambda: LATER + timedelta(hours=1),
+        )
+        evaluation = evaluator.evaluate_current_state(rule=rule, correspondence=correspondence)
+        session.commit()
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.SATISFIED
+
+    # Fresh read (a brand-new session/object, never the one the evaluator
+    # just used): the SAME stable Finding identity is now RESOLVED.
+    with factory() as session:
+        finding_after = session.get(QualityComparisonFindingORM, finding_id)
+        assert finding_after is not None
+        assert finding_after.finding_id == finding_id
+        assert finding_after.status == "RESOLVED"
+        assert finding_after.state_revision == original_state_revision + 1
+        # A genuine, persisted evaluation ledger row exists -- resolution
+        # is never inferred from Finding status alone.
+        persisted_evaluation = session.get(QualityComparisonEvaluationORM, evaluation.evaluation_id)
+        assert persisted_evaluation is not None
+        assert persisted_evaluation.outcome == "SATISFIED"
+        assert finding_after.latest_evaluation_id == evaluation.evaluation_id
+
+    with factory() as session:
+        refreshed_again = _service(session).refresh_case(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI2, finding_id=finding_id
+        )
+        session.commit()
+    assert refreshed_again.status is RemediationCaseStatus.RESOLVED
+    # Same, stable RemediationCase identity -- not a new case.
+    assert refreshed_again.case_id == case.case_id
+
+    # The prior remediation history (candidate -> instruction ->
+    # authorization -> execution report) is immutable through this
+    # re-evaluation: the authorization's own digest/consumption facts are
+    # unchanged, and the instruction it points to is unchanged.
+    with factory() as session:
+        authorization_after = OqiRemediationRepositoryImpl(session).get_authorization_by_id(
+            authorization_id
+        )
+        assert authorization_after is not None
+        assert authorization_after.payload_digest == authorization_before.payload_digest
+        assert authorization_after.consumed_on == authorization_before.consumed_on
+        assert authorization_after.instruction_id == instruction_id
+        instruction = OqiRemediationRepositoryImpl(session).get_instruction(instruction_id)
+        assert instruction is not None
+        assert instruction.instruction_id == instruction_id
+
+
+def test_fresh_evidence_still_violated_leaves_finding_open_execution_report_does_not_resolve(
+    migrated_engine: Engine,
+) -> None:
+    """Negative crown proof: fresh evidence that arrives after a reported
+    external remediation but that still leaves the cross-source values in
+    conflict must leave the same Finding OPEN -- the real OQI2 evaluator,
+    not the execution report, is what decided that, too."""
     factory = sessionmaker(migrated_engine, expire_on_commit=False)
     tenant_id = f"tenant-{uuid4()}"
     with factory() as session:
@@ -721,31 +925,60 @@ def test_execution_report_alone_never_resolves_only_fresh_evaluation_read_does(
         session.commit()
     assert case.status is RemediationCaseStatus.EXTERNAL_EXECUTION_REPORTED
 
-    # The Finding itself is still OPEN -- no evaluator has re-run yet.
-    # Refreshing the case from the Finding's own current state must NOT
-    # resolve it: the execution claim alone carries no truth weight.
     with factory() as session:
-        refreshed = _service(session).refresh_case(
-            tenant_id=tenant_id, finding_family=FindingFamily.OQI2, finding_id=finding_id
+        finding_before = session.get(QualityComparisonFindingORM, finding_id)
+        assert finding_before is not None
+        assert finding_before.status == "OPEN"
+        original_state_revision = finding_before.state_revision
+
+    # Fresh, genuinely new immutable evidence arrives, but SAP's new value
+    # ("OLDER") still disagrees with PLM's authoritative "NEW" -- the
+    # quality condition remains genuinely violated.
+    with factory() as session:
+        rule, correspondence = _load_rule_and_correspondence(
+            session, tenant_id=tenant_id, finding_id=finding_id
+        )
+        sap_field_id, sap_reference = _participant_target(
+            rule=rule, correspondence=correspondence, role="SAP"
+        )
+        _admit_field_value_evidence(
+            session,
+            source_field_id=sap_field_id,
+            value="OLDER",
+            reference=sap_reference,
+            observed_at=LATER,
+            received_at=LATER,
         )
         session.commit()
-    assert refreshed.status is RemediationCaseStatus.EXTERNAL_EXECUTION_REPORTED
 
-    # Only now does an independent, later, existing OQI2 evaluator re-run
-    # resolve the Finding (simulated here as the fact the evaluator would
-    # itself have produced -- this test asserts the read-linkage, not the
-    # evaluator's own correctness, which OQI2's own test suite already
-    # proves).
     with factory() as session:
-        finding = session.get(QualityComparisonFindingORM, finding_id)
-        assert finding is not None
-        finding.status = "RESOLVED"
-        finding.state_revision += 1
+        rule, correspondence = _load_rule_and_correspondence(
+            session, tenant_id=tenant_id, finding_id=finding_id
+        )
+        evaluator = OqiCrossSourceEvaluationService(
+            evaluation_repository=OqiCrossSourceEvaluationRepositoryImpl(session),
+            clock=lambda: LATER + timedelta(hours=1),
+        )
+        evaluation = evaluator.evaluate_current_state(rule=rule, correspondence=correspondence)
         session.commit()
+    assert evaluation is not None
+    assert evaluation.outcome is EvaluationOutcome.VIOLATED
+
+    # Fresh read: the SAME Finding identity remains OPEN.
+    with factory() as session:
+        finding_after = session.get(QualityComparisonFindingORM, finding_id)
+        assert finding_after is not None
+        assert finding_after.finding_id == finding_id
+        assert finding_after.status == "OPEN"
+        assert finding_after.state_revision == original_state_revision + 1
+        persisted_evaluation = session.get(QualityComparisonEvaluationORM, evaluation.evaluation_id)
+        assert persisted_evaluation is not None
+        assert persisted_evaluation.outcome == "VIOLATED"
 
     with factory() as session:
         refreshed_again = _service(session).refresh_case(
             tenant_id=tenant_id, finding_family=FindingFamily.OQI2, finding_id=finding_id
         )
         session.commit()
-    assert refreshed_again.status is RemediationCaseStatus.RESOLVED
+    assert refreshed_again.status is RemediationCaseStatus.EXTERNAL_EXECUTION_REPORTED
+    assert refreshed_again.case_id == case.case_id
