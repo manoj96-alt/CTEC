@@ -273,7 +273,7 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 90
+    assert table_count == 94
     alembic.command.downgrade(config, "0022_oqi3_business_rule")
     with migrated_engine.connect() as connection:
         table_count = connection.execute(
@@ -291,7 +291,7 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 90
+    assert table_count == 94
 
 
 # --- one-ACTIVE-policy-per-triple database constraint ---

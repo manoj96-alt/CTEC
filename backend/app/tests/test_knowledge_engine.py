@@ -302,5 +302,5 @@ def test_knowledge_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'knowledge_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0024_oqi5_remediation"
+    assert revision == "0025_oqi5_agent_reasoning"
     assert trigger_count == 1

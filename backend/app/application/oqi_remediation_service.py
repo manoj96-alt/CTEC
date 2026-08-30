@@ -169,6 +169,7 @@ class OqiRemediationService:
         tenant_id: str,
         candidate_id: UUID,
         created_by: str,
+        agent_recommendation_id: UUID | None = None,
         now: datetime | None = None,
     ) -> RemediationInstruction:
         moment = now if now is not None else datetime.now(UTC)
@@ -206,7 +207,7 @@ class OqiRemediationService:
             target_source_field_id=candidate.target_source_field_id,
             action_type=action_type,
             payload_digest=digest,
-            agent_recommendation_id=None,
+            agent_recommendation_id=agent_recommendation_id,
             created_by=created_by,
             created_on=moment,
         )
