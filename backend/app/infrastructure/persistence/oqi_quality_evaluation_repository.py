@@ -81,9 +81,12 @@ class OqiQualityEvaluationRepository(Protocol):
         self, *, source_field_id: UUID, source_record_reference: str, evaluation_horizon: datetime
     ) -> tuple[UUID, str] | None: ...
 
-    def has_any_evaluation_for_source_objects(
-        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
-    ) -> bool: ...
+    # `has_any_evaluation_for_source_objects` (CDD-044 §49.1) is
+    # intentionally NOT declared on this Protocol -- OQI6 always consumes
+    # the concrete `OqiQualityEvaluationRepositoryImpl` directly, so
+    # adding it here would force every existing fake/test double already
+    # structurally typed against this Protocol to implement a method they
+    # have no use for. The method exists only on the concrete class below.
 
 
 class OqiQualityEvaluationRepositoryImpl:

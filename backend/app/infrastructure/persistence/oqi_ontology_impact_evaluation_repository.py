@@ -123,13 +123,15 @@ class OqiOntologyImpactEvaluationRepository(Protocol):
         self, *, tenant_id: str, finding_family: FindingFamily, finding_id: UUID
     ) -> tuple[CurrentOntologyImpact, ...]: ...
 
-    def get_current_impacts_for_subject(
-        self,
-        *,
-        tenant_id: str,
-        ontology_element_type: OntologyElementType,
-        ontology_element_id: UUID,
-    ) -> tuple[CurrentOntologyImpact, ...]: ...
+    # `get_current_impacts_for_subject` (CDD-044 §49) is intentionally NOT
+    # declared on this Protocol -- OQI6 always consumes the concrete
+    # `OqiOntologyImpactEvaluationRepositoryImpl` directly (never through
+    # this Protocol type), so adding it here would force every existing
+    # fake/test double already structurally typed against this Protocol
+    # (e.g. `test_oqi_ontology_impact_service.py`'s `_FakeRepository`) to
+    # implement a method they have no use for -- an unnecessary and
+    # unauthorized ripple into a file outside CDD-044's exact 26-path
+    # authorization. The method exists only on the concrete class below.
 
 
 class OqiOntologyImpactEvaluationRepositoryImpl:
