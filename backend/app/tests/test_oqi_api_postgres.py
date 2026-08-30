@@ -12,6 +12,7 @@ OQI4/OQI6 service helpers from `test_oqi_business_impact.py`)."""
 from __future__ import annotations
 
 import ast
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -22,11 +23,23 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
 from app.application.oqi_product_experience_service import OqiProductExperienceService
+from app.application.oqi_remediation_agent_service import OqiRemediationAgentService
 from app.application.oqi_remediation_service import OqiRemediationError
 from app.domain.oqi.evaluation import EvaluationOutcome
+from app.domain.oqi_remediation.case import FindingFamily as RemediationFindingFamily
+from app.infrastructure.model_provider.provider import (
+    FakeModelProvider,
+    ModelInvocationRequest,
+    ModelInvocationResult,
+)
 from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
     OqiCrossSourceEvaluationRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_remediation_agent_repository import (
+    OqiRemediationAgentPacketReader,
+    OqiRemediationAgentRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_remediation_repository import OqiRemediationRepositoryImpl
 from app.tests.test_oqi_business_impact import (
     _seed_oqi1_finding_with_evaluation,
 )
@@ -193,6 +206,106 @@ def test_crown_fresh_evidence_and_real_evaluator_resolves_finding_in_api(
         )
     assert detail is not None
     assert detail.status == "RESOLVED"
+
+
+# =====================================================================
+# Hostile content -- data remains data (CDD-045 §29, phase §36, closes
+# disclosed gap #3). The backend obligation is exactly "data remains
+# data": content survives as ordinary string values with zero
+# "trusted HTML" marking and zero transformation into executable markup.
+# Frontend escaping is a separate, later OQI7-I2/VM concern.
+# =====================================================================
+
+_HOSTILE_SOURCE_VALUE = "<script>alert('x')</script>"
+_HOSTILE_RATIONALE = "<img src=x onerror=alert(1)> <b>ABC123</b> javascript:alert(1)"
+
+
+def test_hostile_content_crown_survives_as_ordinary_data(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        finding_id, _ = _seed_oqi2_finding(
+            session,
+            tenant_id=tenant_id,
+            roles={"SAP": _HOSTILE_SOURCE_VALUE, "PLM": "ABC123", "MES": "ABC123", "PIM": None},
+            conflicting_roles={"SAP"},
+            missing_roles={"PIM"},
+            authoritative_role=None,
+        )
+        session.commit()
+
+    with factory() as session:
+        bundle = _api_service(session).get_evidence(tenant_id=tenant_id, finding_id=finding_id)
+    assert bundle is not None
+    sap = next(p for p in bundle.participants if p.source_system == "SAP")
+    # Exact preservation -- data remains data, no escaping/mutation, and
+    # the value is a plain Python str, never wrapped in a "safe"/"trusted"
+    # markup type.
+    assert sap.observed_value == _HOSTILE_SOURCE_VALUE
+    assert type(sap.observed_value) is str
+
+    with factory() as session:
+        remediation = _service(session)
+        case, candidates = remediation.extract_candidates(
+            tenant_id=tenant_id,
+            finding_family=RemediationFindingFamily.OQI2,
+            finding_id=finding_id,
+        )
+        session.commit()
+    candidate_id = candidates[0].candidate_id
+
+    def _hostile_script(request: ModelInvocationRequest) -> ModelInvocationResult:
+        return ModelInvocationResult(
+            succeeded=True,
+            provider="fake",
+            model="fake-model-v1",
+            raw_text=json.dumps(
+                {
+                    "recommendation_type": "RECOMMEND_CANDIDATE",
+                    "candidate_id": str(candidate_id),
+                    "supporting_evidence_ids": [],
+                    "conflicting_evidence_ids": [],
+                    "impact_evaluation_ids": [],
+                    "rationale": _HOSTILE_RATIONALE,
+                }
+            ),
+            failure_kind=None,
+            failure_detail="",
+        )
+
+    with factory() as session:
+        agent_service = OqiRemediationAgentService(
+            agent_repository=OqiRemediationAgentRepositoryImpl(session),
+            packet_reader=OqiRemediationAgentPacketReader(session),
+            remediation_repository=OqiRemediationRepositoryImpl(session),
+            provider=FakeModelProvider(responses=_hostile_script),
+        )
+        outcome = agent_service.reason_about_case(
+            tenant_id=tenant_id, case_id=case.case_id, now=NOW
+        )
+        session.commit()
+    assert outcome.recommendation is not None
+
+    with factory() as session:
+        row = _api_service(session).get_agent_investigation(
+            tenant_id=tenant_id, finding_id=finding_id
+        )
+    assert row is not None
+    assert row.recommendation is not None
+    assert row.recommendation.rationale == _HOSTILE_RATIONALE
+    assert type(row.recommendation.rationale) is str
+
+    # No "trusted"/"safe" rendering authority is ever introduced anywhere
+    # in the OQI7-I1 response schema surface.
+    import app.api.oqi.schemas as oqi_schemas
+
+    for name in dir(oqi_schemas):
+        lowered = name.lower()
+        assert "html_safe" not in lowered
+        assert "trusted_html" not in lowered
+        assert "raw_html" not in lowered
+        assert "dangerously" not in lowered
 
 
 # =====================================================================

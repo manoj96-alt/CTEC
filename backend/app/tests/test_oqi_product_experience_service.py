@@ -19,13 +19,17 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.application.oqi_product_experience_service import OqiProductExperienceService
+from app.application.oqi_product_experience_service import (
+    EvidenceParticipantRow,
+    OqiProductExperienceService,
+)
 from app.application.oqi_remediation_agent_service import OqiRemediationAgentService
 from app.domain.oqi_business_impact.dependency import Criticality
 from app.domain.oqi_business_impact.impact import BusinessImpactOutcome
@@ -42,7 +46,10 @@ from app.infrastructure.persistence.oqi_remediation_agent_repository import (
     OqiRemediationAgentPacketReader,
     OqiRemediationAgentRepositoryImpl,
 )
-from app.infrastructure.persistence.oqi_remediation_repository import OqiRemediationRepositoryImpl
+from app.infrastructure.persistence.oqi_remediation_repository import (
+    OqiRemediationParticipantReader,
+    OqiRemediationRepositoryImpl,
+)
 from app.tests.test_oqi_business_impact import (
     _business_impact_service,
     _evaluate_oqi1_finding_impact,
@@ -137,6 +144,78 @@ def test_missing_participant_remains_visible(factory: sessionmaker[Session]) -> 
     plm = next(p for p in bundle.participants if p.source_system == "PLM")
     assert plm.is_missing is True
     assert plm.observed_value is None
+
+
+def test_authority_conflict_crown_peer_majority_does_not_override_authority(
+    factory: sessionmaker[Session],
+) -> None:
+    """OQI7-I1-VM dedicated authority-conflict crown (closes disclosed gap
+    #1): 3 non-authoritative peers agree on ABC123, the one authoritative
+    source dissents with XYZ999, one expected participant is missing.
+    Neither peer-majority agreement nor source authority may be exposed as
+    a winner/truth field -- both the agreement cluster and the
+    authoritative dissent, plus the missing participant, must all survive
+    API composition simultaneously (CDD-045 §29-30, phase §16-18)."""
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        finding_id, _ = _seed_oqi2_finding(
+            session,
+            tenant_id=tenant_id,
+            roles={
+                "PeerA": "ABC123",
+                "PeerB": "ABC123",
+                "PeerC": "ABC123",
+                "Authority": "XYZ999",
+                "PeerE": None,
+            },
+            conflicting_roles={"PeerA", "PeerB", "PeerC", "Authority"},
+            missing_roles={"PeerE"},
+            authoritative_role="Authority",
+        )
+        session.commit()
+
+    with factory() as session:
+        bundle = _api_service(session).get_evidence(tenant_id=tenant_id, finding_id=finding_id)
+    assert bundle is not None
+    roles = {p.source_system: p for p in bundle.participants}
+    assert len(roles) == 5
+
+    for peer in ("PeerA", "PeerB", "PeerC"):
+        assert roles[peer].observed_value == "ABC123"
+        assert roles[peer].is_conflicting is True
+        assert roles[peer].is_authoritative is False
+        assert roles[peer].is_missing is False
+
+    assert roles["Authority"].observed_value == "XYZ999"
+    assert roles["Authority"].is_conflicting is True
+    assert roles["Authority"].is_authoritative is True
+    assert roles["Authority"].is_missing is False
+
+    assert roles["PeerE"].is_missing is True
+    assert roles["PeerE"].observed_value is None
+
+    # Neither the peer-agreement cluster nor source authority is exposed
+    # as a resolved truth/winner anywhere on the row or its dataclass shape.
+    for participant in bundle.participants:
+        for prohibited in (
+            "truth",
+            "correct_value",
+            "winner",
+            "golden_value",
+            "majority_winner",
+            "authoritative_winner",
+        ):
+            assert not hasattr(participant, prohibited)
+    for prohibited in (
+        "truth",
+        "correct_value",
+        "winner",
+        "majority_winner",
+        "authoritative_winner",
+    ):
+        assert prohibited not in EvidenceParticipantRow.__dataclass_fields__
+    assert not hasattr(bundle, "correct_value")
+    assert not hasattr(bundle, "truth")
 
 
 # =====================================================================
@@ -411,3 +490,117 @@ def test_synthesizer_only_recommendation_is_labeled_distinctly(
     assert row is not None
     assert row.recommendation is not None
     assert row.recommendation.basis == "SYNTHESIZER_ONLY"
+
+
+# =====================================================================
+# Recommendation vs authorization -- genuinely distinct states
+# (CDD-045 §19-§20, phase §30, closes disclosed gap #2).
+# =====================================================================
+
+
+def test_recommendation_vs_authorization_crown_two_stage(
+    factory: sessionmaker[Session],
+) -> None:
+    """Stage 1: a valid OQI5 recommendation exists with zero human
+    authorization -- the API must expose the recommendation while
+    `authorization` is explicitly `None` (not a value implying
+    authorized). Stage 2: a real human authorization is created and
+    decided through OQI5-I1's own existing authority path -- the
+    recommendation is preserved unchanged and the authorization now
+    appears as a genuinely separate, distinct field/state."""
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        finding_id, _ = _seed_oqi2_finding(
+            session,
+            tenant_id=tenant_id,
+            roles={
+                "SAP": "ABC123",
+                "PLM": "ABC123",
+                "MES": "ABC123",
+                "Supplier": "ABC123",
+                "PIM": None,
+            },
+            conflicting_roles=set(),
+            missing_roles={"PIM"},
+            authoritative_role=None,
+        )
+        session.commit()
+
+    with factory() as session:
+        remediation = _remediation_service_for(session)
+        case, candidates = remediation.extract_candidates(
+            tenant_id=tenant_id, finding_family=RemediationFindingFamily.OQI2, finding_id=finding_id
+        )
+        session.commit()
+    candidate_id = candidates[0].candidate_id
+
+    def _script(request: ModelInvocationRequest) -> ModelInvocationResult:
+        return ModelInvocationResult(
+            succeeded=True,
+            provider="fake",
+            model="fake-model-v1",
+            raw_text=json.dumps(_valid_output(candidate_id)),
+            failure_kind=None,
+            failure_detail="",
+        )
+
+    with factory() as session:
+        outcome = _agent_service_for(
+            session, FakeModelProvider(responses=_script)
+        ).reason_about_case(tenant_id=tenant_id, case_id=case.case_id, now=NOW)
+        session.commit()
+    assert outcome.recommendation is not None
+    recommendation_id = outcome.recommendation.recommendation_id
+
+    with factory() as session:
+        instruction = _remediation_service_for(session).construct_instruction(
+            tenant_id=tenant_id,
+            candidate_id=candidate_id,
+            created_by="steward-1",
+            agent_recommendation_id=recommendation_id,
+        )
+        session.commit()
+
+    # -- Stage 1: recommendation exists, zero authorization. --
+    with factory() as session:
+        stage1 = _api_service(session).get_remediation(tenant_id=tenant_id, finding_id=finding_id)
+    assert stage1 is not None
+    assert stage1.recommendation is not None
+    assert stage1.recommendation.candidate_id == candidate_id
+    assert stage1.authorization is None  # explicit absent state, not merely omitted
+
+    # -- Stage 2: real human authorization requested and decided through
+    # OQI5-I1's own existing authority path. --
+    with factory() as session:
+        authorization = _remediation_service_for(session).request_authorization(
+            tenant_id=tenant_id, instruction_id=instruction.instruction_id, requested_by="requester"
+        )
+        session.commit()
+    with factory() as session:
+        _remediation_service_for(session).approve(
+            tenant_id=tenant_id,
+            authorization_id=authorization.authorization_id,
+            decided_by="approver",
+        )
+        session.commit()
+
+    with factory() as session:
+        stage2 = _api_service(session).get_remediation(tenant_id=tenant_id, finding_id=finding_id)
+    assert stage2 is not None
+    assert stage2.recommendation is not None
+    assert stage2.recommendation.candidate_id == candidate_id  # recommendation preserved
+    assert stage2.authorization is not None  # now genuinely, separately present
+    assert stage2.authorization.status == "APPROVED"
+    assert stage2.authorization.principal == "approver"
+    assert stage2.authorization.decided_on is not None
+    # Recommendation and authorization remain two distinct, independently
+    # populated fields on the row -- never merged into one state.
+
+
+def _remediation_service_for(session: Session) -> Any:
+    from app.application.oqi_remediation_service import OqiRemediationService
+
+    return OqiRemediationService(
+        repository=OqiRemediationRepositoryImpl(session),
+        participant_reader=OqiRemediationParticipantReader(session),
+    )
