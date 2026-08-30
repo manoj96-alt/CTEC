@@ -22,6 +22,7 @@ from app.api.information_element_evidence_fitness.router import (
 from app.api.ontology.router import router as ontology_router
 from app.api.ontology_copilot.router import router as ontology_copilot_router
 from app.api.ontology_modeling.router import router as ontology_modeling_router
+from app.api.oqi.router import router as oqi_router
 from app.api.supplier_risk.router import router as supplier_risk_router
 from app.api.supply_chain_impact.router import router as supply_chain_impact_router
 from app.api.version.router import router as version_router
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(information_element_evidence_fitness_router)
     app.include_router(gate_s_router)
     app.include_router(gate_v_router)
+    app.include_router(oqi_router)
     return app
 
 
