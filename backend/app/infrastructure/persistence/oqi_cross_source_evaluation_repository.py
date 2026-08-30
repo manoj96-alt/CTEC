@@ -64,6 +64,13 @@ class OqiCrossSourceEvaluationRepository(Protocol):
         self, *, source_field_id: UUID, source_record_reference: str, evaluation_horizon: datetime
     ) -> tuple[UUID, str] | None: ...
 
+    # `has_any_evaluation_for_source_objects` (CDD-044 §49.1) is
+    # intentionally NOT declared on this Protocol -- OQI6 always consumes
+    # the concrete `OqiCrossSourceEvaluationRepositoryImpl` directly, so
+    # adding it here would force every existing fake/test double already
+    # structurally typed against this Protocol to implement a method they
+    # have no use for. The method exists only on the concrete class below.
+
 
 class OqiCrossSourceEvaluationRepositoryImpl:
     def __init__(self, session: Session) -> None:
@@ -206,6 +213,37 @@ class OqiCrossSourceEvaluationRepositoryImpl:
             .limit(1)
         ).first()
         return None if row is None else (row[0], row[1])
+
+    def has_any_evaluation_for_source_objects(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
+    ) -> bool:
+        """CDD-044 §49.1 (OQI6 Artifact Authorization §2.2 row 13): narrow,
+        additive, read-only. Reports whether at least one OQI2
+        `QualityComparisonEvaluation` row -- regardless of outcome -- has
+        ever been persisted with a participant whose `source_object_id` is
+        one of the given, already-resolved `source_object_ids`. Coverage
+        is a boolean existence predicate, never a percentage. No other
+        method's behavior changes; no write path."""
+        if not source_object_ids:
+            return False
+        return (
+            self.session.execute(
+                select(QualityComparisonEvaluationParticipantORM.evaluation_id)
+                .join(
+                    QualityComparisonEvaluationORM,
+                    QualityComparisonEvaluationORM.evaluation_id
+                    == QualityComparisonEvaluationParticipantORM.evaluation_id,
+                )
+                .where(
+                    QualityComparisonEvaluationORM.tenant_id == tenant_id,
+                    QualityComparisonEvaluationParticipantORM.source_object_id.in_(
+                        source_object_ids
+                    ),
+                )
+                .limit(1)
+            ).first()
+            is not None
+        )
 
 
 def _finding_to_orm(finding: QualityComparisonFinding) -> QualityComparisonFindingORM:

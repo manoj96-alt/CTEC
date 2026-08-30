@@ -592,11 +592,11 @@ def test_migration_round_trips_90_94_90_94(migrated_engine: Engine) -> None:
                 ).scalar_one()
             )
 
-    assert _table_count() == 94
+    assert _table_count() == 100
     alembic.command.downgrade(config, "0024_oqi5_remediation")
     assert _table_count() == 90
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 94
+    assert _table_count() == 100
 
 
 # =====================================================================

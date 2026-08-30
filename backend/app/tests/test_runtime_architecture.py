@@ -758,6 +758,26 @@ AUTHORIZED_CHANGED_PATHS = {
     "backend/app/application/oqi_remediation_agent_service.py",
     "backend/app/infrastructure/persistence/migrations/versions/0025_oqi5_agent_reasoning.py",
     "backend/app/tests/test_oqi_remediation_agent_i2.py",
+    # OQI6-I (CDD-044): Criticality, Business Impact & Explainable
+    # Reliance -- governed BusinessProcess/BusinessDependency, the
+    # deterministic per-dependency Business Impact and per-subject
+    # Reliance decision logic, and four narrow additive read-only
+    # coverage/impact-by-subject query methods on OQI1-4's own
+    # repositories -- Artifact Authorization §2.1-§2.3.
+    "backend/app/domain/oqi_business_impact/__init__.py",
+    "backend/app/domain/oqi_business_impact/process.py",
+    "backend/app/domain/oqi_business_impact/dependency.py",
+    "backend/app/domain/oqi_business_impact/impact.py",
+    "backend/app/domain/oqi_business_impact/reliance.py",
+    "backend/app/infrastructure/persistence/models/oqi_business_impact.py",
+    "backend/app/infrastructure/persistence/oqi_business_impact_repository.py",
+    "backend/app/application/oqi_business_impact_service.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0026_oqi6_criticality_business_impact_reliance.py",
+    "backend/app/tests/test_oqi_business_impact.py",
+    # The four narrow additive OQI1-4 repository modifications (CDD-044
+    # §49/§49.1) are omitted here as duplicates -- each file already has
+    # its own pre-existing entry above from its original OQI1/2/3/4
+    # implementation block.
 }
 
 
@@ -1101,6 +1121,12 @@ def test_oqi1_quality_foundation_respects_every_firewall() -> None:
                 # candidate-extraction tests -- it never writes through
                 # this ORM class as part of OQI5's own production code path.
                 "test_oqi_remediation_i1.py",
+                # test_oqi_business_impact.py (OQI6-I, CDD-044) directly
+                # constructs a raw QualityEvaluationORM row, bypassing the
+                # repository, purely as read-only fixture setup proving OQI6's
+                # own coverage-check consumes real evaluation rows -- the
+                # identical established pattern as the two exclusions above.
+                "test_oqi_business_impact.py",
             }
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
@@ -1427,6 +1453,41 @@ def test_oqi5_i2_agent_orms_have_single_construction_site() -> None:
     assert _construction_sites("AgentRecommendationORM") == [
         "infrastructure/persistence/oqi_remediation_agent_repository.py"
     ], "AgentRecommendationORM constructed outside its single authorized site"
+
+
+def test_oqi6_business_impact_orms_have_single_construction_site() -> None:
+    """CDD-044 Artifact Authorization §2.1 row 6: single-construction-site
+    firewall for the 6 new OQI6 ORM classes, mirroring OQI1-5's own
+    established pattern."""
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name not in {"oqi_business_impact.py"}
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("OqiBusinessProcessORM") == [
+        "infrastructure/persistence/oqi_business_impact_repository.py"
+    ], "OqiBusinessProcessORM constructed outside its single authorized site"
+    assert _construction_sites("OqiBusinessDependencyORM") == [
+        "infrastructure/persistence/oqi_business_impact_repository.py"
+    ], "OqiBusinessDependencyORM constructed outside its single authorized site"
+    assert _construction_sites("OqiBusinessImpactEvaluationORM") == [
+        "infrastructure/persistence/oqi_business_impact_repository.py"
+    ], "OqiBusinessImpactEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("CurrentBusinessImpactORM") == [
+        "infrastructure/persistence/oqi_business_impact_repository.py"
+    ], "CurrentBusinessImpactORM constructed outside its single authorized site"
+    assert _construction_sites("OqiRelianceEvaluationORM") == [
+        "infrastructure/persistence/oqi_business_impact_repository.py"
+    ], "OqiRelianceEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("CurrentRelianceORM") == [
+        "infrastructure/persistence/oqi_business_impact_repository.py"
+    ], "CurrentRelianceORM constructed outside its single authorized site"
 
 
 def test_oqi3_business_rule_foundation_does_not_modify_quality_rule() -> None:
