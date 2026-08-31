@@ -170,6 +170,58 @@ jobs:
       - name: Backend process liveness
         run: curl -sf http://localhost:8000/health
 
+      - name: "[Docker-R2 DIAGNOSTIC - TEMPORARY, NOT PART OF CANDIDATE] PID 1 process introspection"
+        run: |
+          set -eu
+          BID=$(docker compose ps -q backend)
+          HOSTPID=$(docker inspect --format='{{.State.Pid}}' "$BID")
+          echo "=== docker inspect (State only) ==="
+          docker inspect --format='{{json .State}}' "$BID" | python3 -m json.tool || true
+
+          echo "=== PID 1 cmdline (inside container) ==="
+          docker compose exec -T backend sh -c 'tr "\0" " " < /proc/1/cmdline; echo'
+
+          echo "=== PID 1 environ: CTEC_DATABASE_URL (redacted) ==="
+          docker compose exec -T backend sh -c '
+            tr "\0" "\n" < /proc/1/environ | grep "^CTEC_DATABASE_URL=" \
+              | sed -E "s#^CTEC_DATABASE_URL=(.*)://[^:]+:[^@]*@#CTEC_DATABASE_URL=\1://***:***@#" \
+              || echo "CTEC_DATABASE_URL: ABSENT from /proc/1/environ"
+          '
+
+          echo "=== exec-subprocess env: CTEC_DATABASE_URL (redacted) ==="
+          docker compose exec -T backend env | grep "^CTEC_DATABASE_URL=" \
+            | sed -E "s#^CTEC_DATABASE_URL=(.*)://[^:]+:[^@]*@#CTEC_DATABASE_URL=\1://***:***@#" \
+            || echo "CTEC_DATABASE_URL: ABSENT from exec env"
+
+          echo "=== full PID 1 environ variable-name list (names only, no values) ==="
+          docker compose exec -T backend sh -c 'tr "\0" "\n" < /proc/1/environ | cut -d= -f1 | sort'
+
+          echo "=== full exec-subprocess environ variable-name list (names only, no values) ==="
+          docker compose exec -T backend env | cut -d= -f1 | sort
+
+          echo "=== process tree inside container (no ps binary assumed) ==="
+          docker compose exec -T backend sh -c '
+            for p in /proc/[0-9]*; do
+              pid=$(basename "$p")
+              comm=$(cat "$p/comm" 2>/dev/null || echo "?")
+              ppid=$(awk "/^PPid:/ {print \$2}" "$p/status" 2>/dev/null || echo "?")
+              cmd=$(tr "\0" " " < "$p/cmdline" 2>/dev/null || echo "?")
+              echo "pid=$pid ppid=$ppid comm=$comm cmd=$cmd"
+            done
+          '
+
+          echo "=== host-side view: docker top backend ==="
+          docker top "$BID" || true
+
+          echo "=== py-spy feasibility (installed on the ephemeral runner, not the image) ==="
+          if command -v py-spy >/dev/null 2>&1 || pip install --quiet py-spy 2>/tmp/pyspy_install.log; then
+            echo "py-spy: available on runner"
+            sudo py-spy dump --pid "$HOSTPID" 2>&1 | head -100 || echo "py-spy dump FAILED (see above)"
+          else
+            echo "PY-SPY: NOT FEASIBLE"
+            cat /tmp/pyspy_install.log 2>/dev/null || true
+          fi
+
       - name: Frontend production container responds
         run: curl -sf -o /dev/null http://localhost:3000
 
