@@ -47,7 +47,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         f" id(container)={id(container)}"
         f" database_url_present={container.settings.database_url is not None}"
         f" ontology_sessions_present={container.ontology_sessions is not None}"
-        f" ontology_sessions_type={type(container.ontology_sessions).__name__}",
+        f" ontology_sessions_type={type(container.ontology_sessions).__name__}"
+        f" token_verifier_present={container.token_verifier is not None}"
+        f" oidc_issuer={container.settings.oidc_issuer!r}"
+        f" oidc_audience={container.settings.oidc_audience!r}"
+        f" oidc_jwks_url={container.settings.oidc_jwks_url!r}",
         flush=True,
     )
     configure_logging(container.settings.log_level)
