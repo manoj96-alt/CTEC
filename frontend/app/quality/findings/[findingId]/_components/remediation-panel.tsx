@@ -1,4 +1,7 @@
 import type { RemediationResponse } from "@/lib/oqi/contracts";
+import { DecideAuthorizationDialog } from "./decide-authorization-dialog";
+import { RemediationStepper } from "./remediation-stepper";
+import { ReportExecutionDialog } from "./report-execution-dialog";
 
 // CDD-045 §20/§48-49/§29 UI Truth Table -- the highest-stakes panel in the
 // whole product. Recommendation, human authorization, and external
@@ -6,10 +9,19 @@ import type { RemediationResponse } from "@/lib/oqi/contracts";
 // "External remediation reported" never becomes "Resolved" here -- only a
 // Finding transitioning to RESOLVED via the real deterministic evaluator
 // (rendered on the parent Finding-detail shell) may ever say that.
+//
+// The two governed actions are available only where the server-returned
+// authorization state makes them meaningful (PENDING for decide; APPROVED
+// and not yet reported-executed for report-execution) -- this is usability
+// only, never authority: the backend independently re-verifies scope,
+// tenant, and state on every call regardless of frontend conditions
+// (OQI-UX companion, "frontend visibility != authority").
 export function RemediationPanel({
   remediation,
+  onMutated,
 }: {
   remediation: RemediationResponse;
+  onMutated: () => void;
 }) {
   const hasNothing =
     !remediation.candidate &&
@@ -19,16 +31,27 @@ export function RemediationPanel({
 
   if (hasNothing) {
     return (
-      <div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <h3>Remediation</h3>
+        <RemediationStepper remediation={remediation} />
         <p>No remediation activity recorded for this Finding.</p>
       </div>
     );
   }
 
+  const authorization = remediation.authorization;
+  const canDecide =
+    authorization !== null && authorization.status === "PENDING";
+  const canReportExecution =
+    authorization !== null &&
+    authorization.status === "APPROVED" &&
+    !remediation.external_execution;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <h3>Remediation</h3>
+
+      <RemediationStepper remediation={remediation} />
 
       {remediation.candidate ? (
         <div className="panel">
@@ -70,6 +93,15 @@ export function RemediationPanel({
                 state and cannot be used.
               </p>
             ) : null}
+            {canDecide ? (
+              <div style={{ marginTop: "0.5rem" }}>
+                <DecideAuthorizationDialog
+                  authorizationId={remediation.authorization.authorization_id}
+                  instruction={remediation.authorization.instruction}
+                  onDecided={onMutated}
+                />
+              </div>
+            ) : null}
           </>
         ) : (
           <p>No human authorization exists for this Finding.</p>
@@ -98,6 +130,14 @@ export function RemediationPanel({
         ) : (
           <p>No external remediation has been reported for this Finding.</p>
         )}
+        {canReportExecution && authorization ? (
+          <div style={{ marginTop: "0.5rem" }}>
+            <ReportExecutionDialog
+              authorizationId={authorization.authorization_id}
+              onReported={onMutated}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

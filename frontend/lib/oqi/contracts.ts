@@ -124,6 +124,7 @@ export interface RemediationCandidateView {
 }
 
 export interface RemediationAuthorizationView {
+  authorization_id: string;
   principal: string;
   decided_on: string | null;
   instruction: string;

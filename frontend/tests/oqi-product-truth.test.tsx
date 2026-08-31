@@ -223,6 +223,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
           authorization: null,
           external_execution: null,
         }}
+        onMutated={() => {}}
       />,
     );
     expect(screen.getByText("Agent Recommendation")).toBeInTheDocument();
@@ -237,6 +238,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
           candidate: null,
           recommendation: null,
           authorization: {
+            authorization_id: "auth-1",
             principal: "steward@example.com",
             decided_on: "2026-01-01T00:00:00Z",
             instruction: "Correct value",
@@ -246,6 +248,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
           },
           external_execution: null,
         }}
+        onMutated={() => {}}
       />,
     );
     expect(
@@ -264,6 +267,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
           authorization: null,
           external_execution: { reported_at: "2026-01-01T00:00:00Z" },
         }}
+        onMutated={() => {}}
       />,
     );
     expect(

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/design-system/empty-state";
 import { PageHeader } from "@/components/design-system/page-header";
 import { OqiApiError, oqiApi } from "@/lib/oqi/api-client";
@@ -44,6 +44,12 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "remediation", label: "Remediation" },
 ];
 
+const VALID_TAB_KEYS = new Set<string>(TABS.map((entry) => entry.key));
+
+function isValidTab(value: string | null): value is Tab {
+  return value !== null && VALID_TAB_KEYS.has(value);
+}
+
 type LoadState =
   | { status: "loading" }
   | {
@@ -60,11 +66,45 @@ type LoadState =
   | { status: "unauthorized" }
   | { status: "error"; code: string };
 
+// Next.js requires any component reading useSearchParams() to render inside
+// a Suspense boundary (missing-suspense-with-csr-bailout) -- this is a
+// render-boundary requirement only, mirroring findings/page.tsx's own
+// existing precedent; it changes nothing about data-fetch or tab behavior,
+// all of which live in FindingDetailPageContent below.
 export default function FindingDetailPage() {
+  return (
+    <Suspense fallback={<EmptyState kind="loading" title="Loading Finding" />}>
+      <FindingDetailPageContent />
+    </Suspense>
+  );
+}
+
+function FindingDetailPageContent() {
   const params = useParams<{ findingId: string }>();
   const findingId = params.findingId;
-  const [tab, setTab] = useState<Tab>("evidence");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTabState] = useState<Tab>(
+    isValidTab(initialTab) ? initialTab : "evidence",
+  );
   const [state, setState] = useState<LoadState>({ status: "loading" });
+
+  // Navigation state only -- an invalid/missing ?tab= value safely falls
+  // back to "evidence" above and never changes authorization or data-fetch
+  // behavior; this only keeps the URL addressable for the currently
+  // selected tab, using client-side routing (no full page reload).
+  const setTab = useCallback(
+    (next: Tab) => {
+      setTabState(next);
+      const query = new URLSearchParams(searchParams.toString());
+      query.set("tab", next);
+      router.replace(`/quality/findings/${findingId}?${query.toString()}`, {
+        scroll: false,
+      });
+    },
+    [findingId, router, searchParams],
+  );
 
   const load = useCallback(() => {
     setState({ status: "loading" });
@@ -193,7 +233,7 @@ export default function FindingDetailPage() {
           <AgentInvestigationPanel investigation={state.agent} />
         )}
         {tab === "remediation" && (
-          <RemediationPanel remediation={state.remediation} />
+          <RemediationPanel remediation={state.remediation} onMutated={load} />
         )}
       </section>
     </div>

@@ -67,4 +67,41 @@ describe("OQI Command Center", () => {
     expect(alert.textContent).toMatch(/temporarily unavailable/i);
     expect(alert.textContent).not.toMatch(/reliance unknown/i);
   });
+
+  // OQI-UX P3: Active Agent Investigations and Pending Human Authorization
+  // become honest entry points into the Findings workspace, mirroring the
+  // already-shipped Critical Dependencies At Risk tile exactly -- a plain,
+  // unfiltered link, never an invented query parameter/route.
+  it("Active Agent Investigations and Pending Human Authorization link to the Findings workspace", async () => {
+    commandCenterMock.mockResolvedValue({
+      reliance_supported_count: 412,
+      reliance_at_risk_count: 37,
+      reliance_unknown_count: 118,
+      critical_dependencies_at_risk_count: 6,
+      open_findings_count: 61,
+      active_agent_investigations_count: 5,
+      pending_human_authorizations_count: 2,
+    });
+
+    render(<CommandCenter />);
+    await screen.findByRole("group", { name: "Enterprise knowledge reliance" });
+
+    const agentLink = screen.getByRole("link", {
+      name: /Active Agent Investigations/i,
+    });
+    expect(agentLink).toHaveAttribute("href", "/quality/findings");
+
+    const authorizationLink = screen.getByRole("link", {
+      name: /Pending Human Authorization/i,
+    });
+    expect(authorizationLink).toHaveAttribute("href", "/quality/findings");
+
+    // Existing destinations preserved unchanged.
+    const criticalLink = screen.getByRole("link", {
+      name: /Critical Dependencies At Risk/i,
+    });
+    expect(criticalLink).toHaveAttribute("href", "/quality/findings");
+    const openLink = screen.getByRole("link", { name: /Open Findings/i });
+    expect(openLink).toHaveAttribute("href", "/quality/findings?status=OPEN");
+  });
 });

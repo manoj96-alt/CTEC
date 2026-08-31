@@ -364,6 +364,58 @@ def test_tenant_isolation_decide_authorization_fails_closed(
         assert excinfo.value.code == "REMEDIATION_TENANT_MISMATCH"
 
 
+def test_get_remediation_exposes_real_authorization_id_and_it_operates_decide(
+    factory: sessionmaker[Session],
+) -> None:
+    """OQI-UX authorization-ID contract correction: proves the API contract
+    is operationally complete end-to-end -- GET remediation returns the
+    real, persisted authorization_id, that exact ID successfully drives the
+    real decide route for its own tenant, and the same exact ID still fails
+    closed for a different tenant. Knowledge of the ID is resource identity,
+    never authority (CDD-045 companion, authorization_id != authority)."""
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        finding_id, _instruction_id, real_authorization_id = _seed_authorization(
+            session, tenant_id=tenant_a
+        )
+        session.commit()
+
+    with factory() as session:
+        remediation = _api_service(session).get_remediation(
+            tenant_id=tenant_a, finding_id=finding_id
+        )
+    assert remediation is not None
+    assert remediation.authorization is not None
+    assert remediation.authorization.authorization_id == real_authorization_id
+
+    with factory() as session:
+        case_status = _api_service(session).decide_authorization(
+            tenant_id=tenant_a,
+            authorization_id=remediation.authorization.authorization_id,
+            approve=True,
+            decided_by="approver",
+            rejection_reason=None,
+        )
+        session.commit()
+    assert case_status == "APPROVED"
+
+    with factory() as session:
+        _finding_id_b, _instruction_id_b, other_real_authorization_id = _seed_authorization(
+            session, tenant_id=f"tenant-{uuid4()}"
+        )
+        session.commit()
+    with factory() as session:
+        with pytest.raises(OqiRemediationError) as excinfo:
+            _api_service(session).decide_authorization(
+                tenant_id=tenant_a,
+                authorization_id=other_real_authorization_id,
+                approve=True,
+                decided_by="approver",
+                rejection_reason=None,
+            )
+        assert excinfo.value.code == "REMEDIATION_TENANT_MISMATCH"
+
+
 def test_tenant_isolation_command_center_counts_are_isolated(
     factory: sessionmaker[Session],
 ) -> None:
