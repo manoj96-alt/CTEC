@@ -32,7 +32,8 @@
         "supply-chain-impact:evaluate",
         "information-element-evidence-fitness:read",
         "information-element-context:read",
-        "ontology-modeling:read"
+        "ontology-modeling:read",
+        "oqi:read"
       ],
       "optionalClientScopes": [
         "supplier-risk:submit",
@@ -45,7 +46,9 @@
         "tool-execution:execute",
         "governed-approval:request",
         "governed-approval:decide",
-        "governed-agent:propose"
+        "governed-agent:propose",
+        "oqi-remediation:authorize",
+        "oqi-remediation:report-execution"
       ]
     }
   ],
@@ -299,6 +302,33 @@
       "name": "governed-agent:propose",
       "protocol": "openid-connect",
       "description": "CDD-037 canonical scope -- Governed Agent Resolution proposal authority (not granted to the primary demo persona).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi:read",
+      "protocol": "openid-connect",
+      "description": "CDD-045 canonical scope -- Ontology Quality Intelligence read authority (Command Center, Findings, evidence, ontology/business impact, Reliance, agent investigation, remediation state). Default-granted.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-remediation:authorize",
+      "protocol": "openid-connect",
+      "description": "CDD-045 canonical scope -- OQI governed remediation human-authorization (approve/reject) authority, mirroring governed-approval:decide's two-scope pattern (not granted to the primary demo persona by default).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-remediation:report-execution",
+      "protocol": "openid-connect",
+      "description": "CDD-045 canonical scope -- OQI governed external-remediation report-execution authority, mirroring governed-approval:request's two-scope pattern (not granted to the primary demo persona by default).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
