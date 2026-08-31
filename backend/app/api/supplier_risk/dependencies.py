@@ -15,6 +15,18 @@ _bearer = HTTPBearer(auto_error=False)
 
 def container(request: Request) -> Container:
     value: Container = request.app.state.container
+    import os as _r2_os  # Docker-R2 TEMPORARY DIAGNOSTIC -- revert before merge
+
+    print(
+        "[R2-DIAG route-dependency]"
+        f" pid={_r2_os.getpid()}"
+        f" path={request.url.path}"
+        f" id(request.app)={id(request.app)}"
+        f" id(container)={id(value)}"
+        f" ontology_sessions_present={value.ontology_sessions is not None}"
+        f" ontology_sessions_type={type(value.ontology_sessions).__name__}",
+        flush=True,
+    )
     return value
 
 

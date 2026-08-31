@@ -38,6 +38,18 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container = build_container()
     app.state.container = container
+    import os as _r2_os  # Docker-R2 TEMPORARY DIAGNOSTIC -- revert before merge
+
+    print(
+        "[R2-DIAG lifespan]"
+        f" pid={_r2_os.getpid()}"
+        f" id(app)={id(app)}"
+        f" id(container)={id(container)}"
+        f" database_url_present={container.settings.database_url is not None}"
+        f" ontology_sessions_present={container.ontology_sessions is not None}"
+        f" ontology_sessions_type={type(container.ontology_sessions).__name__}",
+        flush=True,
+    )
     configure_logging(container.settings.log_level)
     logger.info("application_started", extra={"environment": container.settings.environment})
     yield

@@ -215,8 +215,9 @@ jobs:
 
           echo "=== py-spy feasibility (installed on the ephemeral runner, not the image) ==="
           if command -v py-spy >/dev/null 2>&1 || pip install --quiet py-spy 2>/tmp/pyspy_install.log; then
-            echo "py-spy: available on runner"
-            sudo py-spy dump --pid "$HOSTPID" 2>&1 | head -100 || echo "py-spy dump FAILED (see above)"
+            PYSPY_BIN=$(command -v py-spy)
+            echo "py-spy: available on runner at $PYSPY_BIN"
+            sudo "$PYSPY_BIN" dump --pid "$HOSTPID" 2>&1 | head -100 || echo "py-spy dump FAILED (see above)"
           else
             echo "PY-SPY: NOT FEASIBLE"
             cat /tmp/pyspy_install.log 2>/dev/null || true
@@ -334,6 +335,12 @@ jobs:
             exit 1
           fi
           echo "authenticated OQI read: 200 OK; oqi:read plus both optional OQI remediation scopes were genuinely issued"
+
+      - name: "[Docker-R2 DIAGNOSTIC - TEMPORARY, NOT PART OF CANDIDATE] Capture lifespan/route-dependency container state"
+        if: always()
+        run: |
+          echo "=== R2-DIAG lines from backend container stdout ==="
+          docker compose logs backend 2>&1 | grep "R2-DIAG" || echo "(no R2-DIAG lines found in backend logs)"
 
       - name: Seed the deterministic OQI demo-showcase foundation (idempotent, demo tenant only)
         run: docker compose exec -T backend python -m app.infrastructure.persistence.demo_oqi_seeder
