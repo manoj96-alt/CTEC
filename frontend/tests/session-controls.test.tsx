@@ -7,21 +7,30 @@ const {
   accessTokenMock,
   observeSessionLossMock,
   sessionManagerMock,
+  signInMock,
   signOutMock,
   stopObservingMock,
+  usePathnameMock,
 } = vi.hoisted(() => ({
   accessTokenMock: vi.fn(),
   observeSessionLossMock: vi.fn(),
   sessionManagerMock: vi.fn(),
+  signInMock: vi.fn(),
   signOutMock: vi.fn(),
   stopObservingMock: vi.fn(),
+  usePathnameMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/browser-session", () => ({
   accessToken: accessTokenMock,
   observeSessionLoss: observeSessionLossMock,
   sessionManager: sessionManagerMock,
+  signIn: signInMock,
   signOut: signOutMock,
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: usePathnameMock,
 }));
 
 type UserLoadedCallback = (user: User) => void;
@@ -39,12 +48,16 @@ let unsubscribeUnloadedMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   accessTokenMock.mockReset();
   observeSessionLossMock.mockReset();
+  signInMock.mockReset();
   signOutMock.mockReset();
   stopObservingMock.mockReset();
   sessionManagerMock.mockReset();
+  usePathnameMock.mockReset();
 
   observeSessionLossMock.mockReturnValue(stopObservingMock);
+  signInMock.mockResolvedValue(undefined);
   signOutMock.mockResolvedValue(undefined);
+  usePathnameMock.mockReturnValue("/quality");
 
   userLoadedCallback = null;
   userUnloadedCallback = null;
@@ -65,12 +78,16 @@ beforeEach(() => {
   });
 });
 
-// 1. Anonymous initial state -> Sign out absent.
-test("renders nothing on an anonymous initial state", async () => {
+// 1. Anonymous initial state -> Sign in visible, Sign out absent.
+test("renders Sign in on an anonymous initial state", async () => {
   accessTokenMock.mockResolvedValue(null);
-  const { container } = render(<SessionControls />);
-  await waitFor(() => expect(accessTokenMock).toHaveBeenCalled());
-  expect(container).toBeEmptyDOMElement();
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Sign out" }),
+  ).not.toBeInTheDocument();
 });
 
 test("renders nothing when the auth configuration itself is missing (no session possible)", async () => {
@@ -98,10 +115,9 @@ test("renders Sign out when a session already exists on mount", async () => {
 test("a userLoaded event after mount makes Sign out appear, without remounting", async () => {
   accessTokenMock.mockResolvedValue(null);
   render(<SessionControls />);
-  await waitFor(() => expect(accessTokenMock).toHaveBeenCalled());
-  expect(
-    screen.queryByRole("button", { name: "Sign out" }),
-  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
 
   expect(userLoadedCallback).not.toBeNull();
   userLoadedCallback?.(fakeUser(false));
@@ -207,4 +223,80 @@ test("a slower stale initial check cannot overwrite a newer userLoaded event", a
       screen.getByRole("button", { name: "Sign out" }),
     ).toBeInTheDocument(),
   );
+});
+
+// 8. Clicking Sign in calls the shared signIn() with the current pathname.
+test("clicking Sign in calls the shared signIn() with the current pathname", async () => {
+  usePathnameMock.mockReturnValue("/quality");
+  accessTokenMock.mockResolvedValue(null);
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  expect(signInMock).toHaveBeenCalledTimes(1);
+  expect(signInMock).toHaveBeenCalledWith("/quality");
+});
+
+// 9. Session-loss latch: a stale userLoaded arriving after userUnloaded
+// must not resurrect Sign out.
+test("after a userUnloaded loss signal, a later stale userLoaded cannot restore Sign out", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Sign out" }),
+    ).toBeInTheDocument(),
+  );
+
+  userUnloadedCallback?.();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+
+  // A stray/late userLoaded (e.g. a bounded-renewal attempt that was
+  // already in flight when the loss occurred) must not undo the loss.
+  userLoadedCallback?.(fakeUser(false));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Sign out" }),
+  ).not.toBeInTheDocument();
+});
+
+// 10. Session-loss latch: a stale initial accessToken() resolution arriving
+// after a cross-tab logout signal must not resurrect Sign out.
+test("after a cross-tab session-loss signal, a slower stale initial accessToken() result cannot restore Sign out", async () => {
+  let onLoss: () => void = () => {};
+  observeSessionLossMock.mockImplementation((callback: () => void) => {
+    onLoss = callback;
+    return stopObservingMock;
+  });
+  let resolveAccessToken: (token: string | null) => void = () => {};
+  accessTokenMock.mockImplementation(
+    () =>
+      new Promise<string | null>((resolve) => {
+        resolveAccessToken = resolve;
+      }),
+  );
+  render(<SessionControls />);
+  await waitFor(() => expect(accessTokenMock).toHaveBeenCalled());
+
+  // The cross-tab loss signal arrives first, while the initial check is
+  // still in flight.
+  onLoss();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+
+  // The stale initial check then resolves as if the user were signed in --
+  // it must not undo the already-observed loss.
+  resolveAccessToken("a-real-access-token");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Sign out" }),
+  ).not.toBeInTheDocument();
 });
