@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 // The load-bearing defense against CDD-033's own two founding findings ever
@@ -118,22 +118,23 @@ describe("Gate X honesty", () => {
     }
   });
 
-  it("generalized Data Quality concepts remain visibly Planned and non-interactive", () => {
+  // CDD-033 OQI7 companion amendment + CDD-045: the four historical
+  // "Rules"/"Findings"/"DQ Impact"/"Remediation" PLANNED placeholders are
+  // superseded by the live, governed Ontology Quality Intelligence Command
+  // Center -- this test evolves from enforcing the old PLANNED-placeholder
+  // contract to enforcing the new governed contract, rather than being
+  // deleted. It still fails the moment the product overstates what CTEC
+  // actually does: a static, disabled placeholder must not silently
+  // reappear where a real, interactive, API-backed experience now belongs.
+  it("the historical Data Quality placeholders are superseded by the live OQI Command Center", () => {
     render(<QualityPage />);
     for (const name of ["Rules", "Findings", "DQ Impact", "Remediation"]) {
-      const heading = screen.getByRole("heading", { name });
-      const card = heading.closest("section");
-      expect(card).not.toBeNull();
-      expect(
-        within(card as HTMLElement).queryByRole("link"),
-      ).not.toBeInTheDocument();
-      expect(
-        within(card as HTMLElement).queryByRole("button"),
-      ).not.toBeInTheDocument();
-      expect(
-        within(card as HTMLElement).getByText("Planned"),
-      ).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name })).not.toBeInTheDocument();
     }
+    expect(
+      screen.getByRole("heading", { name: "Ontology Quality Intelligence" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
   // The prior invariant here ("never renders a live query result or
