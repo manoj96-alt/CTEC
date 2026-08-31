@@ -229,8 +229,20 @@ jobs:
             echo "$TOKEN_SCOPES" | grep -qw "$scope" || { echo "issued token is missing scope: $scope"; exit 1; }
           done
 
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8000/api/v1/oqi/command-center)
-          [ "$code" = "200" ] || { echo "authenticated OQI read failed: HTTP $code"; exit 1; }
+          # /health is process liveness only, not a DB-readiness check (frozen,
+          # unchanged) -- the backend's own DB connection pool can still be
+          # warming up for a moment after /health first reports healthy.
+          # Retry briefly rather than fail on that transient startup window;
+          # this still requires a genuine 200 within a few seconds, never a
+          # weakened assertion.
+          ok=""
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8000/api/v1/oqi/command-center)
+            [ "$code" = "200" ] && { ok=1; break; }
+            echo "attempt $i: authenticated OQI read returned HTTP $code, retrying..."
+            sleep 2
+          done
+          [ -n "$ok" ] || { echo "authenticated OQI read failed: HTTP $code"; docker compose logs backend; exit 1; }
           echo "authenticated OQI read: 200 OK; oqi:read plus both optional OQI remediation scopes were genuinely issued"
 
       - name: Seed the deterministic OQI demo-showcase foundation (idempotent, demo tenant only)
