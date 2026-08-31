@@ -256,7 +256,13 @@ jobs:
             echo "persistent 503 after $i attempts -- capturing diagnostics, then restarting backend once"
             docker compose exec -T backend env | grep -i CTEC_DATABASE || echo "(CTEC_DATABASE_URL not set in container env)"
             docker compose exec -T backend python -c "from app.core.config import get_settings; s = get_settings(); print('database_url is None:', s.database_url is None)"
-            docker compose restart backend
+            # `restart` reuses the container's already-frozen environment
+            # from when it was originally created -- if that creation-time
+            # environment interpolation itself raced (a genuine, if rare,
+            # possibility on some compose versions/runners), a mere restart
+            # reproduces the same broken state. force-recreate re-evaluates
+            # the environment block fresh.
+            docker compose up -d --force-recreate --no-deps backend
             for i in $(seq 1 30); do
               rstatus=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q backend) 2>/dev/null || echo "starting")
               [ "$rstatus" = "healthy" ] && break
