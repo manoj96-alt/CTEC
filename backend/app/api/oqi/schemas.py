@@ -134,6 +134,7 @@ class RemediationCandidateView(BaseModel):
 
 
 class RemediationAuthorizationView(BaseModel):
+    authorization_id: UUID
     principal: str
     decided_on: datetime | None
     instruction: str

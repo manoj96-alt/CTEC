@@ -111,19 +111,27 @@ export function CommandCenter() {
           <h3 style={{ marginTop: "0.25rem" }}>{data.open_findings_count}</h3>
         </Link>
 
-        <div className="panel">
+        <Link
+          className="panel"
+          href="/quality/findings"
+          style={{ display: "block" }}
+        >
           <span className="eyebrow">Active Agent Investigations</span>
           <h3 style={{ marginTop: "0.25rem" }}>
             {data.active_agent_investigations_count}
           </h3>
-        </div>
+        </Link>
 
-        <div className="panel">
+        <Link
+          className="panel"
+          href="/quality/findings"
+          style={{ display: "block" }}
+        >
           <span className="eyebrow">Pending Human Authorization</span>
           <h3 style={{ marginTop: "0.25rem" }}>
             {data.pending_human_authorizations_count}
           </h3>
-        </div>
+        </Link>
       </div>
     </div>
   );

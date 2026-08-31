@@ -409,6 +409,32 @@ def test_impact_unknown_is_serialized_as_explicit_string_not_no_impact() -> None
     assert body["outcome"] != "NO_IMPACT"
 
 
+def test_remediation_authorization_id_survives_serialization_to_json() -> None:
+    """OQI-UX authorization-ID contract correction: the field the governed
+    decide/report-execution routes require as their path parameter must
+    survive application row -> Pydantic response -> JSON body, not be
+    silently dropped at any layer."""
+    service = FakeService()
+    service.get_remediation = lambda *, tenant_id, finding_id: Row(  # type: ignore[method-assign]
+        case_status="AWAITING_AUTHORITY",
+        candidate=None,
+        recommendation=None,
+        authorization=Row(
+            authorization_id=_AUTH_ID,
+            principal="requester",
+            decided_on=None,
+            instruction="UPDATE_FIELD",
+            authorized_against_state_revision=1,
+            is_stale=False,
+            status="PENDING",
+        ),
+        external_execution=None,
+    )
+    client = _client(_container(audit=Audit()), service, _principal(scopes=("oqi:read",)))
+    body = client.get(f"/api/v1/oqi/findings/{_FINDING_ID}/remediation").json()
+    assert body["authorization"]["authorization_id"] == str(_AUTH_ID)
+
+
 # ---------------------------------------------------------------------------
 # Exact route existence.
 # ---------------------------------------------------------------------------

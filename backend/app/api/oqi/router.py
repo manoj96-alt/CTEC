@@ -341,6 +341,7 @@ def get_remediation(
     )
     authorization = (
         RemediationAuthorizationView(
+            authorization_id=row.authorization.authorization_id,
             principal=row.authorization.principal,
             decided_on=row.authorization.decided_on,
             instruction=row.authorization.instruction,

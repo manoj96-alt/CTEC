@@ -19,7 +19,7 @@ export function browserAuthConfig(): BrowserAuthConfig {
     // default too, not be treated as an explicit empty scope request.
     scope:
       process.env.NEXT_PUBLIC_OIDC_SCOPE ||
-      "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read",
+      "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution",
   };
   if (
     Object.entries(values).some(([key, value]) => key !== "scope" && !value)

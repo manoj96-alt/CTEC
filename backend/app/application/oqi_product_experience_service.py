@@ -188,6 +188,7 @@ class RemediationCandidateRow:
 
 @dataclass(frozen=True, slots=True)
 class RemediationAuthorizationRow:
+    authorization_id: UUID
     principal: str
     decided_on: datetime | None
     instruction: str
@@ -848,6 +849,7 @@ class OqiProductExperienceService:
                     and live_finding.state_revision != instruction.finding_state_revision
                 )
                 authorization_row = RemediationAuthorizationRow(
+                    authorization_id=authorization.authorization_id,
                     principal=authorization.decided_by or authorization.requested_by,
                     decided_on=authorization.decided_on,
                     instruction=instruction.action_type,

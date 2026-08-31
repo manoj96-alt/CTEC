@@ -593,6 +593,11 @@ def test_recommendation_vs_authorization_crown_two_stage(
     assert stage2.authorization.status == "APPROVED"
     assert stage2.authorization.principal == "approver"
     assert stage2.authorization.decided_on is not None
+    # OQI-UX authorization-ID contract correction: the row must expose the
+    # real, server-assigned authorization_id -- the exact value the governed
+    # decide/report-execution routes require as their path parameter --
+    # never a synthesized or omitted identifier.
+    assert stage2.authorization.authorization_id == authorization.authorization_id
     # Recommendation and authorization remain two distinct, independently
     # populated fields on the row -- never merged into one state.
 

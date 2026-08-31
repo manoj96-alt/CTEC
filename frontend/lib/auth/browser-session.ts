@@ -24,6 +24,17 @@ export async function accessToken(): Promise<string | null> {
   const user = await sessionManager().getUser();
   return user && !user.expired ? user.access_token : null;
 }
+// OQI-UX CDD-045 companion §4: the sole trustworthy identity claim for a
+// governed decision. Mirrors the backend's own `oidc_subject_claim = "sub"`
+// (TrustedPrincipal.principal_id) and Gate S's existing
+// `requested_by=principal.principal_id` precedent -- never
+// preferred_username/email/name, and never free text.
+export async function principalId(): Promise<string | null> {
+  const user = await sessionManager().getUser();
+  if (!user || user.expired) return null;
+  const sub = user.profile.sub;
+  return typeof sub === "string" && sub.length > 0 ? sub : null;
+}
 export async function signIn(returnPath = "/supplier-risk"): Promise<void> {
   const safe =
     returnPath.startsWith("/") && !returnPath.startsWith("//")

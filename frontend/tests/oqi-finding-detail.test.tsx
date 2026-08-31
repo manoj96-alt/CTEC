@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // CDD-045 §17/§28-29 -- the flagship investigation workspace. Covers the
 // bulk of the required 24-item adversarial matrix: N-source agreement/
@@ -17,6 +17,8 @@ const {
   relianceMock,
   agentInvestigationMock,
   remediationMock,
+  routerReplaceMock,
+  searchParamsRef,
 } = vi.hoisted(() => ({
   findingDetailMock: vi.fn(),
   evidenceMock: vi.fn(),
@@ -25,11 +27,20 @@ const {
   relianceMock: vi.fn(),
   agentInvestigationMock: vi.fn(),
   remediationMock: vi.fn(),
+  routerReplaceMock: vi.fn(),
+  searchParamsRef: { current: new URLSearchParams() },
 }));
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ findingId: "22222222-2222-2222-2222-222222222222" }),
+  useSearchParams: () => searchParamsRef.current,
+  useRouter: () => ({ replace: routerReplaceMock }),
 }));
+
+beforeEach(() => {
+  searchParamsRef.current = new URLSearchParams();
+  routerReplaceMock.mockClear();
+});
 
 vi.mock("@/lib/oqi/api-client", () => ({
   oqiApi: {
@@ -521,7 +532,14 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
     expect(
       screen.getByText("No human authorization exists for this Finding."),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/authorized/i)).not.toBeInTheDocument();
+    // The OQI-UX lifecycle stepper legitimately lists "Authorized" as one of
+    // its six neutral roadmap steps regardless of current state (CDD-045
+    // §20) -- the honesty requirement this assertion actually protects is
+    // that no claim of a real, decided authorization (the dynamic "Authorized
+    // by {principal} at {time}" heading) is ever rendered without one.
+    expect(
+      screen.queryByRole("heading", { name: /^Authorized by/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("recommendation and a separately-added authorization remain distinct concepts", async () => {
@@ -605,7 +623,12 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
         "External remediation reported — awaiting fresh evidence",
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/^resolved$/i)).not.toBeInTheDocument();
+    // The OQI-UX lifecycle stepper legitimately lists "Resolved" as one of
+    // its six neutral roadmap steps regardless of current state (CDD-045
+    // §20) -- the honesty requirement is that it is never the CURRENT step.
+    expect(
+      screen.getByRole("listitem", { current: "step" }).textContent,
+    ).not.toMatch(/^Resolved/);
     expect(screen.queryByText(/quality restored/i)).not.toBeInTheDocument();
   });
 
@@ -627,6 +650,54 @@ describe("OQI Finding Detail — deep linking", () => {
     await screen.findByText(BASE_FINDING.condition_label);
     expect(findingDetailMock).toHaveBeenCalledWith(
       "22222222-2222-2222-2222-222222222222",
+    );
+  });
+
+  it("missing ?tab= falls back to Evidence", async () => {
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+    expect(screen.getByRole("button", { name: "Evidence" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("invalid ?tab= falls back to Evidence", async () => {
+    searchParamsRef.current = new URLSearchParams("tab=not-a-real-tab");
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+    expect(screen.getByRole("button", { name: "Evidence" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("valid ?tab=remediation opens the Remediation panel directly", async () => {
+    searchParamsRef.current = new URLSearchParams("tab=remediation");
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+    expect(screen.getByRole("button", { name: "Remediation" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      screen.getByText("No remediation activity recorded for this Finding."),
+    ).toBeInTheDocument();
+  });
+
+  it("selecting a tab updates the URL via client-side navigation", async () => {
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Explainable Reliance" }),
+    );
+    expect(routerReplaceMock).toHaveBeenCalledWith(
+      "/quality/findings/22222222-2222-2222-2222-222222222222?tab=reliance",
+      { scroll: false },
     );
   });
 });
