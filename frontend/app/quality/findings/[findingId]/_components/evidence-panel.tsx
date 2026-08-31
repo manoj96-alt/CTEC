@@ -7,11 +7,16 @@ import type { EvidenceResponse } from "@/lib/oqi/contracts";
 // "Candidate — not established truth" -- this exact wording is load-
 // bearing and must never be shortened to imply correctness.
 export function EvidencePanel({ evidence }: { evidence: EvidenceResponse }) {
-  const known = evidence.participants.filter((p) => !p.is_missing && p.observed_value !== null);
+  const known = evidence.participants.filter(
+    (p) => !p.is_missing && p.observed_value !== null,
+  );
   const valueCounts = new Map<string, number>();
   for (const p of known) {
     if (p.observed_value) {
-      valueCounts.set(p.observed_value, (valueCounts.get(p.observed_value) ?? 0) + 1);
+      valueCounts.set(
+        p.observed_value,
+        (valueCounts.get(p.observed_value) ?? 0) + 1,
+      );
     }
   }
 
@@ -30,7 +35,11 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceResponse }) {
           {evidence.participants.map((participant) => (
             <tr key={participant.source_system}>
               <td>{participant.source_system}</td>
-              <td>{participant.is_missing ? "Missing" : participant.observed_value}</td>
+              <td>
+                {participant.is_missing
+                  ? "Missing"
+                  : participant.observed_value}
+              </td>
               <td>
                 {participant.is_authoritative ? (
                   <span>Governed authoritative source</span>
@@ -53,10 +62,16 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceResponse }) {
       {evidence.candidate ? (
         <div className="panel" style={{ marginTop: "1rem" }}>
           <span className="eyebrow">Remediation candidate</span>
-          <h4 style={{ marginTop: "0.25rem" }}>{evidence.candidate.proposed_value}</h4>
+          <h4 style={{ marginTop: "0.25rem" }}>
+            {evidence.candidate.proposed_value}
+          </h4>
           <p style={{ color: "var(--muted)" }}>
-            Basis: {evidence.candidate.supporting_participant_count} governed peer
-            {evidence.candidate.supporting_participant_count === 1 ? "" : "s"} agree
+            Basis: {evidence.candidate.supporting_participant_count} governed
+            peer
+            {evidence.candidate.supporting_participant_count === 1
+              ? ""
+              : "s"}{" "}
+            agree
           </p>
           <p style={{ fontWeight: 700 }}>Candidate — not established truth</p>
         </div>

@@ -74,7 +74,10 @@ export function CommandCenter() {
   const data = state.data;
 
   return (
-    <div data-testid="oqi-command-center" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div
+      data-testid="oqi-command-center"
+      style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}
+    >
       <RelianceHero
         supported={data.reliance_supported_count}
         atRisk={data.reliance_at_risk_count}
@@ -88,24 +91,38 @@ export function CommandCenter() {
           gap: "1rem",
         }}
       >
-        <Link className="panel" href="/quality/findings" style={{ display: "block" }}>
+        <Link
+          className="panel"
+          href="/quality/findings"
+          style={{ display: "block" }}
+        >
           <span className="eyebrow">Critical Dependencies At Risk</span>
-          <h3 style={{ marginTop: "0.25rem" }}>{data.critical_dependencies_at_risk_count}</h3>
+          <h3 style={{ marginTop: "0.25rem" }}>
+            {data.critical_dependencies_at_risk_count}
+          </h3>
         </Link>
 
-        <Link className="panel" href="/quality/findings?status=OPEN" style={{ display: "block" }}>
+        <Link
+          className="panel"
+          href="/quality/findings?status=OPEN"
+          style={{ display: "block" }}
+        >
           <span className="eyebrow">Open Findings</span>
           <h3 style={{ marginTop: "0.25rem" }}>{data.open_findings_count}</h3>
         </Link>
 
         <div className="panel">
           <span className="eyebrow">Active Agent Investigations</span>
-          <h3 style={{ marginTop: "0.25rem" }}>{data.active_agent_investigations_count}</h3>
+          <h3 style={{ marginTop: "0.25rem" }}>
+            {data.active_agent_investigations_count}
+          </h3>
         </div>
 
         <div className="panel">
           <span className="eyebrow">Pending Human Authorization</span>
-          <h3 style={{ marginTop: "0.25rem" }}>{data.pending_human_authorizations_count}</h3>
+          <h3 style={{ marginTop: "0.25rem" }}>
+            {data.pending_human_authorizations_count}
+          </h3>
         </div>
       </div>
     </div>

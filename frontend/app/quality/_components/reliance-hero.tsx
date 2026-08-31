@@ -17,9 +17,24 @@ export function RelianceHero({
     count: number;
     color: string;
   }[] = [
-    { key: "supported", label: "Reliance Supported", count: supported, color: "#1a7f37" },
-    { key: "at-risk", label: "Reliance At Risk", count: atRisk, color: "#b42318" },
-    { key: "unknown", label: "Reliance Unknown", count: unknown, color: "#7a5c00" },
+    {
+      key: "supported",
+      label: "Reliance Supported",
+      count: supported,
+      color: "#1a7f37",
+    },
+    {
+      key: "at-risk",
+      label: "Reliance At Risk",
+      count: atRisk,
+      color: "#b42318",
+    },
+    {
+      key: "unknown",
+      label: "Reliance Unknown",
+      count: unknown,
+      color: "#7a5c00",
+    },
   ];
 
   return (

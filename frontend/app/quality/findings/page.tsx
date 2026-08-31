@@ -39,7 +39,10 @@ export default function FindingsPage() {
     <Suspense
       fallback={
         <div className="max-w-5xl">
-          <PageHeader eyebrow="Ontology Quality Intelligence" title="Findings" />
+          <PageHeader
+            eyebrow="Ontology Quality Intelligence"
+            title="Findings"
+          />
           <EmptyState kind="loading" title="Loading Findings" />
         </div>
       }
@@ -54,7 +57,10 @@ function FindingsPageContent() {
   const initialStatus = searchParams.get("status") ?? "";
   const [family, setFamily] = useState("");
   const [status, setStatus] = useState(initialStatus);
-  const [state, setState] = useState<LoadState>({ status: "loading", cursor: null });
+  const [state, setState] = useState<LoadState>({
+    status: "loading",
+    cursor: null,
+  });
 
   const load = useCallback(
     (cursorValue: string | null) => {
@@ -185,7 +191,8 @@ function FindingsPageContent() {
                   <td>{item.highest_criticality ?? "Unknown"}</td>
                   <td>
                     {item.reliance_state
-                      ? (RELIANCE_LABEL[item.reliance_state] ?? item.reliance_state)
+                      ? (RELIANCE_LABEL[item.reliance_state] ??
+                        item.reliance_state)
                       : "Reliance Unknown"}
                   </td>
                   <td>{new Date(item.last_seen_at).toLocaleString()}</td>

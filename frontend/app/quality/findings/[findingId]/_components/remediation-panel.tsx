@@ -6,7 +6,11 @@ import type { RemediationResponse } from "@/lib/oqi/contracts";
 // "External remediation reported" never becomes "Resolved" here -- only a
 // Finding transitioning to RESOLVED via the real deterministic evaluator
 // (rendered on the parent Finding-detail shell) may ever say that.
-export function RemediationPanel({ remediation }: { remediation: RemediationResponse }) {
+export function RemediationPanel({
+  remediation,
+}: {
+  remediation: RemediationResponse;
+}) {
   const hasNothing =
     !remediation.candidate &&
     !remediation.recommendation &&
@@ -29,7 +33,9 @@ export function RemediationPanel({ remediation }: { remediation: RemediationResp
       {remediation.candidate ? (
         <div className="panel">
           <span className="eyebrow">Deterministic candidate</span>
-          <h4 style={{ marginTop: "0.25rem" }}>{remediation.candidate.proposed_value}</h4>
+          <h4 style={{ marginTop: "0.25rem" }}>
+            {remediation.candidate.proposed_value}
+          </h4>
           <p style={{ fontWeight: 700 }}>Candidate — not established truth</p>
         </div>
       ) : null}
@@ -38,7 +44,9 @@ export function RemediationPanel({ remediation }: { remediation: RemediationResp
         <span className="eyebrow">Agent Recommendation</span>
         {remediation.recommendation ? (
           <>
-            <h4 style={{ marginTop: "0.25rem" }}>{remediation.recommendation.recommendation_type}</h4>
+            <h4 style={{ marginTop: "0.25rem" }}>
+              {remediation.recommendation.recommendation_type}
+            </h4>
             <p>{remediation.recommendation.rationale}</p>
           </>
         ) : (
@@ -58,8 +66,8 @@ export function RemediationPanel({ remediation }: { remediation: RemediationResp
             <p>{remediation.authorization.instruction}</p>
             {remediation.authorization.is_stale ? (
               <p role="alert" style={{ fontWeight: 700 }}>
-                Stale — this authorization no longer matches the current Finding state and
-                cannot be used.
+                Stale — this authorization no longer matches the current Finding
+                state and cannot be used.
               </p>
             ) : null}
           </>
@@ -76,11 +84,15 @@ export function RemediationPanel({ remediation }: { remediation: RemediationResp
               External remediation reported — awaiting fresh evidence
             </p>
             <p>
-              Reported at {new Date(remediation.external_execution.reported_at).toLocaleString()}
+              Reported at{" "}
+              {new Date(
+                remediation.external_execution.reported_at,
+              ).toLocaleString()}
             </p>
             <p style={{ color: "var(--muted)" }}>
-              This does not by itself resolve the underlying quality condition. Only fresh
-              source evidence and deterministic re-evaluation can do that.
+              This does not by itself resolve the underlying quality condition.
+              Only fresh source evidence and deterministic re-evaluation can do
+              that.
             </p>
           </>
         ) : (

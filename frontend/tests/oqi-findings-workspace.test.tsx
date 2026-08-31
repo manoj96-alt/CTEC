@@ -59,7 +59,9 @@ describe("OQI Findings workspace", () => {
   it("empty filtered result is honestly empty, never 'healthy'", async () => {
     listFindingsMock.mockResolvedValue({ items: [], next_cursor: null });
     render(<FindingsPage />);
-    expect(await screen.findByText("No Findings match this view")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No Findings match this view"),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/healthy/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/all clear/i)).not.toBeInTheDocument();
   });

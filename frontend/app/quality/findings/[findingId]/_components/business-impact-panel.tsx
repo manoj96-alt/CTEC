@@ -4,13 +4,18 @@ import type { BusinessImpactResponse } from "@/lib/oqi/contracts";
 // BusinessDependency, never the entity -- so every dependency renders as
 // its own card, never collapsed to "the" criticality. UNKNOWN and
 // NO_KNOWN states keep their narrow, exact governed wording.
-export function BusinessImpactPanel({ impact }: { impact: BusinessImpactResponse }) {
+export function BusinessImpactPanel({
+  impact,
+}: {
+  impact: BusinessImpactResponse;
+}) {
   if (impact.outcome === "BUSINESS_IMPACT_UNKNOWN") {
     return (
       <div>
         <h3>Business Impact</h3>
         <p role="status">
-          Business impact cannot currently be determined from available governed evidence.
+          Business impact cannot currently be determined from available governed
+          evidence.
         </p>
       </div>
     );
@@ -41,7 +46,9 @@ export function BusinessImpactPanel({ impact }: { impact: BusinessImpactResponse
             className="panel"
           >
             <span className="eyebrow">{dependency.business_process_name}</span>
-            <h4 style={{ marginTop: "0.25rem" }}>{dependency.criticality ?? "Criticality Unknown"}</h4>
+            <h4 style={{ marginTop: "0.25rem" }}>
+              {dependency.criticality ?? "Criticality Unknown"}
+            </h4>
           </div>
         ))}
       </div>

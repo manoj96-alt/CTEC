@@ -77,9 +77,8 @@ export default function FindingDetailPage() {
       oqiApi.agentInvestigation(findingId),
       oqiApi.remediation(findingId),
     ])
-      .then(([finding, evidence, impact, businessImpact, reliance, agent, remediation]) =>
-        setState({
-          status: "loaded",
+      .then(
+        ([
           finding,
           evidence,
           impact,
@@ -87,7 +86,17 @@ export default function FindingDetailPage() {
           reliance,
           agent,
           remediation,
-        }),
+        ]) =>
+          setState({
+            status: "loaded",
+            finding,
+            evidence,
+            impact,
+            businessImpact,
+            reliance,
+            agent,
+            remediation,
+          }),
       )
       .catch((caught) => {
         if (caught instanceof OqiApiError) {
@@ -155,7 +164,10 @@ export default function FindingDetailPage() {
         }
       />
 
-      <nav aria-label="Finding investigation" style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+      <nav
+        aria-label="Finding investigation"
+        style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}
+      >
         {TABS.map((entry) => (
           <button
             key={entry.key}
@@ -170,13 +182,19 @@ export default function FindingDetailPage() {
 
       <section className="panel">
         {tab === "evidence" && <EvidencePanel evidence={state.evidence} />}
-        {tab === "ontology-impact" && <OntologyImpactPanel impact={state.impact} />}
-        {tab === "business-impact" && <BusinessImpactPanel impact={state.businessImpact} />}
+        {tab === "ontology-impact" && (
+          <OntologyImpactPanel impact={state.impact} />
+        )}
+        {tab === "business-impact" && (
+          <BusinessImpactPanel impact={state.businessImpact} />
+        )}
         {tab === "reliance" && <ReliancePanel reliance={state.reliance} />}
         {tab === "agent-investigation" && (
           <AgentInvestigationPanel investigation={state.agent} />
         )}
-        {tab === "remediation" && <RemediationPanel remediation={state.remediation} />}
+        {tab === "remediation" && (
+          <RemediationPanel remediation={state.remediation} />
+        )}
       </section>
     </div>
   );

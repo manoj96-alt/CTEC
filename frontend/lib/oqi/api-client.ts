@@ -71,10 +71,19 @@ async function request<T>(
 
 export const oqiApi = {
   commandCenter: (signal?: AbortSignal): Promise<CommandCenterResponse> =>
-    request<CommandCenterResponse>("/api/v1/oqi/command-center", undefined, signal),
+    request<CommandCenterResponse>(
+      "/api/v1/oqi/command-center",
+      undefined,
+      signal,
+    ),
 
   listFindings: (
-    params: { family?: string; status?: string; cursor?: string; limit?: number },
+    params: {
+      family?: string;
+      status?: string;
+      cursor?: string;
+      limit?: number;
+    },
     signal?: AbortSignal,
   ): Promise<FindingListResponse> => {
     const query = new URLSearchParams();
@@ -83,31 +92,62 @@ export const oqiApi = {
     if (params.cursor) query.set("cursor", params.cursor);
     if (params.limit) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request<FindingListResponse>(`/api/v1/oqi/findings${suffix}`, undefined, signal);
+    return request<FindingListResponse>(
+      `/api/v1/oqi/findings${suffix}`,
+      undefined,
+      signal,
+    );
   },
 
-  findingDetail: (findingId: string, signal?: AbortSignal): Promise<FindingDetailResponse> =>
-    request<FindingDetailResponse>(`/api/v1/oqi/findings/${findingId}`, undefined, signal),
+  findingDetail: (
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<FindingDetailResponse> =>
+    request<FindingDetailResponse>(
+      `/api/v1/oqi/findings/${findingId}`,
+      undefined,
+      signal,
+    ),
 
-  evidence: (findingId: string, signal?: AbortSignal): Promise<EvidenceResponse> =>
-    request<EvidenceResponse>(`/api/v1/oqi/findings/${findingId}/evidence`, undefined, signal),
+  evidence: (
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<EvidenceResponse> =>
+    request<EvidenceResponse>(
+      `/api/v1/oqi/findings/${findingId}/evidence`,
+      undefined,
+      signal,
+    ),
 
-  ontologyImpact: (findingId: string, signal?: AbortSignal): Promise<OntologyImpactResponse> =>
+  ontologyImpact: (
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<OntologyImpactResponse> =>
     request<OntologyImpactResponse>(
       `/api/v1/oqi/findings/${findingId}/ontology-impact`,
       undefined,
       signal,
     ),
 
-  businessImpact: (findingId: string, signal?: AbortSignal): Promise<BusinessImpactResponse> =>
+  businessImpact: (
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<BusinessImpactResponse> =>
     request<BusinessImpactResponse>(
       `/api/v1/oqi/findings/${findingId}/business-impact`,
       undefined,
       signal,
     ),
 
-  reliance: (findingId: string, signal?: AbortSignal): Promise<RelianceResponse> =>
-    request<RelianceResponse>(`/api/v1/oqi/findings/${findingId}/reliance`, undefined, signal),
+  reliance: (
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<RelianceResponse> =>
+    request<RelianceResponse>(
+      `/api/v1/oqi/findings/${findingId}/reliance`,
+      undefined,
+      signal,
+    ),
 
   agentInvestigation: (
     findingId: string,
@@ -119,7 +159,10 @@ export const oqiApi = {
       signal,
     ),
 
-  remediation: (findingId: string, signal?: AbortSignal): Promise<RemediationResponse> =>
+  remediation: (
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<RemediationResponse> =>
     request<RemediationResponse>(
       `/api/v1/oqi/findings/${findingId}/remediation`,
       undefined,
@@ -135,7 +178,9 @@ export const oqiApi = {
       { method: "POST", body: JSON.stringify(body) },
     ),
 
-  reportExecution: (authorizationId: string): Promise<RemediationCaseActionResponse> =>
+  reportExecution: (
+    authorizationId: string,
+  ): Promise<RemediationCaseActionResponse> =>
     request<RemediationCaseActionResponse>(
       `/api/v1/oqi/remediation/authorizations/${authorizationId}/report-execution`,
       { method: "POST", body: JSON.stringify({}) },

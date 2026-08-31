@@ -27,17 +27,31 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
   it("RELIANCE_SUPPORTED: may say Reliance Supported, must not say Trusted/100% correct/Verified true", () => {
     const { container } = render(
       <ReliancePanel
-        reliance={{ state: "RELIANCE_SUPPORTED", reason_codes: [], contributing_finding_ids: [], history: [] }}
+        reliance={{
+          state: "RELIANCE_SUPPORTED",
+          reason_codes: [],
+          contributing_finding_ids: [],
+          history: [],
+        }}
       />,
     );
     expect(screen.getByText("Reliance Supported")).toBeInTheDocument();
-    assertForbidden(container, [/\btrusted\b/i, /100% correct/i, /verified true/i]);
+    assertForbidden(container, [
+      /\btrusted\b/i,
+      /100% correct/i,
+      /verified true/i,
+    ]);
   });
 
   it("RELIANCE_AT_RISK: may say Reliance At Risk, must not say False/Wrong/Broken", () => {
     const { container } = render(
       <ReliancePanel
-        reliance={{ state: "RELIANCE_AT_RISK", reason_codes: [], contributing_finding_ids: [], history: [] }}
+        reliance={{
+          state: "RELIANCE_AT_RISK",
+          reason_codes: [],
+          contributing_finding_ids: [],
+          history: [],
+        }}
       />,
     );
     expect(screen.getByText("Reliance At Risk")).toBeInTheDocument();
@@ -47,26 +61,42 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
   it("RELIANCE_UNKNOWN: may say insufficient evidence to assess, must not say Low Risk", () => {
     const { container } = render(
       <ReliancePanel
-        reliance={{ state: "RELIANCE_UNKNOWN", reason_codes: [], contributing_finding_ids: [], history: [] }}
+        reliance={{
+          state: "RELIANCE_UNKNOWN",
+          reason_codes: [],
+          contributing_finding_ids: [],
+          history: [],
+        }}
       />,
     );
-    expect(screen.getByText(/insufficient evidence to assess/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/insufficient evidence to assess/i),
+    ).toBeInTheDocument();
     assertForbidden(container, [/low risk/i]);
   });
 
   it("IMPACT_UNKNOWN: may say cannot currently be determined, must not say No impact/Low impact", () => {
     const { container } = render(
       <OntologyImpactPanel
-        impact={{ outcome: "IMPACT_UNKNOWN", direct_entity_id: null, direct_entity_type: null, propagated_path: null }}
+        impact={{
+          outcome: "IMPACT_UNKNOWN",
+          direct_entity_id: null,
+          direct_entity_type: null,
+          propagated_path: null,
+        }}
       />,
     );
-    expect(screen.getByText(/ontology impact cannot currently be determined/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/ontology impact cannot currently be determined/i),
+    ).toBeInTheDocument();
     assertForbidden(container, [/\bno impact\b/i, /\blow impact\b/i]);
   });
 
   it("NO_KNOWN_BUSINESS_IMPACT: may say No known business impact, must not say No business impact exists/Safe", () => {
     const { container } = render(
-      <BusinessImpactPanel impact={{ outcome: "NO_KNOWN_BUSINESS_IMPACT", dependencies: [] }} />,
+      <BusinessImpactPanel
+        impact={{ outcome: "NO_KNOWN_BUSINESS_IMPACT", dependencies: [] }}
+      />,
     );
     expect(screen.getByText(/no known business impact/i)).toBeInTheDocument();
     assertForbidden(container, [/no business impact exists/i, /\bsafe\b/i]);
@@ -74,9 +104,13 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
 
   it("BUSINESS_IMPACT_UNKNOWN: may say cannot currently be determined, must not say 0 impact / be blank", () => {
     const { container } = render(
-      <BusinessImpactPanel impact={{ outcome: "BUSINESS_IMPACT_UNKNOWN", dependencies: [] }} />,
+      <BusinessImpactPanel
+        impact={{ outcome: "BUSINESS_IMPACT_UNKNOWN", dependencies: [] }}
+      />,
     );
-    expect(screen.getByText(/business impact cannot currently be determined/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/business impact cannot currently be determined/i),
+    ).toBeInTheDocument();
     assertForbidden(container, [/0 impact/i]);
     expect(container.textContent?.trim().length).toBeGreaterThan(0);
   });
@@ -86,14 +120,28 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <EvidencePanel
         evidence={{
           participants: [
-            { source_system: "SAP", observed_value: "ABC123", is_missing: false, is_authoritative: false, is_conflicting: false },
-            { source_system: "PLM", observed_value: "ABC123", is_missing: false, is_authoritative: false, is_conflicting: false },
+            {
+              source_system: "SAP",
+              observed_value: "ABC123",
+              is_missing: false,
+              is_authoritative: false,
+              is_conflicting: false,
+            },
+            {
+              source_system: "PLM",
+              observed_value: "ABC123",
+              is_missing: false,
+              is_authoritative: false,
+              is_conflicting: false,
+            },
           ],
           candidate: null,
         }}
       />,
     );
-    expect(screen.getByText("2 governed peers observed ABC123")).toBeInTheDocument();
+    expect(
+      screen.getByText("2 governed peers observed ABC123"),
+    ).toBeInTheDocument();
     assertForbidden(container, [/is correct/i]);
   });
 
@@ -102,13 +150,21 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <EvidencePanel
         evidence={{
           participants: [
-            { source_system: "System of Record", observed_value: "ABC123", is_missing: false, is_authoritative: true, is_conflicting: false },
+            {
+              source_system: "System of Record",
+              observed_value: "ABC123",
+              is_missing: false,
+              is_authoritative: true,
+              is_conflicting: false,
+            },
           ],
           candidate: null,
         }}
       />,
     );
-    expect(screen.getByText("Governed authoritative source")).toBeInTheDocument();
+    expect(
+      screen.getByText("Governed authoritative source"),
+    ).toBeInTheDocument();
     assertForbidden(container, [/\btruth\b/i]);
   });
 
@@ -117,11 +173,18 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <EvidencePanel
         evidence={{
           participants: [],
-          candidate: { candidate_id: "c1", proposed_value: "ABC123", supporting_participant_count: 4, status: "CANDIDATE_NOT_TRUTH" },
+          candidate: {
+            candidate_id: "c1",
+            proposed_value: "ABC123",
+            supporting_participant_count: 4,
+            status: "CANDIDATE_NOT_TRUTH",
+          },
         }}
       />,
     );
-    expect(screen.getByText("Candidate — not established truth")).toBeInTheDocument();
+    expect(
+      screen.getByText("Candidate — not established truth"),
+    ).toBeInTheDocument();
     assertForbidden(container, [/correct value/i, /golden value/i]);
   });
 
@@ -130,7 +193,12 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <AgentInvestigationPanel
         investigation={{
           specialists: [
-            { role_id: "evidence-analyst", result_state: "SUCCEEDED", assessment_text: "Analysis text", referenced_candidate_id: null },
+            {
+              role_id: "evidence-analyst",
+              result_state: "SUCCEEDED",
+              assessment_text: "Analysis text",
+              referenced_candidate_id: null,
+            },
           ],
           recommendation: null,
         }}
@@ -146,7 +214,12 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
         remediation={{
           case_status: "PENDING",
           candidate: null,
-          recommendation: { recommendation_type: "RECOMMEND_CANDIDATE", candidate_id: "c1", rationale: "peers agree", basis: "SPECIALIST_SUPPORTED" },
+          recommendation: {
+            recommendation_type: "RECOMMEND_CANDIDATE",
+            candidate_id: "c1",
+            rationale: "peers agree",
+            basis: "SPECIALIST_SUPPORTED",
+          },
           authorization: null,
           external_execution: null,
         }}
@@ -175,7 +248,9 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
         }}
       />,
     );
-    expect(screen.getByText(/Authorized by steward@example.com/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Authorized by steward@example.com/),
+    ).toBeInTheDocument();
     assertForbidden(container, [/\bremediated\b/i, /\bfixed\b/i]);
   });
 
@@ -192,7 +267,9 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       />,
     );
     expect(
-      screen.getByText("External remediation reported — awaiting fresh evidence"),
+      screen.getByText(
+        "External remediation reported — awaiting fresh evidence",
+      ),
     ).toBeInTheDocument();
     assertForbidden(container, [/finding resolved/i, /quality restored/i]);
   });
@@ -208,7 +285,9 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
         }}
       />,
     );
-    expect(screen.getByText(/insufficient quality coverage/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/insufficient quality coverage/i),
+    ).toBeInTheDocument();
     assertForbidden(container, [/\bpassed\b/i]);
   });
 });

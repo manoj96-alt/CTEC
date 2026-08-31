@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 // CDD-045 §12/§16/§29: Command Center renders real Reliance counts with
 // zero score, zero percentage, and equal visual weight for UNKNOWN --
 // never a quieter/neutral variant of AT_RISK.
-const { commandCenterMock } = vi.hoisted(() => ({ commandCenterMock: vi.fn() }));
+const { commandCenterMock } = vi.hoisted(() => ({
+  commandCenterMock: vi.fn(),
+}));
 
 vi.mock("@/lib/oqi/api-client", () => ({
   oqiApi: { commandCenter: commandCenterMock },
@@ -35,7 +37,9 @@ describe("OQI Command Center", () => {
 
     render(<CommandCenter />);
 
-    const group = await screen.findByRole("group", { name: "Enterprise knowledge reliance" });
+    const group = await screen.findByRole("group", {
+      name: "Enterprise knowledge reliance",
+    });
     expect(within(group).getByText("412")).toBeInTheDocument();
     expect(within(group).getByText("37")).toBeInTheDocument();
     expect(within(group).getByText("118")).toBeInTheDocument();

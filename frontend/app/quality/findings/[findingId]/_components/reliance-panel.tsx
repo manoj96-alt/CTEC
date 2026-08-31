@@ -12,18 +12,23 @@ const STATE_COPY: Record<string, string> = {
 
 const REASON_COPY: Record<string, string> = {
   OPEN_QUALITY_CONDITION: "An open quality condition affects this knowledge.",
-  INSUFFICIENT_QUALITY_COVERAGE: "Insufficient quality coverage has been evaluated.",
+  INSUFFICIENT_QUALITY_COVERAGE:
+    "Insufficient quality coverage has been evaluated.",
   ONTOLOGY_IMPACT_UNKNOWN: "Ontology impact cannot currently be determined.",
-  BUSINESS_DEPENDENCY_UNKNOWN: "No governed business dependency coverage is known.",
+  BUSINESS_DEPENDENCY_UNKNOWN:
+    "No governed business dependency coverage is known.",
   CRITICALITY_UNKNOWN: "No governed criticality has been assigned.",
-  REMEDIATION_PENDING: "Remediation has been reported but not yet re-evaluated.",
+  REMEDIATION_PENDING:
+    "Remediation has been reported but not yet re-evaluated.",
 };
 
 export function ReliancePanel({ reliance }: { reliance: RelianceResponse }) {
   return (
     <div>
       <h3>Explainable Reliance</h3>
-      <p style={{ fontWeight: 700 }}>{STATE_COPY[reliance.state] ?? reliance.state}</p>
+      <p style={{ fontWeight: 700 }}>
+        {STATE_COPY[reliance.state] ?? reliance.state}
+      </p>
 
       {reliance.reason_codes.length > 0 ? (
         <ul>
@@ -39,7 +44,8 @@ export function ReliancePanel({ reliance }: { reliance: RelianceResponse }) {
           <ul>
             {reliance.history.map((entry, index) => (
               <li key={`${entry.state}-${entry.evaluated_at}-${index}`}>
-                {STATE_COPY[entry.state] ?? entry.state} — {new Date(entry.evaluated_at).toLocaleString()}
+                {STATE_COPY[entry.state] ?? entry.state} —{" "}
+                {new Date(entry.evaluated_at).toLocaleString()}
               </li>
             ))}
           </ul>

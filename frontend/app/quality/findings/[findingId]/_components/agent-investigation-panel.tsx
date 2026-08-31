@@ -11,7 +11,10 @@ export function AgentInvestigationPanel({
 }: {
   investigation: AgentInvestigationResponse;
 }) {
-  if (investigation.specialists.length === 0 && investigation.recommendation === null) {
+  if (
+    investigation.specialists.length === 0 &&
+    investigation.recommendation === null
+  ) {
     return (
       <div>
         <h3>Agent Investigation</h3>
@@ -36,7 +39,9 @@ export function AgentInvestigationPanel({
             <span className="eyebrow">Specialist Assessment</span>
             <h4 style={{ marginTop: "0.25rem" }}>{specialist.role_id}</h4>
             <p>{specialist.result_state}</p>
-            {specialist.assessment_text ? <p>{specialist.assessment_text}</p> : null}
+            {specialist.assessment_text ? (
+              <p>{specialist.assessment_text}</p>
+            ) : null}
           </div>
         ))}
       </div>
@@ -44,7 +49,9 @@ export function AgentInvestigationPanel({
       {investigation.recommendation ? (
         <div className="panel" style={{ marginTop: "1rem" }}>
           <span className="eyebrow">Recommendation</span>
-          <h4 style={{ marginTop: "0.25rem" }}>{investigation.recommendation.recommendation_type}</h4>
+          <h4 style={{ marginTop: "0.25rem" }}>
+            {investigation.recommendation.recommendation_type}
+          </h4>
           <p>{investigation.recommendation.rationale}</p>
           <p style={{ fontWeight: 700 }}>
             {investigation.recommendation.basis === "SYNTHESIZER_ONLY"
