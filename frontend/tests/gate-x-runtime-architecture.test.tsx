@@ -85,10 +85,15 @@ describe("Gate X runtime architecture", () => {
     }
   });
 
-  it("never creates an active route for a PLANNED generalized-DQ capability", () => {
+  // frontend/app/quality/findings/page.tsx was narrowly authorized as a live
+  // route by CDD-045 (OQI7) and the CDD-033 OQI7 companion amendment, which
+  // supersedes this file's historical PLANNED/no-active-route prohibition
+  // for /quality/findings specifically (CDD-045 Artifact Authorization
+  // GC2 test-path correction). /quality/rules and /quality/impact remain
+  // unauthorized and must still have no active route.
+  it("never creates an active route for a PLANNED generalized-DQ capability not authorized by governance", () => {
     for (const forbidden of [
       "frontend/app/quality/rules/page.tsx",
-      "frontend/app/quality/findings/page.tsx",
       "frontend/app/quality/impact/page.tsx",
     ]) {
       expect(existsSync(join(REPOSITORY_ROOT, forbidden))).toBe(false);
