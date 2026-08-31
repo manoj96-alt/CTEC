@@ -242,7 +242,14 @@ jobs:
             echo "attempt $i: authenticated OQI read returned HTTP $code, retrying..."
             sleep 2
           done
-          [ -n "$ok" ] || { echo "authenticated OQI read failed: HTTP $code"; docker compose logs backend; exit 1; }
+          if [ -z "$ok" ]; then
+            echo "authenticated OQI read failed: HTTP $code"
+            echo "--- diagnostic: backend's own CTEC_DATABASE_URL and settings ---"
+            docker compose exec -T backend env | grep -i CTEC_DATABASE || echo "(CTEC_DATABASE_URL not set in container env)"
+            docker compose exec -T backend python -c "from app.core.config import get_settings; s = get_settings(); print('database_url is None:', s.database_url is None)"
+            docker compose logs backend
+            exit 1
+          fi
           echo "authenticated OQI read: 200 OK; oqi:read plus both optional OQI remediation scopes were genuinely issued"
 
       - name: Seed the deterministic OQI demo-showcase foundation (idempotent, demo tenant only)
