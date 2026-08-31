@@ -117,8 +117,14 @@ jobs:
           ok=""
           for i in $(seq 1 60); do
             cid=$(docker compose ps -aq keycloak-bootstrap)
+            # A freshly-created-but-not-yet-run container also reports
+            # ExitCode=0 as its zero value -- Status must genuinely be
+            # "exited" too, or this races the container actually running.
+            rstatus=$(docker inspect --format='{{.State.Status}}' "$cid" 2>/dev/null || echo "")
             code=$(docker inspect --format='{{.State.ExitCode}}' "$cid" 2>/dev/null || echo "")
-            if [ "$code" = "0" ]; then ok=1; echo "keycloak-bootstrap: completed"; break; fi
+            if [ "$rstatus" = "exited" ] && [ "$code" = "0" ]; then
+              ok=1; echo "keycloak-bootstrap: completed"; break
+            fi
             sleep 2
           done
           if [ -z "$ok" ]; then
