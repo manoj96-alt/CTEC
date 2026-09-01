@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   accessToken,
@@ -12,6 +12,14 @@ import {
 
 export function SessionControls() {
   const pathname = usePathname();
+  // This mount's effect intentionally runs once (see the [] deps below) and
+  // must judge "am I mounting on /auth/callback" only at that moment -- the
+  // component itself persists across later client-side route changes
+  // (root-layout-mounted), and re-running this whole effect on every
+  // navigation is a larger behavior change than this correction calls for.
+  // A ref (not `pathname` itself) is the correct way to read a value once
+  // without becoming a reactive effect dependency.
+  const initialPathnameRef = useRef(pathname);
   const [signedIn, setSignedIn] = useState(false);
   // Distinct from `signedIn`: whether browser auth is configured at all
   // (e.g. NEXT_PUBLIC_OIDC_* present). Defaults to false so a misconfigured
@@ -50,6 +58,15 @@ export function SessionControls() {
     const markAuthAvailable = () => {
       if (active) setAuthAvailable(true);
     };
+    // sessionManager() succeeding already proves auth is configured --
+    // independent of whether the accessToken() check below runs (it is
+    // deliberately skipped on /auth/callback, see below), so this must not
+    // depend on that check ever resolving. This component is mounted once
+    // by the root layout and persists across client-side route changes
+    // (e.g. /auth/callback -> the original page), so this is the only
+    // chance this mount gets to establish authAvailable if it lands on
+    // /auth/callback first.
+    void Promise.resolve().then(markAuthAvailable);
 
     const unsubscribeLoaded = manager.events.addUserLoaded((user) => {
       liveStateObserved = true;
@@ -64,21 +81,33 @@ export function SessionControls() {
       if (active) setSignedIn(false);
     });
 
-    accessToken()
-      .then((token) => {
-        markAuthAvailable();
-        if (active && !liveStateObserved && !sessionLossObserved) {
-          setSignedIn(token !== null);
-        }
-      })
-      .catch(() => {
-        // Browser auth is not configured or the session lookup otherwise
-        // failed -- either way there is no session to sign out of.
-        markAuthAvailable();
-        if (active && !liveStateObserved && !sessionLossObserved) {
-          setSignedIn(false);
-        }
-      });
+    // AUTH-UX-I-R: /auth/callback is the sole owner of processing the
+    // active OIDC callback (via completeSignIn()/signinRedirectCallback()).
+    // Because this component is mounted by the root layout on every route
+    // including /auth/callback itself, an unconditional accessToken() call
+    // here would independently race that in-flight processing and could
+    // start its own second bounded-renewal redirect before the first one
+    // finished being handled -- exactly the loop VM identified. The
+    // userLoaded/userUnloaded listeners above stay active (they only
+    // observe, never initiate), so a genuine sign-in completed by the
+    // callback page is still reflected immediately.
+    if (initialPathnameRef.current !== "/auth/callback") {
+      accessToken()
+        .then((token) => {
+          markAuthAvailable();
+          if (active && !liveStateObserved && !sessionLossObserved) {
+            setSignedIn(token !== null);
+          }
+        })
+        .catch(() => {
+          // Browser auth is not configured or the session lookup otherwise
+          // failed -- either way there is no session to sign out of.
+          markAuthAvailable();
+          if (active && !liveStateObserved && !sessionLossObserved) {
+            setSignedIn(false);
+          }
+        });
+    }
 
     const stopObserving = observeSessionLoss(() => {
       sessionLossObserved = true;

@@ -300,3 +300,37 @@ test("after a cross-tab session-loss signal, a slower stale initial accessToken(
     screen.queryByRole("button", { name: "Sign out" }),
   ).not.toBeInTheDocument();
 });
+
+// AUTH-UX-I-R: /auth/callback is the sole owner of processing the active
+// OIDC callback -- SessionControls must never independently race it by
+// calling accessToken() (which can trigger a bounded-renewal redirect)
+// while mounted there.
+test("does not call accessToken() while mounted on /auth/callback", async () => {
+  usePathnameMock.mockReturnValue("/auth/callback");
+  render(<SessionControls />);
+  // authAvailable is still established (via the deferred microtask, not
+  // via accessToken()), proving this isn't merely "nothing ran yet".
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+  expect(accessTokenMock).not.toHaveBeenCalled();
+});
+
+// A genuine sign-in completed by the callback page's own completeSignIn()
+// must still be reflected immediately via the (still-active) userLoaded
+// listener, even though accessToken() itself was skipped.
+test("a userLoaded event on /auth/callback still shows Sign out, despite accessToken() being skipped there", async () => {
+  usePathnameMock.mockReturnValue("/auth/callback");
+  render(<SessionControls />);
+  await waitFor(() => expect(sessionManagerMock).toHaveBeenCalled());
+  expect(accessTokenMock).not.toHaveBeenCalled();
+
+  expect(userLoadedCallback).not.toBeNull();
+  userLoadedCallback?.(fakeUser(false));
+
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Sign out" }),
+    ).toBeInTheDocument(),
+  );
+});

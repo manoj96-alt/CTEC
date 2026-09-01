@@ -36,12 +36,44 @@ function currentSafePath(): string {
     ? "/supplier-risk"
     : safeReturnPath(window.location.pathname);
 }
+// AUTH-UX-I-R: a module-level flag alone is insufficient, because the
+// bounded-renewal round trip itself (origin page -> Keycloak -> /auth
+// /callback) is a full top-level navigation that destroys and recreates
+// this entire JS module -- including this flag -- and /auth/callback is
+// itself wrapped by the same root layout as every other page, so its own
+// fresh mount could otherwise re-enter this exact function and start a
+// second, independent renewal before the first one has even finished being
+// processed (VM's discovered redirect-loop risk). sessionStorage survives
+// that full-page reload without ever holding a token, an ID, or any secret
+// -- it is a single boolean fact ("a bounded renewal round trip is already
+// under way or has already failed for this browser tab"), the same class
+// of non-token OIDC transaction-correlation data BSP-001 already permits
+// for stateStore. It is never read as, and never contains, authentication
+// or authorization material.
+const RENEWAL_MARKER_KEY = "ctec-auth-bounded-renewal";
+function renewalMarkerSet(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    sessionStorage.getItem(RENEWAL_MARKER_KEY) === "1"
+  );
+}
+function setRenewalMarker(): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem(RENEWAL_MARKER_KEY, "1");
+  }
+}
+function clearRenewalMarker(): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.removeItem(RENEWAL_MARKER_KEY);
+  }
+}
 // AUTH-UX-G bounded renewal: at most one prompt=none top-level Authorization
-// Code + PKCE attempt per module (i.e. per page load), never signinSilent()
-// (blocked by this app's own frozen frame-ancestors 'none' CSP -- BSP-001
-// still requires memory-only tokens, so there is no iframe involved at all).
-// This flag is intentionally not exported: it is pure internal one-shot
-// bookkeeping, not authentication or authorization state.
+// Code + PKCE attempt per browser-tab lifecycle (see RENEWAL_MARKER_KEY
+// above for why a per-module flag alone cannot enforce this), never
+// signinSilent() (blocked by this app's own frozen frame-ancestors 'none'
+// CSP -- BSP-001 still requires memory-only tokens, so there is no iframe
+// involved at all). This flag is intentionally not exported: it is pure
+// internal one-shot bookkeeping, not authentication or authorization state.
 let renewalAttempted = false;
 // AUTH-UX-G shared lifecycle: the single place accessToken()/principalId()
 // obtain a currently-usable User. A missing or expired in-memory User
@@ -50,9 +82,18 @@ let renewalAttempted = false;
 async function restoredUser(): Promise<User | null> {
   const sessionManagerInstance = sessionManager();
   const user = await sessionManagerInstance.getUser();
-  if (user && !user.expired) return user;
-  if (renewalAttempted) return null;
+  if (user && !user.expired) {
+    // A stale marker from an earlier failed attempt (e.g. in a different
+    // tab, or before this valid user materialized) no longer applies.
+    clearRenewalMarker();
+    return user;
+  }
+  if (renewalAttempted || renewalMarkerSet()) return null;
   renewalAttempted = true;
+  // Set before navigating away, not after detecting failure: this is what
+  // makes the guard survive the full-page reload a fresh /auth/callback
+  // mount causes, closing the exact race VM identified.
+  setRenewalMarker();
   // BSP-001: "Renewal uses bounded OIDC authorization with PKCE; if silent
   // authorization is not supported or fails, explicit reauthentication is
   // required." prompt: "none" guarantees Keycloak either redirects back
@@ -89,6 +130,9 @@ export async function principalId(): Promise<string | null> {
   return typeof sub === "string" && sub.length > 0 ? sub : null;
 }
 export async function signIn(returnPath = "/supplier-risk"): Promise<void> {
+  // A deliberate user action always gets a clean slate -- the automatic-
+  // renewal suppression marker must never block an explicit sign-in.
+  clearRenewalMarker();
   await sessionManager().signinRedirect({
     state: { returnPath: safeReturnPath(returnPath) },
   });
@@ -98,6 +142,10 @@ export async function completeSignIn(): Promise<{
   returnPath: string;
 }> {
   const user = await sessionManager().signinRedirectCallback();
+  // A fresh, validated User -- whether from an explicit sign-in or a
+  // successful bounded renewal -- means any earlier suppression no longer
+  // applies.
+  clearRenewalMarker();
   const state = user.state as { returnPath?: string } | undefined;
   const path = state?.returnPath;
   return {

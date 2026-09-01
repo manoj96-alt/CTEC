@@ -24,10 +24,12 @@ afterEach(() => {
 // principalId(), bounded renewal). Mocks oidc-client-ts the same way
 // browser-session-signout.test.ts already does, so no real network/storage
 // is ever touched.
-const { getUserMock, signinRedirectMock } = vi.hoisted(() => ({
-  getUserMock: vi.fn(),
-  signinRedirectMock: vi.fn(),
-}));
+const { getUserMock, signinRedirectMock, signinRedirectCallbackMock } =
+  vi.hoisted(() => ({
+    getUserMock: vi.fn(),
+    signinRedirectMock: vi.fn(),
+    signinRedirectCallbackMock: vi.fn(),
+  }));
 
 vi.mock("oidc-client-ts", () => {
   class FakeUserManager {
@@ -40,6 +42,9 @@ vi.mock("oidc-client-ts", () => {
     }
     async signinRedirect(...args: unknown[]): Promise<unknown> {
       return signinRedirectMock(...args);
+    }
+    async signinRedirectCallback(...args: unknown[]): Promise<unknown> {
+      return signinRedirectCallbackMock(...args);
     }
   }
   class FakeWebStorageStateStore {}
@@ -86,8 +91,13 @@ describe("shared authenticated-user lifecycle (accessToken/principalId/bounded r
     }
     getUserMock.mockReset();
     signinRedirectMock.mockReset();
+    signinRedirectCallbackMock.mockReset();
     signinRedirectMock.mockResolvedValue(undefined);
     window.history.pushState({}, "", "/supplier-risk");
+    // sessionStorage is a real jsdom Storage instance, not module state --
+    // vi.resetModules() does not clear it. The AUTH-UX-I-R renewal-
+    // suppression marker must not leak between tests.
+    sessionStorage.clear();
     vi.resetModules();
   });
 
@@ -186,6 +196,66 @@ describe("shared authenticated-user lifecycle (accessToken/principalId/bounded r
       state?: { returnPath?: string };
     };
     expect(call.state?.returnPath).toBe("/supplier-risk");
+  });
+
+  // AUTH-UX-I-R: models the exact cross-module-instance race VM found --
+  // the bounded-renewal round trip is a full top-level navigation that
+  // destroys and recreates the JS module (simulated here via
+  // vi.resetModules() + a fresh import), and /auth/callback's own
+  // SessionControls mount could otherwise independently re-enter this
+  // path. A single test asserting "no second signinRedirect within one
+  // module instance" is insufficient; this asserts it across two.
+  test("a suppression marker set by a failed/in-flight bounded renewal survives a fresh module instance and prevents a second automatic attempt", async () => {
+    getUserMock.mockResolvedValue(null);
+    const first = await import("@/lib/auth/browser-session");
+    expect(await first.accessToken()).toBeNull();
+    expect(signinRedirectMock).toHaveBeenCalledTimes(1);
+
+    // Simulate the full-page reload landing on /auth/callback: a brand new
+    // module instance (fresh `manager`, fresh `renewalAttempted`), but the
+    // same browser tab's sessionStorage.
+    vi.resetModules();
+    const second = await import("@/lib/auth/browser-session");
+    expect(await second.accessToken()).toBeNull();
+    expect(signinRedirectMock).toHaveBeenCalledTimes(1); // still exactly 1
+  });
+
+  test("a successful bounded-renewal callback clears the suppression marker, so a later fresh module instance may attempt renewal again", async () => {
+    getUserMock.mockResolvedValue(null);
+    const first = await import("@/lib/auth/browser-session");
+    await first.accessToken();
+    expect(signinRedirectMock).toHaveBeenCalledTimes(1);
+
+    // The callback page's completeSignIn() succeeds (e.g. Keycloak's SSO
+    // session was valid after all).
+    signinRedirectCallbackMock.mockResolvedValue({
+      state: { returnPath: "/quality" },
+    });
+    vi.resetModules();
+    const callbackModule = await import("@/lib/auth/browser-session");
+    await callbackModule.completeSignIn();
+
+    // A later, genuinely new lifecycle (e.g. after the user eventually
+    // signs out and a new tab/session begins) is not permanently blocked.
+    vi.resetModules();
+    const third = await import("@/lib/auth/browser-session");
+    getUserMock.mockResolvedValue(null);
+    await third.accessToken();
+    expect(signinRedirectMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("explicit signIn() clears a stale suppression marker rather than being blocked by it", async () => {
+    getUserMock.mockResolvedValue(null);
+    const first = await import("@/lib/auth/browser-session");
+    await first.accessToken();
+    expect(signinRedirectMock).toHaveBeenCalledTimes(1);
+
+    vi.resetModules();
+    const second = await import("@/lib/auth/browser-session");
+    await second.signIn("/quality");
+    // signIn() is a distinct call path from the bounded-renewal guard --
+    // it must never be suppressed by a stale marker.
+    expect(signinRedirectMock).toHaveBeenCalledTimes(2);
   });
 });
 
