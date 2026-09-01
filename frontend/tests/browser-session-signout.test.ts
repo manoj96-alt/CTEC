@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-const { removeUserMock, signoutRedirectMock, broadcastPostMessageMock } =
-  vi.hoisted(() => ({
-    removeUserMock: vi.fn(),
-    signoutRedirectMock: vi.fn(),
-    broadcastPostMessageMock: vi.fn(),
-  }));
+const {
+  removeUserMock,
+  signoutRedirectMock,
+  broadcastPostMessageMock,
+  getUserMock,
+  signinRedirectMock,
+} = vi.hoisted(() => ({
+  removeUserMock: vi.fn(),
+  signoutRedirectMock: vi.fn(),
+  broadcastPostMessageMock: vi.fn(),
+  getUserMock: vi.fn(),
+  signinRedirectMock: vi.fn(),
+}));
 
 let callOrder: string[] = [];
 let constructedChannelNames: string[] = [];
@@ -23,6 +30,15 @@ vi.mock("oidc-client-ts", () => {
     async signoutRedirect(...args: unknown[]): Promise<void> {
       callOrder.push("signoutRedirect");
       await signoutRedirectMock(...args);
+    }
+    // AUTH-UX-I: exist only so signOut()'s independence from the bounded-
+    // renewal mechanism (getUser()/signinRedirect()) can be asserted below;
+    // no test in this file exercises accessToken()/principalId().
+    async getUser(...args: unknown[]): Promise<unknown> {
+      return getUserMock(...args);
+    }
+    async signinRedirect(...args: unknown[]): Promise<unknown> {
+      return signinRedirectMock(...args);
     }
   }
   class FakeWebStorageStateStore {}
@@ -69,6 +85,8 @@ beforeEach(() => {
   removeUserMock.mockReset();
   signoutRedirectMock.mockReset();
   broadcastPostMessageMock.mockReset();
+  getUserMock.mockReset();
+  signinRedirectMock.mockReset();
   removeUserMock.mockResolvedValue(undefined);
   signoutRedirectMock.mockResolvedValue(undefined);
   vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
@@ -136,4 +154,15 @@ test("signOut() still broadcasts logout even when signoutRedirect() subsequently
     "logout",
   );
   stop();
+});
+
+// AUTH-UX-I: signOut() and the bounded-renewal mechanism (accessToken()/
+// principalId()) must remain independent code paths -- logout never
+// consults or resets renewal state, and renewal never runs as a side effect
+// of logging out.
+test("signOut() never calls getUser() or signinRedirect() -- logout is independent of bounded renewal", async () => {
+  const { signOut } = await import("@/lib/auth/browser-session");
+  await signOut();
+  expect(getUserMock).not.toHaveBeenCalled();
+  expect(signinRedirectMock).not.toHaveBeenCalled();
 });
