@@ -50,7 +50,8 @@
         "oqi-remediation:authorize",
         "oqi-remediation:report-execution",
         "oqi-reference-evidence:configure",
-        "oqi-reference-evidence:verify"
+        "oqi-reference-evidence:verify",
+        "oqi-canonical-standard:configure"
       ]
     }
   ],
@@ -349,6 +350,15 @@
       "name": "oqi-reference-evidence:verify",
       "protocol": "openid-connect",
       "description": "CDD-048 canonical scope -- OQI-H2 governed human-verification authority for Reference Evidence (PO-03). Never substitutable by :configure or any remediation scope; not granted to the primary demo persona by default.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-canonical-standard:configure",
+      "protocol": "openid-connect",
+      "description": "CDD-049 canonical scope -- OQI-H3 governed CanonicalStandard configuration authority (create/version/retire canonical values/aliases). Never substitutable by remediation or reference-evidence scopes; not granted to the primary demo persona by default.",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"

@@ -49,6 +49,11 @@ class RemediationCandidateBasis(StrEnum):
     OQI3_BUSINESS_RULE = "OQI3_BUSINESS_RULE"
     ACCURACY_REFERENCE_EVIDENCE = "ACCURACY_REFERENCE_EVIDENCE"
     REASONABLENESS_CONTEXTUAL_RULE = "REASONABLENESS_CONTEXTUAL_RULE"
+    #: CDD-049 §24: naming the new dimension directly, mirroring
+    #: ACCURACY_REFERENCE_EVIDENCE's own addition pattern exactly. No
+    #: dispatch logic anywhere in the codebase branches on `basis` --
+    #: unaffected by this extension.
+    CONFORMITY_CANONICAL_STANDARD = "CONFORMITY_CANONICAL_STANDARD"
 
 
 def _sorted_unique(ids: Sequence[UUID]) -> tuple[UUID, ...]:
@@ -325,6 +330,53 @@ def extract_accuracy_candidates(
             missing_participant_roles=(),
             authority_participant_role=None,
             basis=RemediationCandidateBasis.ACCURACY_REFERENCE_EVIDENCE,
+            extracted_at=now,
+        ),
+    )
+
+
+def extract_conformity_candidates(
+    *,
+    case_id: UUID,
+    target_source_object_id: UUID,
+    target_source_field_id: UUID,
+    observed_evidence_id: UUID,
+    canonical_value: str,
+    canonical_value_id: UUID,
+    now: datetime,
+) -> tuple[RemediationCandidate, ...]:
+    """CDD-049 §24: proposes correcting the observed representation toward
+    the exact governed canonical value the Conformity evaluator itself
+    already established -- evidence-backed, mirroring
+    `extract_accuracy_candidates`'s precedent exactly. Never fabricates a
+    value: `canonical_value` is always the already-computed comparison
+    target, never re-derived here. Never claims the canonical value is also
+    accurate (CANONICAL != ACCURATE, CDD-049 §5) -- this candidate is purely
+    a defensible representation-format correction. `canonical_value_id`
+    alone fully identifies the exact `CanonicalStandard` version consulted
+    (each standard version owns its own independent `CanonicalValue` rows,
+    CDD-049 §10) -- no separate version parameter is required, mirroring how
+    `backing_assertion_ids` alone suffices for Accuracy without a separate
+    dataset-version parameter."""
+    candidate_id = derive_remediation_candidate_id(
+        case_id=case_id,
+        target_source_object_id=target_source_object_id,
+        target_source_field_id=target_source_field_id,
+        proposed_value=canonical_value,
+        supporting_evidence_ids=(canonical_value_id,),
+    )
+    return (
+        RemediationCandidate(
+            candidate_id=candidate_id,
+            case_id=case_id,
+            target_source_object_id=target_source_object_id,
+            target_source_field_id=target_source_field_id,
+            proposed_value=canonical_value,
+            supporting_evidence_ids=(canonical_value_id,),
+            conflicting_evidence_ids=(observed_evidence_id,),
+            missing_participant_roles=(),
+            authority_participant_role=None,
+            basis=RemediationCandidateBasis.CONFORMITY_CANONICAL_STANDARD,
             extracted_at=now,
         ),
     )

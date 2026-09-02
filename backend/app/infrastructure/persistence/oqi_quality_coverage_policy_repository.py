@@ -38,6 +38,9 @@ from app.infrastructure.persistence.oqi_accuracy_evaluation_repository import (
 from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
     OqiBusinessRuleEvaluationRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_conformity_evaluation_repository import (
+    OqiConformityEvaluationRepositoryImpl,
+)
 from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
     OqiCrossSourceEvaluationRepositoryImpl,
 )
@@ -260,7 +263,19 @@ class OqiQualityCoveragePolicyRepositoryImpl:
             ).has_qualifying_coverage_for_dimension(
                 tenant_id=tenant_id, source_object_ids=source_object_ids, dimension=dimension.value
             )
-        # UNIQUENESS, TIMELINESS, INTEGRITY, CONFORMITY: no evaluator
-        # exists (CDD-047 §14, unchanged). Never query, never infer, never
-        # synthesize -- unconditionally uncovered.
+        # CDD-049 §21: CONFORMITY is OQI1-storage-shaped (same evaluation
+        # ledger, dimension=CONFORMITY) -- reuses the identically-shaped
+        # conformity repository method. NO_STANDARD/NOT_MAPPED/AMBIGUOUS
+        # all produce zero persisted evaluation rows (CDD-049 §14), so this
+        # query structurally returns False for those cases without any
+        # special-casing here.
+        if dimension is CoverageDimension.CONFORMITY:
+            return OqiConformityEvaluationRepositoryImpl(
+                self.session
+            ).has_qualifying_coverage_for_dimension(
+                tenant_id=tenant_id, source_object_ids=source_object_ids, dimension=dimension.value
+            )
+        # UNIQUENESS, TIMELINESS, INTEGRITY: no evaluator exists (CDD-047
+        # §14, unchanged). Never query, never infer, never synthesize --
+        # unconditionally uncovered.
         return False

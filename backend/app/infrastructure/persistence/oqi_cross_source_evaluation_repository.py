@@ -30,6 +30,9 @@ from app.domain.oqi_cross_source.evaluation import (
 )
 from app.domain.oqi_cross_source.finding import QualityComparisonFinding
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
+from app.infrastructure.persistence.models.oqi_canonical_standard import (
+    ComparisonParticipantCanonicalProjectionORM,
+)
 from app.infrastructure.persistence.models.oqi_cross_source_evaluation import (
     QualityComparisonEvaluationEvidenceORM,
     QualityComparisonEvaluationObservationORM,
@@ -55,6 +58,15 @@ class OqiCrossSourceEvaluationRepository(Protocol):
     def insert_evaluation_idempotent(self, evaluation: QualityComparisonEvaluation) -> bool: ...
 
     def upsert_finding(self, finding: QualityComparisonFinding) -> None: ...
+
+    def link_canonical_projection(
+        self,
+        *,
+        evaluation_id: UUID,
+        participant_role: str,
+        canonical_value_id: UUID,
+        standard_version: int,
+    ) -> None: ...
 
     def select_known_lineage(
         self, *, source_object_id: UUID, source_record_reference: str, evaluation_horizon: datetime
@@ -165,6 +177,26 @@ class OqiCrossSourceEvaluationRepositoryImpl:
         model.occurrence_count = finding.occurrence_count
         model.reopen_count = finding.reopen_count
         model.latest_evaluation_id = finding.latest_evaluation_id
+
+    def link_canonical_projection(
+        self,
+        *,
+        evaluation_id: UUID,
+        participant_role: str,
+        canonical_value_id: UUID,
+        standard_version: int,
+    ) -> None:
+        """CDD-049 §17: pins the exact `CanonicalValue`/version one
+        participant was successfully projected through in a Case-B
+        comparison."""
+        self.session.add(
+            ComparisonParticipantCanonicalProjectionORM(
+                evaluation_id=evaluation_id,
+                participant_role=participant_role,
+                canonical_value_id=canonical_value_id,
+                standard_version=standard_version,
+            )
+        )
 
     def select_known_lineage(
         self, *, source_object_id: UUID, source_record_reference: str, evaluation_horizon: datetime

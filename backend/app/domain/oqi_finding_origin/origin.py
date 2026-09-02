@@ -97,6 +97,7 @@ _OQI1_FINDING_TYPE_TO_DIMENSION: dict[QualityFindingType, QualityDimension] = {
     QualityFindingType.FORMAT_VIOLATION: QualityDimension.VALIDITY,
     QualityFindingType.RANGE_VIOLATION: QualityDimension.VALIDITY,
     QualityFindingType.REFERENCE_VALUE_UNSUPPORTED: QualityDimension.ACCURACY,
+    QualityFindingType.NON_CANONICAL_REPRESENTATION: QualityDimension.CONFORMITY,
 }
 
 

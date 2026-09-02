@@ -41,6 +41,11 @@ from app.domain.oqi.evaluation import (
     SourceRecordLineageIdentity,
 )
 from app.domain.oqi.quality_rule import QualityDimension, QualityRule, QualityRuleStatus
+from app.domain.oqi_canonical_standard.standard import (
+    CanonicalizationState,
+    CanonicalStandard,
+    canonicalize,
+)
 from app.domain.oqi_cross_source.correspondence import (
     ComparisonSubjectCorrespondence,
     ComparisonSubjectCorrespondenceStatus,
@@ -61,6 +66,11 @@ from app.domain.oqi_cross_source.finding import (
     apply_correspondence_finding_transition,
 )
 from app.domain.shared.exceptions import DomainException, ValidationException
+
+#: CDD-049 §16: one row per participant successfully canonicalized and
+#: consulted in a Case-B comparison -- (participant_role, canonical_value_id,
+#: standard_version).
+CanonicalProjectionRow = tuple[str, UUID, int]
 
 
 class OqiCrossSourceEvaluationError(DomainException):
@@ -98,15 +108,32 @@ class ComparisonEvaluationRepository(ParticipantEvidenceRepository, Protocol):
 
     def upsert_finding(self, finding: QualityComparisonFinding) -> None: ...
 
+    def link_canonical_projection(
+        self,
+        *,
+        evaluation_id: UUID,
+        participant_role: str,
+        canonical_value_id: UUID,
+        standard_version: int,
+    ) -> None: ...
+
+
+class CanonicalStandardLookup(Protocol):
+    def get_active_standard_for_information_element(
+        self, *, information_element_requirement_id: UUID
+    ) -> CanonicalStandard | None: ...
+
 
 class OqiCrossSourceEvaluationService:
     def __init__(
         self,
         *,
         evaluation_repository: ComparisonEvaluationRepository,
+        canonical_standard_lookup: CanonicalStandardLookup | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._evaluation_repository = evaluation_repository
+        self._canonical_standard_lookup = canonical_standard_lookup
         self._clock = clock
 
     def evaluate_historical(
@@ -128,7 +155,7 @@ class OqiCrossSourceEvaluationService:
         )
         if result is None:
             return None
-        outcome, observations, participants = result
+        outcome, observations, participants, canonical_projections = result
 
         digest = participant_evidence_digest(participants)
         evaluation = QualityComparisonEvaluation(
@@ -158,7 +185,15 @@ class OqiCrossSourceEvaluationService:
             evaluated_on=self._clock(),
             observations=observations,
         )
-        self._evaluation_repository.insert_evaluation_idempotent(evaluation)
+        newly_inserted = self._evaluation_repository.insert_evaluation_idempotent(evaluation)
+        if newly_inserted:
+            for role, canonical_value_id, standard_version in canonical_projections:
+                self._evaluation_repository.link_canonical_projection(
+                    evaluation_id=evaluation.evaluation_id,
+                    participant_role=role,
+                    canonical_value_id=canonical_value_id,
+                    standard_version=standard_version,
+                )
         return evaluation
 
     def evaluate_current_state(
@@ -201,11 +236,12 @@ class OqiCrossSourceEvaluationService:
         )
         if result is None:
             # Fewer than 2 known-and-valued participants and no
-            # deterministically-provable missingness: no evaluation, no
-            # Finding touched. Authority releases automatically on
-            # commit/rollback.
+            # deterministically-provable missingness, OR a CDD-049 §16.2
+            # canonicalization-failure NOT_EVALUABLE attempt with nothing
+            # else to report: no evaluation, no Finding touched. Authority
+            # releases automatically on commit/rollback.
             return None
-        outcome, observations, participants = result
+        outcome, observations, participants, canonical_projections = result
 
         finding_id = derive_comparison_finding_id(
             tenant_id=correspondence.tenant_id,
@@ -259,8 +295,16 @@ class OqiCrossSourceEvaluationService:
         # (already correctly mutated by the original application) MUST NOT
         # be mutated a second time.
         newly_inserted = self._evaluation_repository.insert_evaluation_idempotent(evaluation)
-        if newly_inserted and next_finding is not None:
-            self._evaluation_repository.upsert_finding(next_finding)
+        if newly_inserted:
+            for role, canonical_value_id, standard_version in canonical_projections:
+                self._evaluation_repository.link_canonical_projection(
+                    evaluation_id=evaluation.evaluation_id,
+                    participant_role=role,
+                    canonical_value_id=canonical_value_id,
+                    standard_version=standard_version,
+                )
+            if next_finding is not None:
+                self._evaluation_repository.upsert_finding(next_finding)
         return evaluation
 
     def _select_participant_evidence_and_evaluate(
@@ -274,15 +318,16 @@ class OqiCrossSourceEvaluationService:
             EvaluationOutcome,
             tuple[ComparisonObservation, ...],
             tuple[ParticipantEvidenceEntry, ...],
+            tuple[CanonicalProjectionRow, ...],
         ]
         | None
     ):
         """CDD-040 §27-§30's participant-selection algorithm, combined with
         the N-Source Finding Representation Amendment §13 replacement for
-        the missingness short-circuit. Returns `(outcome, observations,
-        participants)` or `None` when no evaluation is possible (fewer than
-        2 known-and-valued participants and no deterministically-provable
-        missingness)."""
+        the missingness short-circuit, combined with CDD-049 §16's governed
+        canonical-projection gate. Returns `(outcome, observations,
+        participants, canonical_projections)` or `None` when no evaluation
+        is possible."""
         members_by_role = {member.participant_role: member for member in correspondence.members}
         configured_participants = rule.rule_parameters["participants"]
 
@@ -382,11 +427,55 @@ class OqiCrossSourceEvaluationService:
             for role in missing_roles
         ]
 
-        # Amendment §13 step 2: whenever >= 2 known values exist,
-        # independently evaluate them for disagreement -- regardless of
-        # whether any participant is simultaneously missing.
-        if len(known_values) >= 2:
-            consistency_outcome = evaluate_consistency(participant_values=known_values)
+        # CDD-049 §16.1: resolve the applicable CanonicalStandard for this
+        # comparison's Information Element (the rule's own
+        # information_element_requirement_id -- every QualityRule of every
+        # dimension carries this field, CDD-049 §8). CASE A (no standard,
+        # or no lookup wired at all) leaves comparison_values as the raw
+        # known_values, byte-for-byte unchanged from pre-H3 behavior.
+        comparison_values: dict[str, str] = known_values
+        canonicalization_failed = False
+        canonical_projections: list[CanonicalProjectionRow] = []
+
+        if len(known_values) >= 2 and self._canonical_standard_lookup is not None:
+            standard = self._canonical_standard_lookup.get_active_standard_for_information_element(
+                information_element_requirement_id=UUID(rule.information_element_requirement_id)
+            )
+            if standard is not None:
+                # CASE B: every required known participant must resolve
+                # under this ONE standard/version, or the value-agreement
+                # sub-computation is NOT_EVALUABLE (CDD-049 §16.1).
+                projected_values: dict[str, str] = {}
+                for role, raw_value in known_values.items():
+                    result = canonicalize(standard=standard, observed_representation=raw_value)
+                    if result.resolution_state in (
+                        CanonicalizationState.NOT_MAPPED,
+                        CanonicalizationState.AMBIGUOUS,
+                    ):
+                        canonicalization_failed = True
+                        break
+                    assert result.resolved_canonical_value is not None
+                    assert result.canonical_value_id is not None
+                    assert result.standard_version is not None
+                    projected_values[role] = result.resolved_canonical_value
+                    canonical_projections.append(
+                        (role, result.canonical_value_id, result.standard_version)
+                    )
+                if canonicalization_failed:
+                    canonical_projections = []
+                else:
+                    comparison_values = projected_values
+
+        # Amendment §13 step 2 / CDD-049 §16.1: whenever >= 2 known values
+        # exist AND canonicalization did not fail, independently evaluate
+        # them for disagreement -- regardless of whether any participant is
+        # simultaneously missing. A canonicalization failure contributes NO
+        # observation of any kind here -- CANONICALIZATION FAILURE ≠ VALUE
+        # CONFLICT (CDD-049 §16, §32) -- it never fabricates a
+        # CROSS_SOURCE_VALUE_CONFLICT and never falls back to raw
+        # comparison.
+        if len(known_values) >= 2 and not canonicalization_failed:
+            consistency_outcome = evaluate_consistency(participant_values=comparison_values)
             if consistency_outcome is EvaluationOutcome.VIOLATED:
                 observations.extend(
                     ComparisonObservation(
@@ -396,9 +485,20 @@ class OqiCrossSourceEvaluationService:
                     for role in known_values
                 )
 
-        # Amendment §13 step 4: outcome derived from combined observations.
+        # Amendment §13 step 4 / CDD-049 §16.2: outcome derived from
+        # combined observations.
         if observations:
+            # Missingness (independent of canonicalization) or a genuine
+            # value conflict -- either way, a real evaluation row is
+            # inserted.
             outcome = EvaluationOutcome.VIOLATED
+        elif canonicalization_failed:
+            # CDD-049 §16.2: no missingness, canonicalization failed for a
+            # known participant, no successful comparison was possible --
+            # the ENTIRE attempt is NOT_EVALUABLE. Zero new
+            # QualityComparisonEvaluation row, never a fabricated
+            # CROSS_SOURCE_VALUE_CONFLICT.
+            return None
         elif len(known_values) >= 2:
             outcome = EvaluationOutcome.SATISFIED
         else:
@@ -407,7 +507,7 @@ class OqiCrossSourceEvaluationService:
             # or disprove cross-source consistency.
             return None
 
-        return outcome, tuple(observations), tuple(participants)
+        return outcome, tuple(observations), tuple(participants), tuple(canonical_projections)
 
 
 def _assert_rule_and_correspondence_scope(
