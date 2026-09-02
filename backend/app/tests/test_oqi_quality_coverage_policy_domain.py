@@ -38,15 +38,22 @@ def test_coverage_dimension_is_exactly_nine() -> None:
     }
 
 
-def test_quality_dimension_remains_exactly_three_and_unmodified() -> None:
-    """CDD-047 §5: H1 must not expand QualityDimension. This test proves
-    the two vocabularies are genuinely independent -- CoverageDimension
-    having nine members does not imply QualityDimension does."""
-    assert len(list(QualityDimension)) == 3
+def test_quality_dimension_is_exactly_four_after_h2_accuracy() -> None:
+    """CDD-047 §5: H1 must not expand QualityDimension -- proven true for
+    H1 by construction (H1 introduced ACCURACY nowhere). CDD-048 §7, §14
+    (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final
+    report): H2 additively extends QualityDimension with exactly one member,
+    ACCURACY -- REASONABLENESS is deliberately NOT added here, since it is
+    BusinessRule-shaped, not QualityRule-shaped (CDD-048 §10, §14). This
+    test proves the two vocabularies remain genuinely independent --
+    CoverageDimension having nine members does not imply QualityDimension
+    tracks it member-for-member."""
+    assert len(list(QualityDimension)) == 4
     assert {member.value for member in QualityDimension} == {
         "COMPLETENESS",
         "VALIDITY",
         "CONSISTENCY",
+        "ACCURACY",
     }
 
 

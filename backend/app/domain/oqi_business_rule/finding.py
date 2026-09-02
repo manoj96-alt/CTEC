@@ -65,6 +65,18 @@ class ResolutionBasis(StrEnum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class ViolationType(StrEnum):
+    """CDD-048 §14, §20 (OQI-H2-I-R1 narrow Artifact Authorization
+    correction, disclosed in the OQI-H2-I final report): the
+    finding-type-equivalent for a `dimension=REASONABLENESS` violation --
+    mirrors `QualityFinding.finding_type`'s role for OQI1. Closed, exactly
+    one member so far. Never set for a legacy or ACCURACY_REFERENCE_
+    DERIVATION-purpose rule's violation (CDD-048 §13: never fabricate
+    historical/cross-purpose semantic precision that does not exist)."""
+
+    CONTEXTUAL_PLAUSIBILITY_VIOLATION = "CONTEXTUAL_PLAUSIBILITY_VIOLATION"
+
+
 def business_rule_finding_identity_material(
     *, tenant_id: str, business_condition_id: str, subject_type: str, subject_identity: str
 ) -> str:
@@ -113,6 +125,7 @@ class BusinessRuleFinding:
     state_revision: int
     first_seen_at: datetime
     last_seen_at: datetime
+    violation_type: ViolationType | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.finding_id, UUID):
@@ -141,6 +154,10 @@ class BusinessRuleFinding:
             self.resolution_basis, ResolutionBasis
         ):
             raise ValidationException("resolution_basis must be a ResolutionBasis or None")
+        if self.status is QualityFindingStatus.RESOLVED and self.violation_type is not None:
+            raise ValidationException("RESOLVED findings must not carry a violation_type")
+        if self.violation_type is not None and not isinstance(self.violation_type, ViolationType):
+            raise ValidationException("violation_type must be a ViolationType or None")
         if not isinstance(self.latest_evaluation_id, UUID):
             raise ValidationException("latest_evaluation_id must be a UUID")
         if (
@@ -192,6 +209,7 @@ def apply_business_rule_finding_transition(
     business_condition_id: str,
     subject_type: str,
     subject_identity: str,
+    violation_type: ViolationType | None = None,
 ) -> BusinessRuleFinding | None:
     """CDD-041 §14's exact transition table, as a pure function. Callers
     MUST NOT invoke this for `NOT_EVALUABLE` (which has no `EvaluationOutcome`
@@ -233,6 +251,7 @@ def apply_business_rule_finding_transition(
             state_revision=1,
             first_seen_at=evaluation_horizon,
             last_seen_at=evaluation_horizon,
+            violation_type=violation_type,
         )
 
     if existing.status is QualityFindingStatus.OPEN and outcome is EvaluationOutcome.VIOLATED:
@@ -242,6 +261,7 @@ def apply_business_rule_finding_transition(
             state_revision=existing.state_revision + 1,
             last_seen_at=evaluation_horizon,
             latest_evaluation_id=evaluation_id,
+            violation_type=violation_type,
         )
 
     if existing.status is QualityFindingStatus.OPEN and outcome is EvaluationOutcome.SATISFIED:
@@ -252,6 +272,7 @@ def apply_business_rule_finding_transition(
             resolution_basis=ResolutionBasis.SATISFIED,
             state_revision=existing.state_revision + 1,
             latest_evaluation_id=evaluation_id,
+            violation_type=None,
         )
 
     if existing.status is QualityFindingStatus.OPEN and outcome is EvaluationOutcome.NOT_APPLICABLE:
@@ -262,6 +283,7 @@ def apply_business_rule_finding_transition(
             resolution_basis=ResolutionBasis.NOT_APPLICABLE,
             state_revision=existing.state_revision + 1,
             latest_evaluation_id=evaluation_id,
+            violation_type=None,
         )
 
     if existing.status is QualityFindingStatus.RESOLVED and outcome is EvaluationOutcome.SATISFIED:
@@ -295,4 +317,5 @@ def apply_business_rule_finding_transition(
         occurrence_count=existing.occurrence_count + 1,
         reopen_count=existing.reopen_count + 1,
         latest_evaluation_id=evaluation_id,
+        violation_type=violation_type,
     )

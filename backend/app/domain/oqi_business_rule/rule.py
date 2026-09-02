@@ -82,6 +82,23 @@ class BusinessRuleStatus(StrEnum):
     RETIRED = "RETIRED"
 
 
+class BusinessRulePurpose(StrEnum):
+    """CDD-048 §14, §19: closed, exactly these three -- the governed
+    dimension/purpose tag distinguishing a legacy (pre-H2) OQI3 business
+    rule from an H2 REASONABLENESS rule from an H2 ACCURACY_REFERENCE_
+    DERIVATION rule. A single `BusinessRule` version carries exactly one
+    purpose, never two simultaneously (CDD-048 §19's circular-proof
+    prevention: a rule may never be both a Reasonableness plausibility
+    check and an Accuracy reference-deriving rule). `LEGACY_UNCLASSIFIED_
+    BUSINESS_RULE` is the frozen, honest default for every rule created
+    before this document -- never retroactively reclassified as
+    REASONABLENESS (CDD-048 §13)."""
+
+    LEGACY_UNCLASSIFIED_BUSINESS_RULE = "LEGACY_UNCLASSIFIED_BUSINESS_RULE"
+    REASONABLENESS = "REASONABLENESS"
+    ACCURACY_REFERENCE_DERIVATION = "ACCURACY_REFERENCE_DERIVATION"
+
+
 class Operator(StrEnum):
     """CDD-041 §12: exactly these twelve node operators, closed. The first
     eight are comparators (leaves); the last four are composition
@@ -624,6 +641,7 @@ class BusinessRule:
     created_by: str
     created_on: datetime
     retired_on: datetime | None = None
+    dimension: BusinessRulePurpose = BusinessRulePurpose.LEGACY_UNCLASSIFIED_BUSINESS_RULE
 
     def __post_init__(self) -> None:
         if not isinstance(self.rule_id, UUID):
@@ -655,6 +673,8 @@ class BusinessRule:
             raise ValidationException("RETIRED rules must carry retired_on")
         if self.retired_on is not None and self.retired_on.tzinfo is None:
             raise ValidationException("retired_on must include a timezone")
+        if not isinstance(self.dimension, BusinessRulePurpose):
+            raise ValidationException("dimension must be a BusinessRulePurpose")
 
         # CDD-041 §26 point 1: construction-time enforcement.
         validate_business_rule_shape(
@@ -687,6 +707,7 @@ class BusinessRule:
         created_by: str,
         created_on: datetime,
         retired_on: datetime | None = None,
+        dimension: BusinessRulePurpose = BusinessRulePurpose.LEGACY_UNCLASSIFIED_BUSINESS_RULE,
     ) -> BusinessRule:
         rule_id = derive_business_rule_id(
             business_condition_id=business_condition_id, version=version
@@ -704,4 +725,5 @@ class BusinessRule:
             created_by=created_by,
             created_on=created_on,
             retired_on=retired_on,
+            dimension=dimension,
         )

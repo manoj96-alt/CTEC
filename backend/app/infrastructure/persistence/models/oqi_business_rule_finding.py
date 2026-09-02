@@ -3,7 +3,14 @@ projection for one governed business condition on one governed
 `SINGLE_RECORD` subject (CDD-041 §14-§15, §24; Artifact Authorization §5).
 Created by the `0022_oqi3_business_rule` migration (OQI3-I1); this file adds
 the ORM mapping OQI3-I3 needs to read/write it -- schema-only until this
-phase, per CDD-041 §33's decomposition."""
+phase, per CDD-041 §33's decomposition.
+
+CDD-048 §14, §20 (OQI-H2-I-R1 narrow Artifact Authorization correction,
+disclosed in the OQI-H2-I final report): `violation_type` is an additive,
+nullable column -- the finding-type-equivalent for a `dimension=REASONABLENESS`
+violation, mirroring `resolution_basis`'s OPEN/RESOLVED symmetry in reverse
+(non-NULL only while `status='OPEN'`). NULL for every legacy/ACCURACY_
+REFERENCE_DERIVATION-purpose Finding."""
 
 from datetime import datetime
 from uuid import UUID
@@ -39,6 +46,10 @@ class BusinessRuleFindingORM(BaseEntity):
             "(status = 'RESOLVED' AND resolution_basis IS NOT NULL)",
             name="ck_business_rule_findings_resolution_basis",
         ),
+        CheckConstraint(
+            "status = 'OPEN' OR violation_type IS NULL",
+            name="ck_business_rule_findings_violation_type",
+        ),
         Index("idx_business_rule_findings_tenant_id", "tenant_id"),
         Index("idx_business_rule_findings_status", "status"),
     )
@@ -63,3 +74,4 @@ class BusinessRuleFindingORM(BaseEntity):
     state_revision: Mapped[int] = mapped_column(Integer(), nullable=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    violation_type: Mapped[str | None] = mapped_column(String(48), nullable=True)

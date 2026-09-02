@@ -366,7 +366,9 @@ def test_migration_round_trips_86_90_86_90(migrated_engine: Engine) -> None:
                 ).scalar_one()
             )
 
-    assert _table_count() == 102
+    # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
+    # final report): mechanically re-pinned from 102 to 109.
+    assert _table_count() == 109
     alembic.command.downgrade(config, "0023_oqi4_ontology_impact")
     assert _table_count() == 86
     alembic.command.upgrade(config, "0024_oqi5_remediation")
@@ -380,7 +382,7 @@ def test_migration_round_trips_86_90_86_90(migrated_engine: Engine) -> None:
     # a latent defect only OQI5-I2's own migration 0025 exposes (until now
     # 0024 always coincided with head, since I1 was the last migration).
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 102
+    assert _table_count() == 109
 
 
 # --- OQI1 / OQI3: zero candidates by design ---

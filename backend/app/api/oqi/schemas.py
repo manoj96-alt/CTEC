@@ -167,3 +167,59 @@ class ReportExecutionRequest(BaseModel):
 
 class RemediationCaseActionResponse(BaseModel):
     case_status: str
+
+
+# ---------------------------------------------------------------------
+# CDD-048 §26, §29 -- OQI-H2 Reference Evidence configuration, human
+# verification, and conflict-listing contracts. Minimal, additive; no
+# broad Reference Evidence CRUD surface.
+# ---------------------------------------------------------------------
+
+
+class AssertGovernedReferenceDatasetRequest(BaseModel):
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    asserted_value: str
+    dataset_name: str
+    dataset_version: str
+    entry_key: str
+    created_by: str
+
+
+class RecordHumanVerifiedEvidenceRequest(BaseModel):
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    asserted_value: str
+    verifying_actor_id: str
+    verification_rationale: str
+    created_by: str
+
+
+class ReferenceEvidenceAssertionResponse(BaseModel):
+    assertion_id: UUID
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    form: str
+    asserted_value: str
+    status: str
+    version_number: int
+    created_by: str
+    created_on: datetime
+
+
+class ReferenceEvidenceConflictResponse(BaseModel):
+    conflict_id: UUID
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    conflicting_assertion_ids: tuple[UUID, ...]
+    status: str
+    first_detected_at: datetime
+    last_observed_at: datetime
+
+
+class ReferenceEvidenceConflictListResponse(BaseModel):
+    items: tuple[ReferenceEvidenceConflictResponse, ...]

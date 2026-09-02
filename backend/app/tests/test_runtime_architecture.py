@@ -1155,18 +1155,34 @@ def test_oqi1_quality_foundation_respects_every_firewall() -> None:
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
 
+    # CDD-048 §7 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
+    # final report): Accuracy is deliberately OQI1-storage-shaped -- it
+    # persists into these SAME tables via a second, new, authorized
+    # repository file (`oqi_accuracy_evaluation_repository.py`), never by
+    # modifying `oqi_quality_evaluation_repository.py` itself. The
+    # single-site invariant is relaxed to exactly these two named,
+    # authorized sites -- not to "any file."
     assert _construction_sites("QualityRuleORM") == [
         "infrastructure/persistence/oqi_quality_rule_repository.py"
     ], "QualityRuleORM constructed outside its single authorized site"
-    assert _construction_sites("QualityEvaluationORM") == [
-        "infrastructure/persistence/oqi_quality_evaluation_repository.py"
-    ], "QualityEvaluationORM constructed outside its single authorized site"
-    assert _construction_sites("QualityEvaluationEvidenceORM") == [
-        "infrastructure/persistence/oqi_quality_evaluation_repository.py"
-    ], "QualityEvaluationEvidenceORM constructed outside its single authorized site"
-    assert _construction_sites("QualityFindingORM") == [
-        "infrastructure/persistence/oqi_quality_evaluation_repository.py"
-    ], "QualityFindingORM constructed outside its single authorized site"
+    assert _construction_sites("QualityEvaluationORM") == sorted(
+        [
+            "infrastructure/persistence/oqi_accuracy_evaluation_repository.py",
+            "infrastructure/persistence/oqi_quality_evaluation_repository.py",
+        ]
+    ), "QualityEvaluationORM constructed outside its two authorized sites"
+    assert _construction_sites("QualityEvaluationEvidenceORM") == sorted(
+        [
+            "infrastructure/persistence/oqi_accuracy_evaluation_repository.py",
+            "infrastructure/persistence/oqi_quality_evaluation_repository.py",
+        ]
+    ), "QualityEvaluationEvidenceORM constructed outside its two authorized sites"
+    assert _construction_sites("QualityFindingORM") == sorted(
+        [
+            "infrastructure/persistence/oqi_accuracy_evaluation_repository.py",
+            "infrastructure/persistence/oqi_quality_evaluation_repository.py",
+        ]
+    ), "QualityFindingORM constructed outside its two authorized sites"
 
 
 def test_oqi2_cross_source_consistency_respects_every_firewall() -> None:

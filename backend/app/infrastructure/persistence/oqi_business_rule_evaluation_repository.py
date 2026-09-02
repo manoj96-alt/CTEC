@@ -60,7 +60,7 @@ from app.domain.oqi_business_rule.evaluation import (
     canonical_single_record_subject_identity,
     input_evidence_digest,
 )
-from app.domain.oqi_business_rule.finding import BusinessRuleFinding, ResolutionBasis
+from app.domain.oqi_business_rule.finding import BusinessRuleFinding, ResolutionBasis, ViolationType
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.oqi_business_rule import BusinessRuleORM
 from app.infrastructure.persistence.models.oqi_business_rule_evaluation import (
@@ -263,6 +263,9 @@ class OqiBusinessRuleEvaluationRepositoryImpl:
         model.state_revision = finding.state_revision
         model.first_seen_at = finding.first_seen_at
         model.last_seen_at = finding.last_seen_at
+        model.violation_type = (
+            None if finding.violation_type is None else finding.violation_type.value
+        )
 
     def has_any_evaluation_for_source_objects(
         self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
@@ -283,6 +286,33 @@ class OqiBusinessRuleEvaluationRepositoryImpl:
                 .where(
                     BusinessRuleEvaluationORM.tenant_id == tenant_id,
                     BusinessRuleEvaluationORM.source_object_id.in_(source_object_ids),
+                )
+                .limit(1)
+            ).first()
+            is not None
+        )
+
+    def has_qualifying_coverage_for_dimension(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...], dimension: str
+    ) -> bool:
+        """CDD-048 §23 (OQI-H2-I-R1 narrow Artifact Authorization
+        correction, disclosed in the OQI-H2-I final report): mirrors
+        `has_any_evaluation_for_source_objects` exactly, additionally
+        joined through `business_rules.dimension` -- existence-only,
+        regardless of outcome. Supports REASONABLENESS coverage only
+        (CDD-048 §23); ACCURACY is OQI1-storage-shaped and is instead
+        served by `OqiAccuracyEvaluationRepositoryImpl`'s own identically-
+        shaped method."""
+        if not source_object_ids:
+            return False
+        return (
+            self.session.execute(
+                select(BusinessRuleEvaluationORM.evaluation_id)
+                .join(BusinessRuleORM, BusinessRuleORM.rule_id == BusinessRuleEvaluationORM.rule_id)
+                .where(
+                    BusinessRuleEvaluationORM.tenant_id == tenant_id,
+                    BusinessRuleEvaluationORM.source_object_id.in_(source_object_ids),
+                    BusinessRuleORM.dimension == dimension,
                 )
                 .limit(1)
             ).first()
@@ -452,6 +482,7 @@ def _finding_to_orm(finding: BusinessRuleFinding) -> BusinessRuleFindingORM:
         state_revision=finding.state_revision,
         first_seen_at=finding.first_seen_at,
         last_seen_at=finding.last_seen_at,
+        violation_type=(None if finding.violation_type is None else finding.violation_type.value),
     )
 
 
@@ -472,6 +503,9 @@ def _finding_to_domain(model: BusinessRuleFindingORM) -> BusinessRuleFinding:
         state_revision=model.state_revision,
         first_seen_at=model.first_seen_at,
         last_seen_at=model.last_seen_at,
+        violation_type=(
+            None if model.violation_type is None else ViolationType(model.violation_type)
+        ),
     )
 
 

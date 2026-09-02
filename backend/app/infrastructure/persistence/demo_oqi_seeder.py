@@ -51,17 +51,24 @@ database creates nothing new."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid5
 
 from sqlalchemy.orm import Session
 
+from app.application.oqi_accuracy_evaluation_service import OqiAccuracyEvaluationService
 from app.application.oqi_business_impact_service import OqiBusinessImpactService
+from app.application.oqi_business_rule_evaluation_service import (
+    OqiBusinessRuleEvaluationService,
+    SingleRecordSubject,
+)
 from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
 from app.application.oqi_ontology_impact_evaluation_service import (
     OqiOntologyImpactEvaluationService,
 )
+from app.application.oqi_reference_evidence_service import OqiReferenceEvidenceService
 from app.core.bootstrap import (
     BOOTSTRAP_BUSINESS_DOMAIN_ID,
     BOOTSTRAP_DEMO_TENANT_ID,
@@ -75,6 +82,7 @@ from app.domain.identity_resolution.model import (
     ResolutionOutcome,
 )
 from app.domain.integration import SourceField
+from app.domain.oqi.evaluation import EvaluationSubject, SourceRecordLineageIdentity
 from app.domain.oqi.quality_rule import (
     QualityDimension,
     QualityFindingType,
@@ -83,6 +91,17 @@ from app.domain.oqi.quality_rule import (
 )
 from app.domain.oqi_business_impact.dependency import Criticality
 from app.domain.oqi_business_impact.process import BusinessImpactCategory
+from app.domain.oqi_business_rule.rule import (
+    BusinessRule,
+    BusinessRuleInputBinding,
+    BusinessRulePurpose,
+    BusinessRuleStatus,
+    ComparandKind,
+    ComparatorNode,
+    ExpectedType,
+    Operator,
+    RuleFamily,
+)
 from app.domain.oqi_cross_source.correspondence import (
     ComparisonSubjectCorrespondence,
     ComparisonSubjectCorrespondenceMember,
@@ -97,8 +116,18 @@ from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEn
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.source_object import SourceObject
 from app.infrastructure.persistence.models.source_system import SourceSystem
+from app.infrastructure.persistence.oqi_accuracy_evaluation_repository import (
+    OqiAccuracyEvaluationRepositoryImpl,
+)
 from app.infrastructure.persistence.oqi_business_impact_repository import (
     OqiBusinessImpactRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
+    OqiBusinessRuleEvaluationRepositoryImpl,
+    OqiBusinessRuleEvidenceValueReader,
+)
+from app.infrastructure.persistence.oqi_business_rule_repository import (
+    OqiBusinessRuleRepositoryImpl,
 )
 from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
     OqiCrossSourceCorrespondenceRepositoryImpl,
@@ -110,6 +139,9 @@ from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository im
     OqiOntologyImpactEvaluationRepositoryImpl,
 )
 from app.infrastructure.persistence.oqi_quality_rule_repository import OqiQualityRuleRepositoryImpl
+from app.infrastructure.persistence.oqi_reference_evidence_repository import (
+    OqiReferenceEvidenceRepositoryImpl,
+)
 from app.infrastructure.persistence.source_field_repository import SourceFieldRepositoryImpl
 
 SEED_TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
@@ -130,6 +162,15 @@ _PLM_FIELD_ID = _uid("plm-field")
 _SUPPLIER_ENTITY_ID = _uid("supplier-entity")
 _COMPARISON_SUBJECT_ID = _uid("comparison-subject")
 
+# CDD-048 §30 (OQI-H2 demo crown scenario): reuses the exact SAP/PLM
+# Country-of-Origin disagreement above -- SAP="US" (matches governed
+# Reference Evidence), PLM="MX" (does not) -- deriving Accuracy from raw
+# evidence + a governed Reference Evidence assertion, never a fabricated
+# terminal Finding.
+_ACCURACY_QUALITY_CONDITION_ID = "oqi-demo-supplier-country-accuracy"
+_QUANTITY_FIELD_ID = _uid("sap-quantity-field")
+_REASONABLENESS_BUSINESS_CONDITION_ID = "oqi-demo-order-quantity-reasonableness"
+
 
 class DemoTenantRequiredError(Exception):
     """Raised when the seeder is asked to seed any tenant other than the
@@ -143,6 +184,9 @@ class DemoOqiSeedSummary:
     supplier_entity_id: UUID
     business_dependency_id: UUID
     reliance_state: str
+    accuracy_sap_outcome: str | None
+    accuracy_plm_outcome: str | None
+    reasonableness_outcome: str | None
 
 
 class DemoOqiSeeder:
@@ -404,7 +448,116 @@ class DemoOqiSeeder:
             created_by="demo-seeder",
             created_on=SEED_TIMESTAMP,
         )
+
+        self._seed_h2_context(tenant_id)
         return dependency.dependency_id
+
+    def _seed_h2_context(self, tenant_id: str) -> None:
+        """CDD-048 §30 (OQI-H2): governed Reference Evidence (shared-
+        platform-style governed dataset assertion, PO-02) + one ACCURACY
+        QualityRule -- reusing the SAP/PLM Country-of-Origin evidence
+        already seeded above, never fabricating new evidence for this
+        purpose. Plus one REASONABLENESS BusinessRule on a new raw
+        `Order Quantity` observation. No terminal Finding/Impact/Reliance
+        row is ever seeded directly -- `_evaluate` invokes the real
+        evaluators against exactly this input/context."""
+        reference_service = OqiReferenceEvidenceService(
+            repository=OqiReferenceEvidenceRepositoryImpl(self.session),
+            clock=lambda: SEED_TIMESTAMP,
+        )
+        # One governed Reference Evidence assertion per source field --
+        # each source system's own representation of "Country of Origin"
+        # is a distinct anchor (CDD-048 §15), so SAP's and PLM's
+        # observations are each independently, honestly compared.
+        for field_id in (_SAP_FIELD_ID, _PLM_FIELD_ID):
+            reference_service.assert_governed_reference_dataset(
+                tenant_id=tenant_id,
+                ontology_element_type=OntologyElementType.ENTITY,
+                ontology_element_id=_SUPPLIER_ENTITY_ID,
+                source_field_id=field_id,
+                asserted_value="US",
+                dataset_name="ISO-3166-1-ALPHA-2 (demo)",
+                dataset_version="2024",
+                entry_key="US",
+                created_by="demo-seeder",
+            )
+
+        OqiQualityRuleRepositoryImpl(self.session).create(
+            QualityRule.new(
+                quality_condition_id=_ACCURACY_QUALITY_CONDITION_ID,
+                version=1,
+                dimension=QualityDimension.ACCURACY,
+                finding_type=QualityFindingType.REFERENCE_VALUE_UNSUPPORTED,
+                validity_primitive=None,
+                information_element_requirement_id="ier-country-of-origin",
+                rule_parameters={},
+                status=QualityRuleStatus.ACTIVE,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+
+        # Raw evidence for the Reasonableness demo: a negative order
+        # quantity on the SAP source object.
+        field_repo = SourceFieldRepositoryImpl(self.session)
+        field_repo.create(
+            SourceField(
+                source_field_id=Identifier(_QUANTITY_FIELD_ID),
+                source_object_id=Identifier(_SAP_OBJECT_ID),
+                field_label=CanonicalName("Order Quantity"),
+                lifecycle_state=LifecycleState.ACTIVE,
+                governance_status=GovernanceStatus.APPROVED,
+                created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+        self.session.flush()
+        self.session.add(
+            FieldValueEvidenceORM(
+                field_value_evidence_id=_uid("sap-quantity-evidence"),
+                source_field_id=_QUANTITY_FIELD_ID,
+                source_record_reference="SUP-DEMO-001",
+                observed_representation="-5",
+                observed_at=SEED_TIMESTAMP,
+                received_at=SEED_TIMESTAMP,
+            )
+        )
+        self.session.flush()
+
+        OqiBusinessRuleRepositoryImpl(self.session).create(
+            BusinessRule.new(
+                business_condition_id=_REASONABLENESS_BUSINESS_CONDITION_ID,
+                version=1,
+                tenant_id=tenant_id,
+                rule_family=RuleFamily.CONDITIONAL_PROHIBITED,
+                applicability=ComparatorNode(
+                    clause_id="c-applicability",
+                    operator=Operator.IS_NOT_NULL,
+                    input_role="quantity",
+                    comparand_kind=ComparandKind.NONE,
+                ),
+                predicate=ComparatorNode(
+                    clause_id="c-predicate",
+                    operator=Operator.GTE,
+                    input_role="quantity",
+                    comparand_kind=ComparandKind.LITERAL,
+                    literal_type=ExpectedType.DECIMAL,
+                    literal_value="0",
+                ),
+                input_bindings=(
+                    BusinessRuleInputBinding(
+                        input_role="quantity",
+                        source_field_id=_QUANTITY_FIELD_ID,
+                        required=False,
+                        expected_type=ExpectedType.DECIMAL,
+                    ),
+                ),
+                status=BusinessRuleStatus.ACTIVE,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+                dimension=BusinessRulePurpose.REASONABLENESS,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Real, unmodified production evaluators -- never a directly-persisted
@@ -454,12 +607,90 @@ class DemoOqiSeeder:
         )
         self.session.flush()
 
+        accuracy_sap, accuracy_plm, reasonableness = self._evaluate_h2(tenant_id, clock)
+
         return DemoOqiSeedSummary(
             tenant_id=tenant_id,
             quality_condition_id=_QUALITY_CONDITION_ID,
             supplier_entity_id=_SUPPLIER_ENTITY_ID,
             business_dependency_id=dependency_id,
             reliance_state=reliance.state.value,
+            accuracy_sap_outcome=accuracy_sap,
+            accuracy_plm_outcome=accuracy_plm,
+            reasonableness_outcome=reasonableness,
+        )
+
+    def _evaluate_h2(
+        self, tenant_id: str, clock: Callable[[], datetime]
+    ) -> tuple[str | None, str | None, str | None]:
+        """CDD-048 §30: calls the real, unmodified-by-reuse OQI-H2
+        evaluators -- `OqiAccuracyEvaluationService.evaluate_current_state`
+        (twice, once per source field/observation) and
+        `OqiBusinessRuleEvaluationService.evaluate_current_state` (the
+        dimension=REASONABLENESS rule) -- so every Accuracy/Reasonableness
+        outcome a fresh demo shows is real evaluator output over real seeded
+        evidence and governed Reference Evidence, never a directly-persisted
+        conclusion."""
+        accuracy_service = OqiAccuracyEvaluationService(
+            evaluation_repository=OqiAccuracyEvaluationRepositoryImpl(self.session),
+            reference_evidence_lookup=OqiReferenceEvidenceService(
+                repository=OqiReferenceEvidenceRepositoryImpl(self.session), clock=clock
+            ),
+            clock=clock,
+        )
+        accuracy_rule = OqiQualityRuleRepositoryImpl(self.session).get_active(
+            _ACCURACY_QUALITY_CONDITION_ID
+        )
+        assert accuracy_rule is not None
+
+        sap_evaluation = accuracy_service.evaluate_current_state(
+            rule=accuracy_rule,
+            subject=EvaluationSubject(
+                lineage=SourceRecordLineageIdentity(
+                    tenant_id=tenant_id,
+                    source_object_id=_SAP_OBJECT_ID,
+                    source_record_reference="SUP-DEMO-001",
+                ),
+                source_field_id=_SAP_FIELD_ID,
+            ),
+        )
+        self.session.flush()
+        plm_evaluation = accuracy_service.evaluate_current_state(
+            rule=accuracy_rule,
+            subject=EvaluationSubject(
+                lineage=SourceRecordLineageIdentity(
+                    tenant_id=tenant_id,
+                    source_object_id=_PLM_OBJECT_ID,
+                    source_record_reference="P-DEMO-001",
+                ),
+                source_field_id=_PLM_FIELD_ID,
+            ),
+        )
+        self.session.flush()
+
+        reasonableness_rule = OqiBusinessRuleRepositoryImpl(self.session).get_active(
+            tenant_id=tenant_id, business_condition_id=_REASONABLENESS_BUSINESS_CONDITION_ID
+        )
+        assert reasonableness_rule is not None
+        reasonableness_service = OqiBusinessRuleEvaluationService(
+            evaluation_repository=OqiBusinessRuleEvaluationRepositoryImpl(self.session),
+            evidence_value_reader=OqiBusinessRuleEvidenceValueReader(self.session),
+            clock=clock,
+        )
+        reasonableness_evaluation = reasonableness_service.evaluate_current_state(
+            rule=reasonableness_rule,
+            subject=SingleRecordSubject(
+                tenant_id=tenant_id,
+                source_object_id=_SAP_OBJECT_ID,
+                source_record_reference="SUP-DEMO-001",
+            ),
+        )
+        self.session.flush()
+
+        return (
+            None if sap_evaluation is None else sap_evaluation.outcome.value,
+            None if plm_evaluation is None else plm_evaluation.outcome.value,
+            None if reasonableness_evaluation is None else reasonableness_evaluation.outcome.value,
         )
 
 

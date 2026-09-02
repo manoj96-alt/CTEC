@@ -29,9 +29,11 @@ from app.domain.oqi_remediation.authorization import (
 )
 from app.domain.oqi_remediation.candidate import (
     RemediationCandidate,
+    extract_accuracy_candidates,
     extract_oqi1_candidates,
     extract_oqi2_candidates,
     extract_oqi3_candidates,
+    extract_reasonableness_candidates,
 )
 from app.domain.oqi_remediation.case import (
     FindingFamily,
@@ -76,8 +78,20 @@ class OqiRemediationService:
         tenant_id: str,
         finding_family: FindingFamily,
         finding_id: UUID,
+        quality_dimension: str | None = None,
         now: datetime | None = None,
     ) -> tuple[RemediationCase, tuple[RemediationCandidate, ...]]:
+        """CDD-048 §24 (OQI-H2-I-R1 narrow Artifact Authorization
+        correction, disclosed in the OQI-H2-I final report):
+        `quality_dimension` is a new, optional, backward-compatible
+        parameter -- every existing call site (which never passes it)
+        continues to dispatch exactly as before, purely on
+        `finding_family`. ACCURACY/REASONABLENESS Findings share OQI1's/
+        OQI3's own `finding_family` values (CDD-048 §12 -- no new
+        `FindingFamily` member exists), so they MUST be distinguished by
+        `quality_dimension` here, never by `finding_family` alone -- this
+        is the one dispatch site CDD-048 §12.3 identifies as requiring the
+        new semantic axis, not just the existing physical-storage one."""
         moment = now if now is not None else datetime.now(UTC)
         finding_state = self._get_finding_state(
             finding_family=finding_family, tenant_id=tenant_id, finding_id=finding_id
@@ -89,8 +103,17 @@ class OqiRemediationService:
             tenant_id=tenant_id, finding_family=finding_family, finding_id=finding_id
         )
 
-        if finding_family is FindingFamily.OQI1:
-            candidates: tuple[RemediationCandidate, ...] = extract_oqi1_candidates()
+        if quality_dimension == "ACCURACY":
+            case_id = derive_remediation_case_id(
+                tenant_id=tenant_id, finding_family=finding_family, finding_id=finding_id
+            )
+            candidates: tuple[RemediationCandidate, ...] = self._extract_accuracy_candidates(
+                tenant_id=tenant_id, finding_id=finding_id, case_id=case_id, moment=moment
+            )
+        elif quality_dimension == "REASONABLENESS":
+            candidates = extract_reasonableness_candidates()
+        elif finding_family is FindingFamily.OQI1:
+            candidates = extract_oqi1_candidates()
         elif finding_family is FindingFamily.OQI3:
             candidates = extract_oqi3_candidates()
         else:
@@ -154,6 +177,31 @@ class OqiRemediationService:
                 )
             )
         return tuple(candidates)
+
+    def _extract_accuracy_candidates(
+        self, *, tenant_id: str, finding_id: UUID, case_id: UUID, moment: datetime
+    ) -> tuple[RemediationCandidate, ...]:
+        """CDD-048 §24: `get_accuracy_candidate_support` is intentionally
+        NOT part of `OqiRemediationRepository`'s Protocol (mirrors the
+        established `has_qualifying_coverage_for_dimension` precedent) --
+        accessed defensively so a repository/fake that predates this
+        capability degrades to zero candidates (STEWARD_INVESTIGATION)
+        rather than raising."""
+        getter = getattr(self._repository, "get_accuracy_candidate_support", None)
+        if getter is None:
+            return ()
+        support = getter(tenant_id=tenant_id, finding_id=finding_id)
+        if support is None:
+            return ()
+        return extract_accuracy_candidates(
+            case_id=case_id,
+            target_source_object_id=support.target_source_object_id,
+            target_source_field_id=support.target_source_field_id,
+            observed_evidence_id=support.observed_evidence_id,
+            reference_value=support.reference_value,
+            backing_assertion_ids=support.backing_assertion_ids,
+            now=moment,
+        )
 
     @staticmethod
     def _provisional_case_id(

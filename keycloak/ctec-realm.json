@@ -48,7 +48,9 @@
         "governed-approval:decide",
         "governed-agent:propose",
         "oqi-remediation:authorize",
-        "oqi-remediation:report-execution"
+        "oqi-remediation:report-execution",
+        "oqi-reference-evidence:configure",
+        "oqi-reference-evidence:verify"
       ]
     }
   ],
@@ -329,6 +331,24 @@
       "name": "oqi-remediation:report-execution",
       "protocol": "openid-connect",
       "description": "CDD-045 canonical scope -- OQI governed external-remediation report-execution authority, mirroring governed-approval:request's two-scope pattern (not granted to the primary demo persona by default).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-reference-evidence:configure",
+      "protocol": "openid-connect",
+      "description": "CDD-048 canonical scope -- OQI-H2 governed Reference Evidence configuration authority (governed reference dataset assertions, business-rule-derived reference assertions). Distinct from and never substitutable by oqi-reference-evidence:verify or any remediation scope (not granted to the primary demo persona by default).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-reference-evidence:verify",
+      "protocol": "openid-connect",
+      "description": "CDD-048 canonical scope -- OQI-H2 governed human-verification authority for Reference Evidence (PO-03). Distinct from and never substitutable by oqi-reference-evidence:configure or any remediation scope (not granted to the primary demo persona by default).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"

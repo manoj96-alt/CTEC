@@ -42,18 +42,27 @@ class QualityDimension(StrEnum):
     """CDD-039 §9: originally exactly two, closed. CDD-040 §14 additively
     extends this with `CONSISTENCY` -- scoped explicitly to CROSS-SOURCE
     value consistency; never a reinterpretation of Gate T's own intra-source
-    `CONFLICTING` outcome (CDD-031, unchanged)."""
+    `CONFLICTING` outcome (CDD-031, unchanged). CDD-048 §7/§14 additively
+    extends this a second time with `ACCURACY` -- observation-granularity
+    comparison against qualifying governed Reference Evidence, never a
+    reinterpretation of Validity/Consistency. `REASONABLENESS` is
+    deliberately NOT added here: it is BusinessRule-shaped, not
+    QualityRule-shaped (CDD-048 §10, §14) -- its own governed dimension
+    identity lives on `BusinessRule.dimension`, never on this enum."""
 
     COMPLETENESS = "COMPLETENESS"
     VALIDITY = "VALIDITY"
     CONSISTENCY = "CONSISTENCY"
+    ACCURACY = "ACCURACY"
 
 
 class QualityFindingType(StrEnum):
     """CDD-039 §10: originally exactly four, closed. CDD-040 §14, §31
-    additively extends this with the two cross-source Finding types. No
-    further type is authorized -- authority is explanation metadata, never
-    a Finding-type discriminator (CDD-040 §23, §31)."""
+    additively extends this with the two cross-source Finding types.
+    CDD-048 §7, §20 additively extends this a second time with
+    `REFERENCE_VALUE_UNSUPPORTED` (Accuracy). No further type is authorized
+    -- authority is explanation metadata, never a Finding-type discriminator
+    (CDD-040 §23, §31)."""
 
     MISSING_VALUE = "MISSING_VALUE"
     ENUM_VIOLATION = "ENUM_VIOLATION"
@@ -61,6 +70,7 @@ class QualityFindingType(StrEnum):
     RANGE_VIOLATION = "RANGE_VIOLATION"
     CROSS_SOURCE_VALUE_CONFLICT = "CROSS_SOURCE_VALUE_CONFLICT"
     CROSS_SOURCE_PARTICIPANT_VALUE_MISSING = "CROSS_SOURCE_PARTICIPANT_VALUE_MISSING"
+    REFERENCE_VALUE_UNSUPPORTED = "REFERENCE_VALUE_UNSUPPORTED"
 
 
 class ValidityPrimitive(StrEnum):
@@ -119,6 +129,15 @@ _ALLOWED_COMBINATIONS: frozenset[
         (
             QualityDimension.CONSISTENCY,
             QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+            None,
+        ),
+        # CDD-048 §7, §14: ACCURACY's single row -- `finding_type` is
+        # always REFERENCE_VALUE_UNSUPPORTED (no ACCURACY-specific
+        # ValidityPrimitive; comparison logic lives in the Accuracy
+        # evaluator, not in a primitive dispatch here).
+        (
+            QualityDimension.ACCURACY,
+            QualityFindingType.REFERENCE_VALUE_UNSUPPORTED,
             None,
         ),
     }
@@ -209,6 +228,17 @@ def _validate_consistency_parameters(rule_parameters: Mapping[str, Any]) -> None
         raise OqiMalformedRuleError("at most one participant may be authoritative=true")
 
 
+def _validate_accuracy_parameters(rule_parameters: Mapping[str, Any]) -> None:
+    """CDD-048 §7: ACCURACY's `rule_parameters` shape is deliberately empty
+    -- mirroring COMPLETENESS's own precedent. The evaluated field is
+    already identified by the `EvaluationSubject`; the Reference Evidence
+    consulted is resolved dynamically per observation (governed subject +
+    source_field_id, CDD-048 §15), never configured per-rule -- so no
+    Accuracy-specific key is authorized here."""
+    if dict(rule_parameters) != {}:
+        raise OqiMalformedRuleError("ACCURACY rule_parameters must be empty")
+
+
 def validate_rule_shape(
     *,
     dimension: QualityDimension,
@@ -234,6 +264,10 @@ def validate_rule_shape(
 
     if dimension is QualityDimension.CONSISTENCY:
         _validate_consistency_parameters(rule_parameters)
+        return
+
+    if dimension is QualityDimension.ACCURACY:
+        _validate_accuracy_parameters(rule_parameters)
         return
 
     if validity_primitive is ValidityPrimitive.ENUM_MEMBERSHIP:

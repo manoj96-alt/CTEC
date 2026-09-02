@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.domain.oqi_business_rule.rule import (
     BusinessRule,
     BusinessRuleInputBinding,
+    BusinessRulePurpose,
     BusinessRuleStatus,
     ExpectedType,
     OqiMalformedBusinessRuleError,
@@ -153,6 +154,7 @@ def _to_orm(rule: BusinessRule) -> BusinessRuleORM:
         created_by=rule.created_by,
         created_on=rule.created_on,
         retired_on=rule.retired_on,
+        dimension=rule.dimension.value,
     )
 
 
@@ -183,4 +185,5 @@ def _to_domain(
         created_by=model.created_by,
         created_on=model.created_on,
         retired_on=model.retired_on,
+        dimension=BusinessRulePurpose(model.dimension),
     )
