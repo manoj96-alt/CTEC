@@ -468,7 +468,9 @@ def assert_governed_reference_dataset(
     service: Annotated[OqiReferenceEvidenceService, Depends(reference_evidence_service)],
 ) -> ReferenceEvidenceAssertionResponse:
     """CDD-048 §10.1, §26: configuration-authority operation --
-    `oqi-reference-evidence:configure`."""
+    `oqi-reference-evidence:configure`. CDD-048 OQI-H2-I-R1 §8:
+    `created_by` is populated exclusively from the authenticated principal
+    -- never accepted from the request body."""
     authorize(authenticated, "oqi-reference-evidence:configure", dependencies, correlation)
     try:
         assertion = service.assert_governed_reference_dataset(
@@ -480,7 +482,7 @@ def assert_governed_reference_dataset(
             dataset_name=body.dataset_name,
             dataset_version=body.dataset_version,
             entry_key=body.entry_key,
-            created_by=body.created_by,
+            created_by=authenticated.principal_id,
         )
     except OqiReferenceEvidenceError as exc:
         raise HTTPException(409, detail={"code": exc.code}) from exc
@@ -500,7 +502,12 @@ def record_human_verified_evidence(
 ) -> ReferenceEvidenceAssertionResponse:
     """CDD-048 §11, §17, §26, PO-03: verification-authority operation --
     `oqi-reference-evidence:verify`, distinct from and never substitutable
-    by `oqi-reference-evidence:configure` or any remediation scope."""
+    by `oqi-reference-evidence:configure` or any remediation scope.
+    CDD-048 OQI-H2-I-R1 §8 (P1 provenance correction): `verifying_actor_id`
+    and `created_by` are populated exclusively from the authenticated
+    principal's own verified JWT subject -- never from the request body, a
+    query parameter, or any header. An authenticated Bob can never cause
+    "Alice" to be persisted as the verifying actor."""
     authorize(authenticated, "oqi-reference-evidence:verify", dependencies, correlation)
     try:
         assertion = service.record_human_verified_evidence(
@@ -509,9 +516,9 @@ def record_human_verified_evidence(
             ontology_element_id=body.ontology_element_id,
             source_field_id=body.source_field_id,
             asserted_value=body.asserted_value,
-            verifying_actor_id=body.verifying_actor_id,
+            verifying_actor_id=authenticated.principal_id,
             verification_rationale=body.verification_rationale,
-            created_by=body.created_by,
+            created_by=authenticated.principal_id,
         )
     except OqiReferenceEvidenceError as exc:
         raise HTTPException(409, detail={"code": exc.code}) from exc

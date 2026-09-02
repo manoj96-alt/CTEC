@@ -177,6 +177,11 @@ class RemediationCaseActionResponse(BaseModel):
 
 
 class AssertGovernedReferenceDatasetRequest(BaseModel):
+    """CDD-048 OQI-H2-I-R1 §8: carries no actor-identity field of any kind
+    -- `created_by` is populated exclusively from the authenticated
+    principal at the router boundary (`TrustedPrincipal.principal_id`),
+    never accepted from the caller."""
+
     ontology_element_type: str
     ontology_element_id: UUID
     source_field_id: UUID
@@ -184,17 +189,22 @@ class AssertGovernedReferenceDatasetRequest(BaseModel):
     dataset_name: str
     dataset_version: str
     entry_key: str
-    created_by: str
 
 
 class RecordHumanVerifiedEvidenceRequest(BaseModel):
+    """CDD-048 OQI-H2-I-R1 §8: carries no actor-identity field of any kind
+    -- `verifying_actor_id`/`created_by` are populated exclusively from the
+    authenticated principal at the router boundary
+    (`TrustedPrincipal.principal_id`), never accepted from the caller. An
+    authenticated Bob can never cause "Alice" to be persisted as the
+    verifying actor, because no code path reads an actor identity from
+    anywhere other than the verified JWT subject."""
+
     ontology_element_type: str
     ontology_element_id: UUID
     source_field_id: UUID
     asserted_value: str
-    verifying_actor_id: str
     verification_rationale: str
-    created_by: str
 
 
 class ReferenceEvidenceAssertionResponse(BaseModel):

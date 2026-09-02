@@ -22,10 +22,15 @@ Reasonableness), or the `CONSISTENCY` constant for OQI2-shaped Findings.
 `LEGACY_UNCLASSIFIED_BUSINESS_RULE` is the frozen, honest, non-fabricated
 treatment for pre-H2 `BusinessRule` rows that carry no real semantic-
 dimension information (CDD-048 §13) -- never retroactively claimed to be
-REASONABLENESS. It is deliberately NOT a member of `QualityDimension` itself
-(which remains exactly the five real, implemented dimensions) -- it is a
-distinct governance sentinel, valid only as a `QualityFindingOrigin.
-quality_dimension` value."""
+REASONABLENESS. `REASONABLENESS` and `ACCURACY_REFERENCE_DERIVATION` are
+deliberately NOT members of `QualityDimension` itself (which remains exactly
+the four real QualityRule-shaped dimensions: COMPLETENESS, VALIDITY,
+CONSISTENCY, ACCURACY) -- `QualityFindingOrigin.quality_dimension` is a wider
+governed vocabulary than `QualityDimension` alone, spanning every value a
+real Finding's origin can legitimately carry across BOTH evaluator families
+(`BusinessRulePurpose`'s three members for OQI3-shaped Findings, plus
+`QualityDimension`'s four for OQI1-shaped Findings, plus the constant
+`CONSISTENCY` for OQI2)."""
 
 from __future__ import annotations
 
@@ -34,6 +39,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from app.domain.oqi.quality_rule import QualityDimension, QualityFindingType
+from app.domain.oqi_business_rule.rule import BusinessRulePurpose
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily
 from app.domain.shared.exceptions import ValidationException
 
@@ -44,11 +50,15 @@ _MAX_TENANT_ID_LENGTH = 200
 #: Deliberately not a QualityDimension member -- see module docstring.
 LEGACY_UNCLASSIFIED_BUSINESS_RULE = "LEGACY_UNCLASSIFIED_BUSINESS_RULE"
 
-#: CDD-048 §12.2: every value a QualityFindingOrigin.quality_dimension may
-#: legitimately carry -- the five real QualityDimension members plus the one
-#: legacy sentinel above. Closed; never silently widened.
+#: OQI-H2-I-R1 (CY implementation-defect correction, disclosed in the
+#: OQI-H2-I-R1 final report): every value a QualityFindingOrigin.
+#: quality_dimension may legitimately carry -- QualityDimension's four
+#: OQI1-shaped members, UNION every BusinessRulePurpose member (REASONABLENESS
+#: and ACCURACY_REFERENCE_DERIVATION for OQI3-shaped findings, plus its own
+#: copy of the LEGACY sentinel, identical to the module-level constant
+#: above). Closed; never silently widened.
 _VALID_QUALITY_DIMENSION_VALUES: frozenset[str] = frozenset(
-    {member.value for member in QualityDimension} | {LEGACY_UNCLASSIFIED_BUSINESS_RULE}
+    {member.value for member in QualityDimension} | {member.value for member in BusinessRulePurpose}
 )
 
 
