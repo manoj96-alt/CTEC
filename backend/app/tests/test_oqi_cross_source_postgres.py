@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import alembic.command
+from alembic.script import ScriptDirectory
 import pytest
 from alembic.config import Config
 from sqlalchemy import Engine, inspect, select, text
@@ -234,10 +235,11 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
     with migrated_engine.connect():
         tables = set(inspect(migrated_engine).get_table_names())
         assert "comparison_subject_correspondences" not in tables
-    alembic.command.upgrade(alembic_cfg, "0026_oqi6_reliance")
+    alembic.command.upgrade(alembic_cfg, "head")
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0026_oqi6_reliance"
+    current_head = ScriptDirectory.from_config(alembic_cfg).get_current_head()
+    assert revision == current_head
 
 
 # --- database constraints ---

@@ -1,6 +1,9 @@
+# isort: skip_file
 from uuid import UUID
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, select, text
 
 from app.core.config import Settings
@@ -24,8 +27,9 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-        assert revision == "0026_oqi6_reliance"
-        assert table_count == 100
+        current_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+        assert revision == current_head
+        assert table_count == 102
 
 
 def test_repository_crud(migrated_engine: Engine) -> None:

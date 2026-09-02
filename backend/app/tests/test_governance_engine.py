@@ -1,3 +1,4 @@
+# isort: skip_file
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -6,6 +7,8 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from pydantic import ValidationError
 from sqlalchemy import Engine, text
 
@@ -385,5 +388,6 @@ def test_governance_migration_and_immutability(migrated_engine: Engine) -> None:
                 "WHERE trigger_name = 'governance_evaluation_records_immutable'"
             )
         ).scalar_one()
-    assert revision == "0026_oqi6_reliance"
+    current_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    assert revision == current_head
     assert trigger_count == 1

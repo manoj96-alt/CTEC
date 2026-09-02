@@ -778,6 +778,30 @@ AUTHORIZED_CHANGED_PATHS = {
     # §49/§49.1) are omitted here as duplicates -- each file already has
     # its own pre-existing entry above from its original OQI1/2/3/4
     # implementation block.
+    # OQI-H1 (CDD-047): Governed Quality Coverage and Reliance
+    # Generalization -- closed nine-member CoverageDimension vocabulary,
+    # QualityCoveragePolicy domain/persistence, generalized coverage
+    # computation, and the crown proof that partial required coverage
+    # never counts as Supported -- Artifact Authorization §2 rows 1-9.
+    "backend/app/domain/oqi_quality_coverage/__init__.py",
+    "backend/app/domain/oqi_quality_coverage/policy.py",
+    "backend/app/infrastructure/persistence/models/oqi_quality_coverage_policy.py",
+    "backend/app/infrastructure/persistence/oqi_quality_coverage_policy_repository.py",
+    "backend/app/infrastructure/persistence/migrations/versions/0027_oqi_h1_quality_coverage_policy.py",
+    "backend/app/tests/test_oqi_quality_coverage_policy_domain.py",
+    "backend/app/tests/test_oqi_quality_coverage_policy_service.py",
+    "backend/app/tests/test_oqi_quality_coverage_policy_postgres.py",
+    "backend/app/tests/test_oqi_h1_reliance_coverage_crown.py",
+    # test_oqi_api_postgres.py (Amendment §10/§11, Classification D2 --
+    # OQI7-I1 zero-new-tables re-anchoring) has no pre-existing entry from
+    # any earlier block, unlike this amendment's other 12 MODIFY-authorized
+    # test files, which all already had one.
+    "backend/app/tests/test_oqi_api_postgres.py",
+    # The 3 H1 MODIFY paths (oqi_quality_evaluation_repository.py,
+    # oqi_cross_source_evaluation_repository.py,
+    # oqi_business_impact_repository.py) are omitted here as duplicates --
+    # each already has its own pre-existing entry above from its original
+    # OQI1/OQI2/OQI6 implementation block.
 }
 
 

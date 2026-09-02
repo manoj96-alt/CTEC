@@ -245,6 +245,23 @@ class OqiCrossSourceEvaluationRepositoryImpl:
             is not None
         )
 
+    def has_qualifying_coverage_for_dimension(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...], dimension: str
+    ) -> bool:
+        """CDD-047 §14, Artifact Authorization row 11: narrow, additive,
+        read-only. OQI2 is, in its entirety, the CONSISTENCY evaluator
+        family today -- for `dimension == "CONSISTENCY"` this delegates
+        verbatim to the existing, unmodified
+        `has_any_evaluation_for_source_objects` query; for any other
+        dimension value it returns `False` without issuing any query,
+        since OQI2 evidence can never establish coverage for a dimension
+        it does not evaluate."""
+        if dimension != "CONSISTENCY":
+            return False
+        return self.has_any_evaluation_for_source_objects(
+            tenant_id=tenant_id, source_object_ids=source_object_ids
+        )
+
 
 def _finding_to_orm(finding: QualityComparisonFinding) -> QualityComparisonFindingORM:
     return QualityComparisonFindingORM(

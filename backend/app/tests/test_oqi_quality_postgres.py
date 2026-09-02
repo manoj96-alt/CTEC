@@ -11,6 +11,7 @@ under real concurrency does not double-mutate; different tenants/subjects
 never block each other; and every "one ACTIVE rule version per condition"
 database-level invariant genuinely holds."""
 
+# isort: skip_file
 from __future__ import annotations
 
 import threading
@@ -20,6 +21,8 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -187,7 +190,8 @@ def test_migration_creates_expected_schema(migrated_engine: Engine) -> None:
 def test_migration_head_revision(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0026_oqi6_reliance"
+    current_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    assert revision == current_head
 
 
 # --- database constraints ---
