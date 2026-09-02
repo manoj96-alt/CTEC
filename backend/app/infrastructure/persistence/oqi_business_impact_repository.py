@@ -64,6 +64,9 @@ from app.infrastructure.persistence.oqi_cross_source_evaluation_repository impor
 from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository import (
     OqiOntologyImpactEvaluationRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_quality_coverage_policy_repository import (
+    OqiQualityCoveragePolicyRepositoryImpl,
+)
 from app.infrastructure.persistence.oqi_quality_evaluation_repository import (
     OqiQualityEvaluationRepositoryImpl,
 )
@@ -271,10 +274,32 @@ class OqiBusinessImpactRepositoryImpl:
             for family, finding_id, state_revision in rows
         }
 
-        any_evaluation_ever_run = bool(open_refs) or (
+        # CDD-044 §41's own coverage formula, byte-for-byte unmodified --
+        # this is the exact legacy value CDD-047 §16/§18 requires be passed
+        # through, unaltered, to the no-policy branch below.
+        legacy_any_evaluation_ever_run = bool(open_refs) or (
             self._compute_coverage(tenant_id=tenant_id, source_object_ids=source_object_ids)
             if ontology_element_type is OntologyElementType.ENTITY
             else False
+        )
+
+        # CDD-047 §13/§17, Artifact Authorization row 12: generalized
+        # coverage. No ACTIVE QualityCoveragePolicy -> returns
+        # `legacy_any_evaluation_ever_run` verbatim (CDD-047 §16's
+        # backward-compatibility identity requirement). An ACTIVE policy
+        # requires qualifying coverage for every one of its required
+        # CoverageDimension members, independent of open-Finding state --
+        # `derive_reliance_state`'s own first decision branch already
+        # short-circuits to AT_RISK on any open Finding regardless of this
+        # value, so no double-counting of open_refs is needed here.
+        any_evaluation_ever_run = OqiQualityCoveragePolicyRepositoryImpl(
+            self.session
+        ).compute_generalized_coverage(
+            tenant_id=tenant_id,
+            ontology_element_type=ontology_element_type,
+            ontology_element_id=ontology_element_id,
+            source_object_ids=source_object_ids,
+            legacy_any_evaluation_ever_run=legacy_any_evaluation_ever_run,
         )
 
         return SubjectFindingState(

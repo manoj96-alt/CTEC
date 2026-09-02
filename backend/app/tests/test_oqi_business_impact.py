@@ -343,11 +343,11 @@ def test_migration_round_trips_94_100_94_100(migrated_engine: Engine) -> None:
                 ).scalar_one()
             )
 
-    assert _table_count() == 100
+    assert _table_count() == 102
     alembic.command.downgrade(config, "0025_oqi5_agent_reasoning")
     assert _table_count() == 94
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 100
+    assert _table_count() == 102
 
 
 # =====================================================================

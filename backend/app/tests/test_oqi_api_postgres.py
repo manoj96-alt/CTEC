@@ -17,7 +17,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import alembic.command
 import pytest
+from alembic.config import Config
 from sqlalchemy import Engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -70,8 +72,12 @@ def _api_service(session: Session) -> OqiProductExperienceService:
 
 
 def test_oqi7_i1_introduces_zero_new_tables(migrated_engine: Engine) -> None:
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+    alembic.command.downgrade(alembic_cfg, "0026_oqi6_reliance")
     tables = set(inspect(migrated_engine).get_table_names()) - {"alembic_version"}
     assert len(tables) == 100
+    alembic.command.upgrade(alembic_cfg, "head")
 
 
 # =====================================================================

@@ -7,6 +7,7 @@ exactly the expected schema, with `down_revision = 0018_gate_s_approval`;
 `gate_s_approval_requests` row; and (3) a resolution durably survives across
 an independent session/re-read, with correct tenant isolation."""
 
+# isort: skip_file
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -88,11 +89,14 @@ def test_migration_creates_expected_schema(migrated_engine: Engine) -> None:
 
 
 def test_migration_head_and_down_revision(migrated_engine: Engine) -> None:
-    with migrated_engine.connect() as connection:
-        from sqlalchemy import text
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import text
 
+    with migrated_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "0026_oqi6_reliance"
+    current_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    assert revision == current_head
 
 
 def test_proposed_resolution_creates_genuine_gate_s_approval_request(

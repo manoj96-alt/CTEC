@@ -50,6 +50,7 @@ from app.infrastructure.persistence.models.oqi_quality_evaluation import (
     QualityEvaluationORM,
 )
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
+from app.infrastructure.persistence.models.oqi_quality_rule import QualityRuleORM
 from app.infrastructure.persistence.models.source_field import SourceFieldORM
 
 #: Concurrency Hardening Amendment §11: a fixed seed distinguishing OQI1's
@@ -245,6 +246,39 @@ class OqiQualityEvaluationRepositoryImpl:
                 .where(
                     QualityEvaluationORM.tenant_id == tenant_id,
                     QualityEvaluationORM.source_object_id.in_(source_object_ids),
+                )
+                .limit(1)
+            ).first()
+            is not None
+        )
+
+    def has_qualifying_coverage_for_dimension(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...], dimension: str
+    ) -> bool:
+        """CDD-047 §14, Artifact Authorization row 10: narrow, additive,
+        read-only. Reports whether at least one OQI1 `QualityEvaluation`
+        row -- regardless of outcome -- has ever been persisted, whose
+        resolved evidence is one of the given `source_object_ids`, AND
+        whose governing `QualityRule.dimension` matches the requested
+        dimension. No `dimension` column exists directly on
+        `quality_evaluations` (verified directly against its schema) --
+        this is why the join to `quality_rules` is required and was not
+        already expressible via `has_any_evaluation_for_source_objects`,
+        which is family-level, not dimension-level, and remains completely
+        unmodified by this addition. `dimension` is passed as the plain
+        `CoverageDimension` string value (`"COMPLETENESS"`/`"VALIDITY"`) --
+        this method has no dependency on `CoverageDimension` itself, only
+        on the identical literal `QualityDimension` values it shares."""
+        if not source_object_ids:
+            return False
+        return (
+            self.session.execute(
+                select(QualityEvaluationORM.evaluation_id)
+                .join(QualityRuleORM, QualityRuleORM.rule_id == QualityEvaluationORM.rule_id)
+                .where(
+                    QualityEvaluationORM.tenant_id == tenant_id,
+                    QualityEvaluationORM.source_object_id.in_(source_object_ids),
+                    QualityRuleORM.dimension == dimension,
                 )
                 .limit(1)
             ).first()
