@@ -6,7 +6,14 @@ unique index enforces "exactly one ACTIVE version per
 (tenant_id, business_condition_id)" at the database level, mirroring
 `QualityRuleORM`'s own `uq_quality_rules_one_active_per_condition` /
 `ComparisonSubjectCorrespondenceORM`'s own
-`uq_comparison_subject_correspondences_one_active` pattern exactly."""
+`uq_comparison_subject_correspondences_one_active` pattern exactly.
+
+CDD-048 §14 (OQI-H2-I-R1 narrow Artifact Authorization correction, disclosed
+in the OQI-H2-I final report): `dimension` is an additive column recording
+the governed `BusinessRulePurpose` (LEGACY_UNCLASSIFIED_BUSINESS_RULE by
+default for every pre-H2 row, REASONABLENESS, or
+ACCURACY_REFERENCE_DERIVATION) -- see
+`app.domain.oqi_business_rule.rule.BusinessRulePurpose`."""
 
 from datetime import datetime
 from typing import Any
@@ -15,6 +22,7 @@ from uuid import UUID
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -44,6 +52,11 @@ class BusinessRuleORM(BaseEntity):
             unique=True,
             postgresql_where=text("status = 'ACTIVE'"),
         ),
+        CheckConstraint(
+            "dimension IN ('LEGACY_UNCLASSIFIED_BUSINESS_RULE', 'REASONABLENESS', "
+            "'ACCURACY_REFERENCE_DERIVATION')",
+            name="ck_business_rules_dimension",
+        ),
     )
 
     rule_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
@@ -57,6 +70,11 @@ class BusinessRuleORM(BaseEntity):
     created_by: Mapped[str] = mapped_column(String(200), nullable=False)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retired_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dimension: Mapped[str] = mapped_column(
+        String(48),
+        nullable=False,
+        server_default="LEGACY_UNCLASSIFIED_BUSINESS_RULE",
+    )
 
 
 class BusinessRuleInputBindingORM(BaseEntity):

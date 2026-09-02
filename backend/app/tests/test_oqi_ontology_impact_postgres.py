@@ -273,7 +273,9 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 102
+    # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
+    # final report): mechanically re-pinned from 102 to 109.
+    assert table_count == 109
     alembic.command.downgrade(config, "0022_oqi3_business_rule")
     with migrated_engine.connect() as connection:
         table_count = connection.execute(
@@ -282,6 +284,8 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
+    # Historical boundary at 0022 -- correctly pinned, unaffected by later
+    # migrations, must NOT change.
     assert table_count == 81
     alembic.command.upgrade(config, "head")
     with migrated_engine.connect() as connection:
@@ -291,7 +295,7 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 102
+    assert table_count == 109
 
 
 # --- one-ACTIVE-policy-per-triple database constraint ---

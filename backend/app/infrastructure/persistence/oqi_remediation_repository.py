@@ -53,7 +53,15 @@ from app.infrastructure.persistence.models.oqi_cross_source_evaluation import (
 from app.infrastructure.persistence.models.oqi_cross_source_finding import (
     QualityComparisonFindingORM,
 )
+from app.infrastructure.persistence.models.oqi_quality_evaluation import (
+    QualityEvaluationEvidenceORM,
+    QualityEvaluationORM,
+)
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
+from app.infrastructure.persistence.models.oqi_reference_evidence import (
+    QualityEvaluationReferenceEvidenceORM,
+    ReferenceEvidenceAssertionORM,
+)
 from app.infrastructure.persistence.models.oqi_remediation import (
     OqiRemediationAuthorizationORM,
     OqiRemediationCandidateORM,
@@ -71,6 +79,18 @@ class FindingState:
     status: str
     state_revision: int
     latest_evaluation_id: UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class AccuracyCandidateSupport:
+    """CDD-048 §24: the exact data `extract_accuracy_candidates` needs,
+    resolved read-only from what the Accuracy evaluator already persisted."""
+
+    target_source_object_id: UUID
+    target_source_field_id: UUID
+    observed_evidence_id: UUID
+    reference_value: str
+    backing_assertion_ids: tuple[UUID, ...]
 
 
 class OqiRemediationRepository(Protocol):
@@ -243,6 +263,68 @@ class OqiRemediationRepositoryImpl:
             return None
         return FindingState(
             status=model.status, state_revision=model.state_revision, latest_evaluation_id=None
+        )
+
+    def get_accuracy_candidate_support(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> AccuracyCandidateSupport | None:
+        """CDD-048 §24 (OQI-H2-I-R1 narrow Artifact Authorization
+        correction, disclosed in the OQI-H2-I final report): resolves the
+        exact data `extract_accuracy_candidates` needs -- the observed
+        evidence that produced this REFERENCE_VALUE_UNSUPPORTED Finding's
+        latest VIOLATED evaluation, and the Reference Evidence that
+        evaluation consulted. Never re-derives the comparison; only reads
+        what the Accuracy evaluator itself already persisted. Intentionally
+        NOT declared on `OqiRemediationRepository`'s Protocol -- mirrors
+        `has_qualifying_coverage_for_dimension`'s own precedent for a
+        narrow, additive, read-only capability."""
+        finding_model = self.session.get(QualityFindingORM, finding_id)
+        if finding_model is None or finding_model.tenant_id != tenant_id:
+            return None
+        evaluation_model = (
+            self.session.query(QualityEvaluationORM)
+            .filter(
+                QualityEvaluationORM.tenant_id == tenant_id,
+                QualityEvaluationORM.quality_condition_id == finding_model.quality_condition_id,
+                QualityEvaluationORM.source_object_id == finding_model.source_object_id,
+                QualityEvaluationORM.source_record_reference
+                == finding_model.source_record_reference,
+                QualityEvaluationORM.source_field_id == finding_model.source_field_id,
+                QualityEvaluationORM.outcome == "VIOLATED",
+            )
+            .order_by(QualityEvaluationORM.evaluated_on.desc())
+            .first()
+        )
+        if evaluation_model is None:
+            return None
+        evidence_row = (
+            self.session.query(QualityEvaluationEvidenceORM)
+            .filter(QualityEvaluationEvidenceORM.evaluation_id == evaluation_model.evaluation_id)
+            .order_by(QualityEvaluationEvidenceORM.sequence_index.asc())
+            .first()
+        )
+        if evidence_row is None:
+            return None
+        link_rows = (
+            self.session.query(QualityEvaluationReferenceEvidenceORM)
+            .filter(
+                QualityEvaluationReferenceEvidenceORM.evaluation_id
+                == evaluation_model.evaluation_id
+            )
+            .all()
+        )
+        if not link_rows:
+            return None
+        assertion_ids = tuple(row.assertion_id for row in link_rows)
+        first_assertion = self.session.get(ReferenceEvidenceAssertionORM, assertion_ids[0])
+        if first_assertion is None:
+            return None
+        return AccuracyCandidateSupport(
+            target_source_object_id=finding_model.source_object_id,
+            target_source_field_id=finding_model.source_field_id,
+            observed_evidence_id=evidence_row.field_value_evidence_id,
+            reference_value=first_assertion.asserted_value,
+            backing_assertion_ids=assertion_ids,
         )
 
 

@@ -74,12 +74,22 @@ def test_migration_round_trip_delta_is_exactly_two(migrated_engine: Engine) -> N
                 ).scalar_one()
             )
 
+    # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
+    # final report): downgrading directly to a hardcoded distant revision
+    # measured H1's delta against whatever the CURRENT head happened to be,
+    # silently becoming wrong (and stranding the shared session-scoped test
+    # DB below head on assertion failure) the moment a later migration
+    # extends head beyond H1 -- the exact Classification D defect class
+    # CDD-047's own amendment history already fixed once for other tests.
+    # Fixed here by measuring H1's own 2-table delta locally, bracketed to
+    # its own boundary, then always restoring to "head" (future-safe
+    # against any later migration, never re-pinned to a literal).
+    alembic.command.downgrade(config, "0027_h1_coverage_policy")
     post_h1 = _count()
     alembic.command.downgrade(config, "0026_oqi6_reliance")
     pre_h1 = _count()
     assert post_h1 - pre_h1 == 2
     alembic.command.upgrade(config, "head")
-    assert _count() == post_h1
 
 
 def test_insert_and_retrieve_active_policy(session: Session) -> None:

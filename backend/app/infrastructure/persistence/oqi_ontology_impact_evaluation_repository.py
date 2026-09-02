@@ -21,6 +21,12 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app.domain.oqi.quality_rule import QualityDimension, QualityFindingType
+from app.domain.oqi_finding_origin.origin import (
+    QualityFindingOrigin,
+    quality_dimension_for_oqi1_finding_type,
+    storage_family_from_finding_family,
+)
 from app.domain.oqi_ontology_impact.evaluation import (
     CurrentImpactStatus,
     CurrentOntologyImpact,
@@ -34,6 +40,7 @@ from app.domain.oqi_ontology_impact.evaluation import (
     OntologyImpactPath,
 )
 from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
+from app.infrastructure.persistence.models.oqi_business_rule import BusinessRuleORM
 from app.infrastructure.persistence.models.oqi_business_rule_evaluation import (
     BusinessRuleEvaluationORM,
 )
@@ -191,6 +198,52 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
                 ),
             )
         raise AssertionError(f"unreachable: unknown finding_family {finding_family!r}")
+
+    # ------------------------------------------------------------------
+    # Generalized Finding origin (CDD-048 §12) -- additive, read-only.
+    # Never replaces `resolve_finding_subject` above; every existing call
+    # site of that method is untouched.
+    # ------------------------------------------------------------------
+
+    def resolve_finding_origin(
+        self, *, tenant_id: str, finding_family: FindingFamily, finding_id: UUID
+    ) -> QualityFindingOrigin:
+        """CDD-048 §12.2-§12.3: resolves the previously-missing semantic
+        axis (`quality_dimension`) alongside the existing physical-storage
+        axis, without any new persistence. `finding_storage_family` is
+        `finding_family` renamed in code identity only (CDD-048 §12.2) --
+        the physical-row lookup below reuses `resolve_finding_subject`
+        entirely unchanged."""
+        resolved = self.resolve_finding_subject(
+            tenant_id=tenant_id, finding_family=finding_family, finding_id=finding_id
+        )
+        storage_family = storage_family_from_finding_family(finding_family)
+
+        if finding_family is FindingFamily.OQI1:
+            finding_model = self.session.get(QualityFindingORM, finding_id)
+            assert finding_model is not None  # already proven to exist above
+            quality_dimension: str | None = quality_dimension_for_oqi1_finding_type(
+                QualityFindingType(finding_model.finding_type)
+            ).value
+        elif finding_family is FindingFamily.OQI2:
+            quality_dimension = QualityDimension.CONSISTENCY.value
+        else:  # OQI3
+            business_rule_finding_model = self.session.get(BusinessRuleFindingORM, finding_id)
+            assert business_rule_finding_model is not None
+            evaluation_model = self.session.get(
+                BusinessRuleEvaluationORM, business_rule_finding_model.latest_evaluation_id
+            )
+            assert evaluation_model is not None
+            rule_orm = self.session.get(BusinessRuleORM, evaluation_model.rule_id)
+            quality_dimension = rule_orm.dimension if rule_orm is not None else None
+
+        return QualityFindingOrigin(
+            tenant_id=tenant_id,
+            finding_storage_family=storage_family,
+            quality_dimension=quality_dimension,
+            finding_id=finding_id,
+            finding_state_revision=resolved.finding_state_revision,
+        )
 
     # ------------------------------------------------------------------
     # Direct impact (CDD-042 §4.3, §4.6, §6) -- consumes

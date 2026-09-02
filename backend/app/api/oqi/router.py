@@ -19,6 +19,7 @@ from app.api.oqi.dependencies import authorize
 from app.api.oqi.schemas import (
     AgentInvestigationResponse,
     AgentRecommendationView,
+    AssertGovernedReferenceDatasetRequest,
     BusinessImpactDependency,
     BusinessImpactResponse,
     CommandCenterResponse,
@@ -31,6 +32,10 @@ from app.api.oqi.schemas import (
     FindingSummary,
     OntologyImpactPathSegment,
     OntologyImpactResponse,
+    RecordHumanVerifiedEvidenceRequest,
+    ReferenceEvidenceAssertionResponse,
+    ReferenceEvidenceConflictListResponse,
+    ReferenceEvidenceConflictResponse,
     RelianceHistoryEntry,
     RelianceResponse,
     RemediationAuthorizationView,
@@ -46,8 +51,16 @@ from app.api.supplier_risk.dependencies import container, correlation_id, princi
 from app.application.oqi_product_experience_service import (
     OqiProductExperienceService,
 )
+from app.application.oqi_reference_evidence_service import (
+    OqiReferenceEvidenceError,
+    OqiReferenceEvidenceService,
+)
 from app.application.oqi_remediation_service import OqiRemediationError
 from app.core.dependency_container import Container
+from app.domain.oqi_ontology_impact.evaluation import OntologyElementType
+from app.infrastructure.persistence.oqi_reference_evidence_repository import (
+    OqiReferenceEvidenceRepositoryImpl,
+)
 
 router = APIRouter(prefix="/api/v1/oqi", tags=["oqi"])
 
@@ -81,6 +94,30 @@ def oqi_service(
     session: Annotated[Session, Depends(oqi_session)],
 ) -> OqiProductExperienceService:
     return OqiProductExperienceService(session)
+
+
+def reference_evidence_service(
+    session: Annotated[Session, Depends(oqi_session)],
+) -> OqiReferenceEvidenceService:
+    return OqiReferenceEvidenceService(repository=OqiReferenceEvidenceRepositoryImpl(session))
+
+
+_REFERENCE_EVIDENCE_ERROR_HTTP_STATUS: dict[str, int] = {}
+
+
+def _assertion_view(assertion: object) -> ReferenceEvidenceAssertionResponse:
+    return ReferenceEvidenceAssertionResponse(
+        assertion_id=assertion.assertion_id,  # type: ignore[attr-defined]
+        ontology_element_type=assertion.ontology_element_type.value,  # type: ignore[attr-defined]
+        ontology_element_id=assertion.ontology_element_id,  # type: ignore[attr-defined]
+        source_field_id=assertion.source_field_id,  # type: ignore[attr-defined]
+        form=assertion.form.value,  # type: ignore[attr-defined]
+        asserted_value=assertion.asserted_value,  # type: ignore[attr-defined]
+        status=assertion.status.value,  # type: ignore[attr-defined]
+        version_number=assertion.version_number,  # type: ignore[attr-defined]
+        created_by=assertion.created_by,  # type: ignore[attr-defined]
+        created_on=assertion.created_on,  # type: ignore[attr-defined]
+    )
 
 
 def _require_read(
@@ -417,3 +454,116 @@ def report_execution(
             _REMEDIATION_ERROR_HTTP_STATUS.get(exc.code, 409), detail={"code": exc.code}
         ) from exc
     return RemediationCaseActionResponse(case_status=status_value)
+
+
+@router.post(
+    "/reference-evidence/governed-dataset",
+    response_model=ReferenceEvidenceAssertionResponse,
+)
+def assert_governed_reference_dataset(
+    body: AssertGovernedReferenceDatasetRequest,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+    service: Annotated[OqiReferenceEvidenceService, Depends(reference_evidence_service)],
+) -> ReferenceEvidenceAssertionResponse:
+    """CDD-048 §10.1, §26: configuration-authority operation --
+    `oqi-reference-evidence:configure`. CDD-048 OQI-H2-I-R1 §8:
+    `created_by` is populated exclusively from the authenticated principal
+    -- never accepted from the request body."""
+    authorize(authenticated, "oqi-reference-evidence:configure", dependencies, correlation)
+    try:
+        assertion = service.assert_governed_reference_dataset(
+            tenant_id=authenticated.tenant_id,
+            ontology_element_type=OntologyElementType(body.ontology_element_type),
+            ontology_element_id=body.ontology_element_id,
+            source_field_id=body.source_field_id,
+            asserted_value=body.asserted_value,
+            dataset_name=body.dataset_name,
+            dataset_version=body.dataset_version,
+            entry_key=body.entry_key,
+            created_by=authenticated.principal_id,
+        )
+    except OqiReferenceEvidenceError as exc:
+        raise HTTPException(409, detail={"code": exc.code}) from exc
+    return _assertion_view(assertion)
+
+
+@router.post(
+    "/reference-evidence/human-verified",
+    response_model=ReferenceEvidenceAssertionResponse,
+)
+def record_human_verified_evidence(
+    body: RecordHumanVerifiedEvidenceRequest,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+    service: Annotated[OqiReferenceEvidenceService, Depends(reference_evidence_service)],
+) -> ReferenceEvidenceAssertionResponse:
+    """CDD-048 §11, §17, §26, PO-03: verification-authority operation --
+    `oqi-reference-evidence:verify`, distinct from and never substitutable
+    by `oqi-reference-evidence:configure` or any remediation scope.
+    CDD-048 OQI-H2-I-R1 §8 (P1 provenance correction): `verifying_actor_id`
+    and `created_by` are populated exclusively from the authenticated
+    principal's own verified JWT subject -- never from the request body, a
+    query parameter, or any header. An authenticated Bob can never cause
+    "Alice" to be persisted as the verifying actor."""
+    authorize(authenticated, "oqi-reference-evidence:verify", dependencies, correlation)
+    try:
+        assertion = service.record_human_verified_evidence(
+            tenant_id=authenticated.tenant_id,
+            ontology_element_type=OntologyElementType(body.ontology_element_type),
+            ontology_element_id=body.ontology_element_id,
+            source_field_id=body.source_field_id,
+            asserted_value=body.asserted_value,
+            verifying_actor_id=authenticated.principal_id,
+            verification_rationale=body.verification_rationale,
+            created_by=authenticated.principal_id,
+        )
+    except OqiReferenceEvidenceError as exc:
+        raise HTTPException(409, detail={"code": exc.code}) from exc
+    return _assertion_view(assertion)
+
+
+@router.get(
+    "/reference-evidence/conflicts",
+    response_model=ReferenceEvidenceConflictListResponse,
+)
+def list_reference_evidence_conflicts(
+    ontology_element_type: str,
+    ontology_element_id: UUID,
+    source_field_id: UUID,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+    session: Annotated[Session, Depends(oqi_session)],
+) -> ReferenceEvidenceConflictListResponse:
+    """CDD-048 §16, §29: read-only, gated by the existing `oqi:read` scope
+    (mirrors every other OQI read route) -- never labeled as a Quality
+    Finding, never implying Noetva chose a value; surfaces only that a
+    defensible reference basis is currently absent for this subject."""
+    _require_read(authenticated, dependencies, correlation)
+    repository = OqiReferenceEvidenceRepositoryImpl(session)
+    conflict = repository.find_active_conflict_for_subject(
+        tenant_id=authenticated.tenant_id,
+        ontology_element_type=OntologyElementType(ontology_element_type),
+        ontology_element_id=ontology_element_id,
+        source_field_id=source_field_id,
+    )
+    items = (
+        ()
+        if conflict is None
+        else (
+            ReferenceEvidenceConflictResponse(
+                conflict_id=conflict.conflict_id,
+                ontology_element_type=conflict.ontology_element_type.value,
+                ontology_element_id=conflict.ontology_element_id,
+                source_field_id=conflict.source_field_id,
+                conflicting_assertion_ids=conflict.conflicting_assertion_ids,
+                status=conflict.status.value,
+                first_detected_at=conflict.first_detected_at,
+                last_observed_at=conflict.last_observed_at,
+            ),
+        )
+    )
+    return ReferenceEvidenceConflictListResponse(items=items)

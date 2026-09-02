@@ -32,6 +32,12 @@ from app.infrastructure.persistence.models.oqi_quality_coverage_policy import (
     QualityCoveragePolicyDimensionORM,
     QualityCoveragePolicyORM,
 )
+from app.infrastructure.persistence.oqi_accuracy_evaluation_repository import (
+    OqiAccuracyEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
+    OqiBusinessRuleEvaluationRepositoryImpl,
+)
 from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
     OqiCrossSourceEvaluationRepositoryImpl,
 )
@@ -236,7 +242,25 @@ class OqiQualityCoveragePolicyRepositoryImpl:
             ).has_qualifying_coverage_for_dimension(
                 tenant_id=tenant_id, source_object_ids=source_object_ids, dimension=dimension.value
             )
-        # ACCURACY, UNIQUENESS, TIMELINESS, INTEGRITY, CONFORMITY,
-        # REASONABLENESS: no evaluator exists (CDD-047 §14). Never query,
-        # never infer, never synthesize -- unconditionally uncovered.
+        # CDD-048 §23: ACCURACY is OQI1-storage-shaped (same evaluation
+        # ledger, dimension=ACCURACY) -- reuses the identically-shaped
+        # accuracy repository method.
+        if dimension is CoverageDimension.ACCURACY:
+            return OqiAccuracyEvaluationRepositoryImpl(
+                self.session
+            ).has_qualifying_coverage_for_dimension(
+                tenant_id=tenant_id, source_object_ids=source_object_ids, dimension=dimension.value
+            )
+        # CDD-048 §23: REASONABLENESS is OQI3-storage-shaped (BusinessRule
+        # dimension tag) -- reuses the identically-shaped business-rule
+        # evaluation repository method.
+        if dimension is CoverageDimension.REASONABLENESS:
+            return OqiBusinessRuleEvaluationRepositoryImpl(
+                self.session
+            ).has_qualifying_coverage_for_dimension(
+                tenant_id=tenant_id, source_object_ids=source_object_ids, dimension=dimension.value
+            )
+        # UNIQUENESS, TIMELINESS, INTEGRITY, CONFORMITY: no evaluator
+        # exists (CDD-047 §14, unchanged). Never query, never infer, never
+        # synthesize -- unconditionally uncovered.
         return False

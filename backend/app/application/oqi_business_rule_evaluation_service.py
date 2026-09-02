@@ -43,6 +43,7 @@ from app.domain.oqi_business_rule.evaluation import (
 )
 from app.domain.oqi_business_rule.finding import (
     BusinessRuleFinding,
+    ViolationType,
     apply_business_rule_finding_transition,
     business_rule_finding_identity_material,
     derive_business_rule_finding_id,
@@ -50,6 +51,7 @@ from app.domain.oqi_business_rule.finding import (
 from app.domain.oqi_business_rule.rule import (
     AstNode,
     BusinessRule,
+    BusinessRulePurpose,
     BusinessRuleStatus,
     ComparandKind,
     ComparatorNode,
@@ -535,6 +537,17 @@ class OqiBusinessRuleEvaluationService:
             business_condition_id=rule.business_condition_id,
             subject_type=SUBJECT_TYPE_SINGLE_RECORD,
             subject_identity=subject_identity,
+            # CDD-048 §14, §20 (OQI-H2-I-R1 narrow Artifact Authorization
+            # correction, disclosed in the OQI-H2-I final report): the one
+            # governed finding-type-equivalent, set only for
+            # dimension=REASONABLENESS rules. Zero behavior change for
+            # every pre-H2 rule (dimension defaults to
+            # LEGACY_UNCLASSIFIED_BUSINESS_RULE, so this stays None).
+            violation_type=(
+                ViolationType.CONTEXTUAL_PLAUSIBILITY_VIOLATION
+                if rule.dimension is BusinessRulePurpose.REASONABLENESS
+                else None
+            ),
         )
 
         evaluation = BusinessRuleEvaluation(

@@ -216,19 +216,22 @@ def test_empty_source_object_ids_short_circuits_to_false_without_querying() -> N
 
 
 # ---------------------------------------------------------------------
-# Unsupported (future) dimension dispatch (CDD-047 §14).
+# Unsupported (future) dimension dispatch (CDD-047 §14). CDD-048 §23
+# (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final report):
+# ACCURACY and REASONABLENESS are removed from this parametrize list --
+# they now have live evaluators and are proven to dispatch correctly (not
+# unconditionally False) by the two tests immediately below this class.
+# UNIQUENESS/TIMELINESS/INTEGRITY/CONFORMITY remain genuinely unsupported.
 # ---------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "dimension",
     [
-        CoverageDimension.ACCURACY,
         CoverageDimension.UNIQUENESS,
         CoverageDimension.TIMELINESS,
         CoverageDimension.INTEGRITY,
         CoverageDimension.CONFORMITY,
-        CoverageDimension.REASONABLENESS,
     ],
 )
 def test_unsupported_dimension_dispatch_returns_false_without_querying(
@@ -280,6 +283,43 @@ def test_consistency_dispatches_to_oqi2() -> None:
         )
     assert result is True
     oqi2_cls.return_value.has_qualifying_coverage_for_dimension.assert_called_once()
+
+
+def test_accuracy_dispatches_to_accuracy_repository() -> None:
+    """CDD-048 §23 (OQI-H2-I-R1 narrow correction, disclosed in the
+    OQI-H2-I final report): ACCURACY is OQI1-storage-shaped -- dispatches
+    to `OqiAccuracyEvaluationRepositoryImpl`, never unconditionally False."""
+    repo = _repo()
+    with patch(
+        "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
+        "OqiAccuracyEvaluationRepositoryImpl"
+    ) as accuracy_cls:
+        accuracy_cls.return_value.has_qualifying_coverage_for_dimension.return_value = True
+        result = repo.has_qualifying_coverage_for_dimension(
+            tenant_id=TENANT, source_object_ids=(uuid4(),), dimension=CoverageDimension.ACCURACY
+        )
+    assert result is True
+    accuracy_cls.return_value.has_qualifying_coverage_for_dimension.assert_called_once()
+
+
+def test_reasonableness_dispatches_to_business_rule_evaluation_repository() -> None:
+    """CDD-048 §23 (OQI-H2-I-R1 narrow correction, disclosed in the
+    OQI-H2-I final report): REASONABLENESS is OQI3-storage-shaped --
+    dispatches to `OqiBusinessRuleEvaluationRepositoryImpl`, never
+    unconditionally False."""
+    repo = _repo()
+    with patch(
+        "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
+        "OqiBusinessRuleEvaluationRepositoryImpl"
+    ) as business_rule_cls:
+        business_rule_cls.return_value.has_qualifying_coverage_for_dimension.return_value = True
+        result = repo.has_qualifying_coverage_for_dimension(
+            tenant_id=TENANT,
+            source_object_ids=(uuid4(),),
+            dimension=CoverageDimension.REASONABLENESS,
+        )
+    assert result is True
+    business_rule_cls.return_value.has_qualifying_coverage_for_dimension.assert_called_once()
 
 
 # ---------------------------------------------------------------------

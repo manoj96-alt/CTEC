@@ -167,3 +167,69 @@ class ReportExecutionRequest(BaseModel):
 
 class RemediationCaseActionResponse(BaseModel):
     case_status: str
+
+
+# ---------------------------------------------------------------------
+# CDD-048 §26, §29 -- OQI-H2 Reference Evidence configuration, human
+# verification, and conflict-listing contracts. Minimal, additive; no
+# broad Reference Evidence CRUD surface.
+# ---------------------------------------------------------------------
+
+
+class AssertGovernedReferenceDatasetRequest(BaseModel):
+    """CDD-048 OQI-H2-I-R1 §8: carries no actor-identity field of any kind
+    -- `created_by` is populated exclusively from the authenticated
+    principal at the router boundary (`TrustedPrincipal.principal_id`),
+    never accepted from the caller."""
+
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    asserted_value: str
+    dataset_name: str
+    dataset_version: str
+    entry_key: str
+
+
+class RecordHumanVerifiedEvidenceRequest(BaseModel):
+    """CDD-048 OQI-H2-I-R1 §8: carries no actor-identity field of any kind
+    -- `verifying_actor_id`/`created_by` are populated exclusively from the
+    authenticated principal at the router boundary
+    (`TrustedPrincipal.principal_id`), never accepted from the caller. An
+    authenticated Bob can never cause "Alice" to be persisted as the
+    verifying actor, because no code path reads an actor identity from
+    anywhere other than the verified JWT subject."""
+
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    asserted_value: str
+    verification_rationale: str
+
+
+class ReferenceEvidenceAssertionResponse(BaseModel):
+    assertion_id: UUID
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    form: str
+    asserted_value: str
+    status: str
+    version_number: int
+    created_by: str
+    created_on: datetime
+
+
+class ReferenceEvidenceConflictResponse(BaseModel):
+    conflict_id: UUID
+    ontology_element_type: str
+    ontology_element_id: UUID
+    source_field_id: UUID
+    conflicting_assertion_ids: tuple[UUID, ...]
+    status: str
+    first_detected_at: datetime
+    last_observed_at: datetime
+
+
+class ReferenceEvidenceConflictListResponse(BaseModel):
+    items: tuple[ReferenceEvidenceConflictResponse, ...]

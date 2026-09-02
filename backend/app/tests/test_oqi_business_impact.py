@@ -343,11 +343,16 @@ def test_migration_round_trips_94_100_94_100(migrated_engine: Engine) -> None:
                 ).scalar_one()
             )
 
-    assert _table_count() == 102
+    # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
+    # final report): the two current-head assertions mechanically re-pinned
+    # from 102 to 109 (+7 new tables from migrations 0028-0030). The
+    # historical 94 boundary (at 0025, before OQI6) is correctly pinned and
+    # unaffected -- it must NOT change.
+    assert _table_count() == 109
     alembic.command.downgrade(config, "0025_oqi5_agent_reasoning")
     assert _table_count() == 94
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 102
+    assert _table_count() == 109
 
 
 # =====================================================================

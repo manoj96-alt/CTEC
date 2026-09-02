@@ -33,14 +33,22 @@ _MAX_VALUE_LENGTH = 4000
 
 
 class RemediationCandidateBasis(StrEnum):
-    """CDD-043 Sec12: closed, exactly these four. Longest value
-    `OQI2_CONSISTENCY` = 16 chars, `String(32)` safe (Artifact Authorization
-    Sec7)."""
+    """CDD-043 Sec12: closed, originally exactly four. CDD-048 §24
+    additively extends this with two more -- `ACCURACY_REFERENCE_EVIDENCE`
+    and `REASONABLENESS_CONTEXTUAL_RULE` -- naming the new dimension
+    directly (mirroring how `OQI1_COMPLETENESS`/`OQI1_VALIDITY` are already
+    dimension-named despite sharing OQI1's storage family). No dispatch
+    logic anywhere in this codebase branches on `basis` (verified: it is a
+    write-once explanatory label), so this extension carries zero risk to
+    existing behavior. Longest value `REASONABLENESS_CONTEXTUAL_RULE` = 30
+    chars, `String(32)` safe."""
 
     OQI1_COMPLETENESS = "OQI1_COMPLETENESS"
     OQI1_VALIDITY = "OQI1_VALIDITY"
     OQI2_CONSISTENCY = "OQI2_CONSISTENCY"
     OQI3_BUSINESS_RULE = "OQI3_BUSINESS_RULE"
+    ACCURACY_REFERENCE_EVIDENCE = "ACCURACY_REFERENCE_EVIDENCE"
+    REASONABLENESS_CONTEXTUAL_RULE = "REASONABLENESS_CONTEXTUAL_RULE"
 
 
 def _sorted_unique(ids: Sequence[UUID]) -> tuple[UUID, ...]:
@@ -272,4 +280,65 @@ def extract_oqi3_candidates() -> tuple[RemediationCandidate, ...]:
     violates the governed rule. Always returns zero candidates; the case
     routes to `STEWARD_INVESTIGATION` (the business-rule crown scenario:
     Purchasing Group missing, no evidence for what it should be)."""
+    return ()
+
+
+def extract_accuracy_candidates(
+    *,
+    case_id: UUID,
+    target_source_object_id: UUID,
+    target_source_field_id: UUID,
+    observed_evidence_id: UUID,
+    reference_value: str,
+    backing_assertion_ids: Sequence[UUID],
+    now: datetime,
+) -> tuple[RemediationCandidate, ...]:
+    """CDD-048 §24: proposes correcting the observed value toward the exact
+    qualifying Reference Evidence value the Accuracy evaluator itself
+    already established -- evidence-backed, mirroring `extract_oqi2_
+    candidates`'s precedent of proposing correction toward governed
+    evidence. Never fabricates a value: `reference_value` is always the
+    already-computed comparison target, never re-derived here. Returns zero
+    candidates (routing to `STEWARD_INVESTIGATION`) if no backing assertion
+    is supplied -- a defensive, never-reached-in-practice fail-safe, since a
+    `REFERENCE_VALUE_UNSUPPORTED` Finding cannot exist without qualifying
+    Reference Evidence (CDD-048 §6)."""
+    if not backing_assertion_ids:
+        return ()
+    supporting_ids = tuple(sorted(set(backing_assertion_ids), key=str))
+    candidate_id = derive_remediation_candidate_id(
+        case_id=case_id,
+        target_source_object_id=target_source_object_id,
+        target_source_field_id=target_source_field_id,
+        proposed_value=reference_value,
+        supporting_evidence_ids=supporting_ids,
+    )
+    return (
+        RemediationCandidate(
+            candidate_id=candidate_id,
+            case_id=case_id,
+            target_source_object_id=target_source_object_id,
+            target_source_field_id=target_source_field_id,
+            proposed_value=reference_value,
+            supporting_evidence_ids=supporting_ids,
+            conflicting_evidence_ids=(observed_evidence_id,),
+            missing_participant_roles=(),
+            authority_participant_role=None,
+            basis=RemediationCandidateBasis.ACCURACY_REFERENCE_EVIDENCE,
+            extracted_at=now,
+        ),
+    )
+
+
+def extract_reasonableness_candidates() -> tuple[RemediationCandidate, ...]:
+    """CDD-048 §24: a `CONTEXTUAL_PLAUSIBILITY_VIOLATION` does not, by
+    itself, supply a specific corrective value -- there is no persisted
+    evidence saying what the plausible value should be, only that the
+    current state violates the governed contextual rule. Always returns
+    zero candidates; the case routes to `STEWARD_INVESTIGATION` -- mirroring
+    `extract_oqi1_candidates`/`extract_oqi3_candidates`'s identical,
+    epistemically honest precedent. This is a deliberate, frozen
+    simplification (CDD-048 §24): H2 does not fabricate an action-taxonomy
+    expansion to propose corrective values for contextual-plausibility
+    violations."""
     return ()
