@@ -75,6 +75,7 @@ class OqiCanonicalStandardRepositoryImpl:
                 retired_on=standard.retired_on,
             )
         )
+        self.session.flush()
         for value in standard.values:
             self.session.add(
                 CanonicalStandardValueORM(
@@ -83,6 +84,12 @@ class OqiCanonicalStandardRepositoryImpl:
                     canonical_representation=value.canonical_representation,
                 )
             )
+        # Explicit flush before the alias child rows -- the FK dependency
+        # (alias -> value) must be physically committed first, mirroring
+        # ReferenceEvidenceAssertionORM's own two-phase flush discipline
+        # (CDD-048 §15) rather than relying on implicit ORM insert-ordering.
+        self.session.flush()
+        for value in standard.values:
             for alias in value.aliases:
                 self.session.add(
                     CanonicalStandardAliasORM(

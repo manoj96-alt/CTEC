@@ -156,9 +156,20 @@ class OqiConformityEvaluationService:
 
         # CDD-049 §8: the ONLY resolution path -- the evaluating rule's own
         # information_element_requirement_id. No SourceField fallback, no
-        # inference, no ER normalization.
-        standard = self._canonical_standard_lookup.get_active_standard_for_information_element(
-            information_element_requirement_id=UUID(rule.information_element_requirement_id)
+        # inference, no ER normalization. An unparseable value (a
+        # non-UUID free-text identifier, per OQI-H3-I-R1 amendment §4)
+        # means no real Information Element can be resolved -- exactly the
+        # NO_STANDARD case, never a crash.
+        try:
+            information_element_id: UUID | None = UUID(rule.information_element_requirement_id)
+        except ValueError:
+            information_element_id = None
+        standard = (
+            None
+            if information_element_id is None
+            else self._canonical_standard_lookup.get_active_standard_for_information_element(
+                information_element_requirement_id=information_element_id
+            )
         )
         result = canonicalize(standard=standard, observed_representation=observed_value)
 

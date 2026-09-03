@@ -30,10 +30,10 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
         current_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
         assert revision == current_head
         # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
-        # final report): mechanically re-pinned from 102 to 109 (+7 new
+        # final report; OQI-H3-I-R1 amendment): mechanically re-pinned from 109 to 114 (+5 new
         # tables from migrations 0028-0030), following the established,
         # recurring, disclosed correction process (CDD-040, OQI-H1-I-R1).
-        assert table_count == 109
+        assert table_count == 114
 
 
 def test_repository_crud(migrated_engine: Engine) -> None:

@@ -438,8 +438,22 @@ class OqiCrossSourceEvaluationService:
         canonical_projections: list[CanonicalProjectionRow] = []
 
         if len(known_values) >= 2 and self._canonical_standard_lookup is not None:
-            standard = self._canonical_standard_lookup.get_active_standard_for_information_element(
-                information_element_requirement_id=UUID(rule.information_element_requirement_id)
+            # CDD-049 §8: information_element_requirement_id is a free-text
+            # field predating H3 (OQI-H3-I-R1 amendment §4) -- an
+            # unparseable value means no real Information Element can be
+            # resolved, which is exactly the NO_STANDARD case (§14), never
+            # a crash. This is the identical defensive discipline
+            # OqiConformityEvaluationService applies for the same reason.
+            try:
+                information_element_id = UUID(rule.information_element_requirement_id)
+            except ValueError:
+                information_element_id = None
+            standard = (
+                None
+                if information_element_id is None
+                else self._canonical_standard_lookup.get_active_standard_for_information_element(
+                    information_element_requirement_id=information_element_id
+                )
             )
             if standard is not None:
                 # CASE B: every required known participant must resolve

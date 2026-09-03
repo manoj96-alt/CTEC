@@ -150,7 +150,7 @@ jobs:
           set -eu
           count=$(docker compose exec -T -e PGPASSWORD=ctec postgres psql -U ctec -d ctec -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name != 'alembic_version'")
           echo "table count: $count"
-          [ "$count" -eq 109 ] || { echo "unexpected table count: $count (expected 109)"; exit 1; }
+          [ "$count" -eq 114 ] || { echo "unexpected table count: $count (expected 114)"; exit 1; }
 
       - name: Verify the imported Keycloak realm exposes exactly the required OQI scopes, correctly classified
         run: |
@@ -169,8 +169,10 @@ jobs:
           echo "$default_scopes" | grep -qx "oqi:read" || { echo "oqi:read is not a default scope"; exit 1; }
           echo "$optional_scopes" | grep -qx "oqi-remediation:authorize" || { echo "oqi-remediation:authorize is not an optional scope"; exit 1; }
           echo "$optional_scopes" | grep -qx "oqi-remediation:report-execution" || { echo "oqi-remediation:report-execution is not an optional scope"; exit 1; }
+          echo "$optional_scopes" | grep -qx "oqi-canonical-standard:configure" || { echo "oqi-canonical-standard:configure is not an optional scope"; exit 1; }
           if echo "$default_scopes" | grep -qx "oqi-remediation:authorize"; then echo "oqi-remediation:authorize must not be default"; exit 1; fi
           if echo "$default_scopes" | grep -qx "oqi-remediation:report-execution"; then echo "oqi-remediation:report-execution must not be default"; exit 1; fi
+          if echo "$default_scopes" | grep -qx "oqi-canonical-standard:configure"; then echo "oqi-canonical-standard:configure must not be default"; exit 1; fi
 
       - name: Backend process liveness
         run: curl -sf http://localhost:8000/health
