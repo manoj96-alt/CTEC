@@ -348,7 +348,7 @@ def test_table_count_is_86(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 114
+    assert table_count == 120
 
 
 # --- database constraints ---

@@ -41,6 +41,19 @@ class SourceObject(BaseEntity):
             "source_object_name",
             name="uq_source_objects_tenant_name",
         ),
+        # CDD-050-Artifact-Authorization-H4-R1-Reference-Tenant-Isolation-
+        # Correction-Amendment.md SS5/SS9: tenant-qualified candidate key,
+        # letting OQI-H4 Reference Integrity's own composite FKs structurally
+        # enforce tenant consistency (migration 0038). Logically redundant
+        # for identity alone (source_object_id is already a single-column
+        # primary key), but required as a PostgreSQL candidate key for
+        # defense-in-depth tenant enforcement -- GLOBAL ID UNIQUENESS !=
+        # TENANT CONSISTENCY ENFORCEMENT.
+        UniqueConstraint(
+            "tenant_id",
+            "source_object_id",
+            name="uq_source_objects_tenant_pk",
+        ),
         # Tenant-qualified composite FK: a source object can only reference a
         # source system owned by the same tenant. Replaces the single-column
         # FK on source_system_id (see migration 0011).

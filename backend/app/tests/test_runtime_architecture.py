@@ -1472,6 +1472,55 @@ def test_oqi4_ontology_impact_orms_have_single_construction_site() -> None:
     ], "CurrentOntologyImpactORM constructed outside its single authorized site"
 
 
+def test_oqi_h4_integrity_orms_have_single_construction_site() -> None:
+    """CDD-050 Artifact Authorization row 18: single-construction-site
+    firewall for the 6 new OQI-H4 Integrity ORM classes, mirroring H3's own
+    Conformity firewall-extension precedent (and OQI4/OQI5's own dedicated-
+    ORM single-site pattern, since none of these six tables are shared/
+    reused -- each has exactly one authorized repository construction
+    site)."""
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_integrity.py",
+                # test_oqi_h4_integrity_crown.py's own TestCardinalityDatabaseConstraints/
+                # TestCardinalityDatabaseConstraints P-series deliberately constructs raw
+                # oqi_integrity ORM rows, bypassing every repository/domain validation, in
+                # exactly the tests proving the database-level CHECK/FK constraints reject
+                # a violation even when the application layer is bypassed -- the identical
+                # established pattern as test_oqi_quality_postgres.py's own raw
+                # QualityRuleORM construction (see the OQI1 exclusion above).
+                "test_oqi_h4_integrity_crown.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("IntegrityRelationshipCardinalityORM") == [
+        "infrastructure/persistence/oqi_integrity_requirement_repository.py"
+    ], "IntegrityRelationshipCardinalityORM constructed outside its single authorized site"
+    assert _construction_sites("IntegrityStructuralEvaluationORM") == [
+        "infrastructure/persistence/oqi_integrity_structural_evaluation_repository.py"
+    ], "IntegrityStructuralEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("IntegrityStructuralEvaluationRelationshipORM") == [
+        "infrastructure/persistence/oqi_integrity_structural_evaluation_repository.py"
+    ], "IntegrityStructuralEvaluationRelationshipORM constructed outside its single authorized site"
+    assert _construction_sites("IntegrityStructuralFindingORM") == [
+        "infrastructure/persistence/oqi_integrity_structural_evaluation_repository.py"
+    ], "IntegrityStructuralFindingORM constructed outside its single authorized site"
+    assert _construction_sites("IntegrityReferenceEvaluationORM") == [
+        "infrastructure/persistence/oqi_integrity_reference_evaluation_repository.py"
+    ], "IntegrityReferenceEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("IntegrityReferenceFindingORM") == [
+        "infrastructure/persistence/oqi_integrity_reference_evaluation_repository.py"
+    ], "IntegrityReferenceFindingORM constructed outside its single authorized site"
+
+
 def test_oqi5_i2_agent_orms_have_single_construction_site() -> None:
     """CDD-043 Artifact Authorization §3 row 6 / GC1: single-construction-
     site firewall for the 4 new OQI5-I2 ORM classes, mirroring OQI1-4's

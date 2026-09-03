@@ -67,6 +67,12 @@ from app.application.oqi_business_rule_evaluation_service import (
 )
 from app.application.oqi_conformity_evaluation_service import OqiConformityEvaluationService
 from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
+from app.application.oqi_integrity_reference_evaluation_service import (
+    OqiIntegrityReferenceEvaluationService,
+)
+from app.application.oqi_integrity_structural_evaluation_service import (
+    OqiIntegrityStructuralEvaluationService,
+)
 from app.application.oqi_ontology_impact_evaluation_service import (
     OqiOntologyImpactEvaluationService,
 )
@@ -122,15 +128,24 @@ from app.domain.oqi_cross_source.correspondence import (
     ComparisonSubjectCorrespondenceStatus,
 )
 from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+from app.domain.oqi_integrity.requirement import (
+    IntegrityRelationshipCardinality,
+    IntegrityRelationshipCardinalityStatus,
+)
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
 from app.domain.semantic_mapping.model import SemanticMapping
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
 from app.domain.shared.value_objects import CanonicalName, Description, Identifier
 from app.infrastructure.persistence.blueprint_repository import BlueprintRepositoryImpl
 from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
+from app.infrastructure.persistence.models.blueprint import RelationshipRequirementORM
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
 from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
+from app.infrastructure.persistence.models.institutional_relationship import (
+    InstitutionalRelationship,
+)
+from app.infrastructure.persistence.models.relationship_type import RelationshipType
 from app.infrastructure.persistence.models.source_object import SourceObject
 from app.infrastructure.persistence.models.source_system import SourceSystem
 from app.infrastructure.persistence.oqi_accuracy_evaluation_repository import (
@@ -157,6 +172,15 @@ from app.infrastructure.persistence.oqi_cross_source_correspondence_repository i
 )
 from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
     OqiCrossSourceEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_integrity_reference_evaluation_repository import (
+    OqiIntegrityReferenceEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_integrity_requirement_repository import (
+    OqiIntegrityRequirementRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_integrity_structural_evaluation_repository import (
+    OqiIntegrityStructuralEvaluationRepositoryImpl,
 )
 from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository import (
     OqiOntologyImpactEvaluationRepositoryImpl,
@@ -231,6 +255,28 @@ _H3_PLM_CONFORMITY_CONDITION_ID = "oqi-demo-h3-plm-manufacturing-country-conform
 _H3_CONSISTENCY_CONDITION_ID = "oqi-demo-h3-manufacturing-country-consistency"
 _H3_COMPARISON_SUBJECT_ID = _uid("h3-comparison-subject")
 
+# CDD-050 §28 (OQI-H4 demo crown scenario): the ALREADY-GOVERNED, real
+# `assembledAt` RelationshipRequirement (Product -> Facility, REQUIRED) --
+# zero new Blueprint/ConceptRequirement/RelationshipRequirement. One new
+# ACTIVE IntegrityRelationshipCardinality (min=1, max=1) anchors it. Three
+# new EnterpriseEntity trios (scenarios A/B/C) plus one new SourceObject
+# with a genuine ResolutionOutcome.UNRESOLVED record (scenario D).
+_H4_ASSEMBLED_AT_RELATIONSHIP_TYPE_NAME = "assembledAt"
+_H4_PRODUCT_ENTITY_TYPE_NAME = "Product"
+_H4_FACILITY_ENTITY_TYPE_NAME = "Facility"
+_H4_CARDINALITY_ID = _uid("h4-assembled-at-cardinality")
+_H4_PRODUCT_A_ID = _uid("h4-product-a")
+_H4_FACILITY_A_ID = _uid("h4-facility-a")
+_H4_ASSEMBLED_AT_EDGE_A_ID = _uid("h4-assembled-at-edge-a")
+_H4_PRODUCT_B_ID = _uid("h4-product-b")
+_H4_PRODUCT_C_ID = _uid("h4-product-c")
+_H4_FACILITY_C2_ID = _uid("h4-facility-c2")
+_H4_ASSEMBLED_AT_EDGE_C1_ID = _uid("h4-assembled-at-edge-c1")
+_H4_ASSEMBLED_AT_EDGE_C2_ID = _uid("h4-assembled-at-edge-c2")
+_H4_SOURCE_SYSTEM_D_ID = _uid("h4-source-system-d")
+_H4_SOURCE_OBJECT_D_ID = _uid("h4-source-object-d")
+_H4_RESOLUTION_RECORD_D_ID = _uid("h4-resolution-record-d")
+
 
 class DemoTenantRequiredError(Exception):
     """Raised when the seeder is asked to seed any tenant other than the
@@ -250,6 +296,10 @@ class DemoOqiSeedSummary:
     conformity_sap_outcome: str | None
     conformity_plm_outcome: str | None
     h3_consistency_outcome: str | None
+    h4_structural_a_outcome: str | None
+    h4_structural_b_outcome: str | None
+    h4_structural_c_outcome: str | None
+    h4_reference_d_outcome: str | None
 
 
 class DemoOqiSeeder:
@@ -514,6 +564,7 @@ class DemoOqiSeeder:
 
         self._seed_h2_context(tenant_id)
         self._seed_h3_context(tenant_id)
+        self._seed_h4_context(tenant_id)
         return dependency.dependency_id
 
     def _seed_h2_context(self, tenant_id: str) -> None:
@@ -900,6 +951,205 @@ class DemoOqiSeeder:
             )
         )
 
+    def _seed_h4_context(self, tenant_id: str) -> None:
+        """CDD-050 §28: the ALREADY-GOVERNED, real `assembledAt`
+        RelationshipRequirement (Product -> Facility, REQUIRED) -- zero new
+        Blueprint/ConceptRequirement/RelationshipRequirement (PO governed
+        seed material, unmodified). One new ACTIVE
+        `IntegrityRelationshipCardinality` (min=1, max=1) anchors it; real
+        `EnterpriseEntity`/`InstitutionalRelationship` rows for scenarios
+        A/B/C; one real `ResolutionOutcome.UNRESOLVED` record for scenario
+        D. No Integrity evaluation/Finding row is directly inserted here --
+        those arise only through `_evaluate_h4`'s calls to the real
+        Structural/Reference evaluation services (CDD-050 §34)."""
+        relationship_type_id = self.session.scalar(
+            select(RelationshipType.relationship_type_id).where(
+                RelationshipType.relationship_type_name == _H4_ASSEMBLED_AT_RELATIONSHIP_TYPE_NAME
+            )
+        )
+        assert relationship_type_id is not None, (
+            f"Required governed relationship type not found: "
+            f"{_H4_ASSEMBLED_AT_RELATIONSHIP_TYPE_NAME!r} -- OntologySeeder must run before "
+            "DemoOqiSeeder"
+        )
+        relationship_requirement_id = self.session.scalar(
+            select(RelationshipRequirementORM.relationship_requirement_id).where(
+                RelationshipRequirementORM.relationship_type_id == relationship_type_id
+            )
+        )
+        assert relationship_requirement_id is not None, (
+            "Required governed RelationshipRequirement not found for "
+            f"{_H4_ASSEMBLED_AT_RELATIONSHIP_TYPE_NAME!r} -- BlueprintSeeder must run before "
+            "DemoOqiSeeder"
+        )
+        product_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _H4_PRODUCT_ENTITY_TYPE_NAME
+            )
+        )
+        facility_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _H4_FACILITY_ENTITY_TYPE_NAME
+            )
+        )
+        assert product_type_id is not None and facility_type_id is not None, (
+            f"Required governed entity types not found: {_H4_PRODUCT_ENTITY_TYPE_NAME!r} / "
+            f"{_H4_FACILITY_ENTITY_TYPE_NAME!r} -- OntologySeeder must run before DemoOqiSeeder"
+        )
+
+        requirement_repo = OqiIntegrityRequirementRepositoryImpl(self.session)
+        if (
+            requirement_repo.get_active_cardinality_for_requirement(
+                relationship_requirement_id=relationship_requirement_id
+            )
+            is None
+        ):
+            requirement_repo.insert_cardinality(
+                IntegrityRelationshipCardinality(
+                    integrity_relationship_cardinality_id=_H4_CARDINALITY_ID,
+                    relationship_requirement_id=relationship_requirement_id,
+                    min_cardinality=1,
+                    max_cardinality=1,
+                    version_number=1,
+                    previous_version_id=None,
+                    status=IntegrityRelationshipCardinalityStatus.ACTIVE,
+                    created_by="demo-seeder",
+                    created_on=SEED_TIMESTAMP,
+                )
+            )
+
+        def _entity(entity_id: UUID, name: str, type_id: UUID) -> None:
+            existing = self.session.get(EnterpriseEntity, entity_id)
+            if existing is not None:
+                return
+            self.session.add(
+                EnterpriseEntity(
+                    enterprise_entity_id=entity_id,
+                    tenant_id=tenant_id,
+                    enterprise_entity_name=name,
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    entity_type_id=type_id,
+                    business_domain_id=BOOTSTRAP_BUSINESS_DOMAIN_ID,
+                )
+            )
+
+        def _edge(edge_id: UUID, name: str, from_id: UUID, to_id: UUID) -> None:
+            existing = self.session.get(InstitutionalRelationship, edge_id)
+            if existing is not None:
+                return
+            self.session.add(
+                InstitutionalRelationship(
+                    institutional_relationship_id=edge_id,
+                    tenant_id=tenant_id,
+                    institutional_relationship_name=name,
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    relationship_type_id=relationship_type_id,
+                    from_entity_id=from_id,
+                    to_entity_id=to_id,
+                )
+            )
+
+        # Scenario A: one qualifying edge -> SATISFIED.
+        _entity(_H4_PRODUCT_A_ID, "H4 Demo Product A", product_type_id)
+        _entity(_H4_FACILITY_A_ID, "H4 Demo Facility A", facility_type_id)
+        self.session.flush()
+        _edge(
+            _H4_ASSEMBLED_AT_EDGE_A_ID, "H4 Demo A assembledAt", _H4_PRODUCT_A_ID, _H4_FACILITY_A_ID
+        )
+
+        # Scenario B: zero qualifying edges -> MISSING_REQUIRED_RELATIONSHIP.
+        _entity(_H4_PRODUCT_B_ID, "H4 Demo Product B", product_type_id)
+
+        # Scenario C: two distinct qualifying targets -> RELATIONSHIP_
+        # CARDINALITY_VIOLATION (reuses Facility A as one of the two
+        # distinct targets, per PO-H4-01's distinct-target-counting rule).
+        _entity(_H4_PRODUCT_C_ID, "H4 Demo Product C", product_type_id)
+        _entity(_H4_FACILITY_C2_ID, "H4 Demo Facility C2", facility_type_id)
+        self.session.flush()
+        _edge(
+            _H4_ASSEMBLED_AT_EDGE_C1_ID,
+            "H4 Demo C assembledAt 1",
+            _H4_PRODUCT_C_ID,
+            _H4_FACILITY_A_ID,
+        )
+        _edge(
+            _H4_ASSEMBLED_AT_EDGE_C2_ID,
+            "H4 Demo C assembledAt 2",
+            _H4_PRODUCT_C_ID,
+            _H4_FACILITY_C2_ID,
+        )
+        self.session.flush()
+
+        # Scenario D: a genuinely evaluated, persisted ResolutionOutcome
+        # .UNRESOLVED -- Reference Integrity's own orphan proof (CDD-050
+        # §20: only a real persisted UNRESOLVED record establishes an
+        # orphan, never a fabricated target).
+        existing_system = self.session.get(SourceSystem, _H4_SOURCE_SYSTEM_D_ID)
+        if existing_system is None:
+            self.session.add(
+                SourceSystem(
+                    source_system_id=_H4_SOURCE_SYSTEM_D_ID,
+                    tenant_id=tenant_id,
+                    source_system_name="H4 Demo Source System D",
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                )
+            )
+            self.session.flush()
+        existing_object = self.session.get(SourceObject, _H4_SOURCE_OBJECT_D_ID)
+        if existing_object is None:
+            self.session.add(
+                SourceObject(
+                    source_object_id=_H4_SOURCE_OBJECT_D_ID,
+                    tenant_id=tenant_id,
+                    source_object_name="H4 Demo Source Object D",
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    source_system_id=_H4_SOURCE_SYSTEM_D_ID,
+                )
+            )
+            self.session.flush()
+
+        resolution_store = EntityResolutionStore(self.session)
+        if (
+            resolution_store.get_current_record(
+                tenant_id,
+                EntityResolutionStore.understanding_key((_H4_SOURCE_OBJECT_D_ID,)),
+            )
+            is None
+        ):
+            resolution_store.append(
+                EnterpriseEntityResolutionRecord(
+                    record_id=_H4_RESOLUTION_RECORD_D_ID,
+                    tenant_id=tenant_id,
+                    enterprise_entity_id=None,
+                    supporting_source_object_ids=(_H4_SOURCE_OBJECT_D_ID,),
+                    outcome=ResolutionOutcome.UNRESOLVED,
+                    business_confidence=BusinessConfidence.HIGH,
+                    structured_reasons=("no matching enterprise entity",),
+                    narrative_explanation=(
+                        "Deterministic OQI-H4 demo fixture: genuinely evaluated, unresolved."
+                    ),
+                    produced_at=SEED_TIMESTAMP,
+                    policy_version="v1",
+                )
+            )
+        self.session.flush()
+
     # ------------------------------------------------------------------
     # Real, unmodified production evaluators -- never a directly-persisted
     # conclusion. Re-run every invocation; each is independently
@@ -950,6 +1200,7 @@ class DemoOqiSeeder:
 
         accuracy_sap, accuracy_plm, reasonableness = self._evaluate_h2(tenant_id, clock)
         conformity_sap, conformity_plm, h3_consistency = self._evaluate_h3(tenant_id, clock)
+        structural_a, structural_b, structural_c, reference_d = self._evaluate_h4(tenant_id, clock)
 
         return DemoOqiSeedSummary(
             tenant_id=tenant_id,
@@ -963,6 +1214,10 @@ class DemoOqiSeeder:
             conformity_sap_outcome=conformity_sap,
             conformity_plm_outcome=conformity_plm,
             h3_consistency_outcome=h3_consistency,
+            h4_structural_a_outcome=structural_a,
+            h4_structural_b_outcome=structural_b,
+            h4_structural_c_outcome=structural_c,
+            h4_reference_d_outcome=reference_d,
         )
 
     def _evaluate_h2(
@@ -1109,6 +1364,73 @@ class DemoOqiSeeder:
             None if sap_conformity is None else sap_conformity.outcome.value,
             None if plm_conformity is None else plm_conformity.outcome.value,
             None if h3_consistency_evaluation is None else h3_consistency_evaluation.outcome.value,
+        )
+
+    def _evaluate_h4(
+        self, tenant_id: str, clock: Callable[[], datetime]
+    ) -> tuple[str | None, str | None, str | None, str | None]:
+        """CDD-050 §28, §34: calls the real, unmodified-by-reuse OQI-H4
+        evaluators -- `OqiIntegrityStructuralEvaluationService.
+        evaluate_current_state` (scenarios A/B/C) and
+        `OqiIntegrityReferenceEvaluationService.evaluate_current_state`
+        (scenario D) -- so every Structural/Reference Integrity outcome a
+        fresh demo shows is real evaluator output over real seeded
+        entities/relationships/resolution state, never a directly-persisted
+        conclusion."""
+        relationship_type_id = self.session.scalar(
+            select(RelationshipType.relationship_type_id).where(
+                RelationshipType.relationship_type_name == _H4_ASSEMBLED_AT_RELATIONSHIP_TYPE_NAME
+            )
+        )
+        assert relationship_type_id is not None
+        relationship_requirement_id = self.session.scalar(
+            select(RelationshipRequirementORM.relationship_requirement_id).where(
+                RelationshipRequirementORM.relationship_type_id == relationship_type_id
+            )
+        )
+        assert relationship_requirement_id is not None
+
+        requirement_repo = OqiIntegrityRequirementRepositoryImpl(self.session)
+        structural_service = OqiIntegrityStructuralEvaluationService(
+            evaluation_repository=OqiIntegrityStructuralEvaluationRepositoryImpl(self.session),
+            cardinality_lookup=requirement_repo,
+            clock=clock,
+        )
+        eval_a = structural_service.evaluate_current_state(
+            tenant_id=tenant_id,
+            enterprise_entity_id=_H4_PRODUCT_A_ID,
+            relationship_requirement_id=relationship_requirement_id,
+        )
+        self.session.flush()
+        eval_b = structural_service.evaluate_current_state(
+            tenant_id=tenant_id,
+            enterprise_entity_id=_H4_PRODUCT_B_ID,
+            relationship_requirement_id=relationship_requirement_id,
+        )
+        self.session.flush()
+        eval_c = structural_service.evaluate_current_state(
+            tenant_id=tenant_id,
+            enterprise_entity_id=_H4_PRODUCT_C_ID,
+            relationship_requirement_id=relationship_requirement_id,
+        )
+        self.session.flush()
+
+        reference_service = OqiIntegrityReferenceEvaluationService(
+            evaluation_repository=OqiIntegrityReferenceEvaluationRepositoryImpl(self.session),
+            clock=clock,
+        )
+        eval_d = reference_service.evaluate_current_state(
+            tenant_id=tenant_id,
+            source_object_id=_H4_SOURCE_OBJECT_D_ID,
+            relationship_requirement_id=relationship_requirement_id,
+        )
+        self.session.flush()
+
+        return (
+            None if eval_a is None else eval_a.outcome.value,
+            None if eval_b is None else eval_b.outcome.value,
+            None if eval_c is None else eval_c.outcome.value,
+            None if eval_d is None else eval_d.outcome.value,
         )
 
 

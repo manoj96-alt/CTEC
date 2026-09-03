@@ -218,10 +218,11 @@ def test_empty_source_object_ids_short_circuits_to_false_without_querying() -> N
 # ---------------------------------------------------------------------
 # Unsupported (future) dimension dispatch (CDD-047 §14). CDD-048 §23
 # (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final report):
-# ACCURACY and REASONABLENESS are removed from this parametrize list --
-# they now have live evaluators and are proven to dispatch correctly (not
-# unconditionally False) by the two tests immediately below this class.
-# UNIQUENESS/TIMELINESS/INTEGRITY/CONFORMITY remain genuinely unsupported.
+# ACCURACY, REASONABLENESS, and INTEGRITY (CDD-050 §24) are removed from
+# this parametrize list -- they now have live evaluators/dispatch and are
+# proven to dispatch correctly (not unconditionally False) by the tests
+# immediately below this class. UNIQUENESS/TIMELINESS remain genuinely
+# unsupported.
 # ---------------------------------------------------------------------
 
 
@@ -230,7 +231,6 @@ def test_empty_source_object_ids_short_circuits_to_false_without_querying() -> N
     [
         CoverageDimension.UNIQUENESS,
         CoverageDimension.TIMELINESS,
-        CoverageDimension.INTEGRITY,
     ],
 )
 def test_unsupported_dimension_dispatch_returns_false_without_querying(
@@ -336,6 +336,24 @@ def test_reasonableness_dispatches_to_business_rule_evaluation_repository() -> N
         )
     assert result is True
     business_rule_cls.return_value.has_qualifying_coverage_for_dimension.assert_called_once()
+
+
+def test_integrity_dispatches_to_integrity_evaluation_repositories() -> None:
+    """CDD-050 §24: INTEGRITY is existence-only, subject-scoped, across
+    BOTH new evaluation tables -- Reference is consulted first (an exact
+    `source_object_id` match), short-circuiting before any ER-resolution
+    attempt for Structural coverage."""
+    repo = _repo()
+    with patch(
+        "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
+        "OqiIntegrityReferenceEvaluationRepositoryImpl"
+    ) as reference_cls:
+        reference_cls.return_value.has_qualifying_coverage.return_value = True
+        result = repo.has_qualifying_coverage_for_dimension(
+            tenant_id=TENANT, source_object_ids=(uuid4(),), dimension=CoverageDimension.INTEGRITY
+        )
+    assert result is True
+    reference_cls.return_value.has_qualifying_coverage.assert_called_once()
 
 
 # ---------------------------------------------------------------------
