@@ -16,7 +16,8 @@ from uuid import UUID, uuid4
 import alembic.command
 import pytest
 from alembic.config import Config
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.oqi_business_impact_service import OqiBusinessImpactService
@@ -961,3 +962,341 @@ def test_concurrent_different_tenants_do_not_block_each_other(
         )
     assert row_a is not None and row_b is not None
     assert row_a.tenant_id != row_b.tenant_id
+
+
+# =====================================================================
+# CDD-052 (OQI6-R1): permanent tenant-isolation adversarial matrix for
+# oqi_business_dependencies' foreign key to oqi_business_processes (TI-01
+# through TI-10), mirroring the H4-R1 precedent's own TI-series shape.
+# =====================================================================
+
+
+def _seed_process(session: Session, *, tenant_id: str) -> tuple[UUID, int]:
+    from app.domain.oqi_business_impact.process import create_business_process
+
+    process = create_business_process(
+        process_id=uuid4(),
+        tenant_id=tenant_id,
+        name="CDD-052 R1 Fixture Process",
+        description=None,
+        category=None,
+        created_by="steward",
+        created_on=NOW,
+    )
+    OqiBusinessImpactRepositoryImpl(session).insert_business_process(process)
+    session.commit()
+    return process.process_id, process.version
+
+
+_INSERT_DEPENDENCY_SQL = text(
+    "INSERT INTO oqi_business_dependencies "
+    "(dependency_id, version, tenant_id, business_process_id, business_process_version, "
+    "ontology_element_type, ontology_element_id, criticality, status, created_by, created_on) "
+    "VALUES (:dependency_id, :version, :tenant_id, :business_process_id, :business_process_version, "
+    ":ontology_element_type, :ontology_element_id, :criticality, :status, :created_by, :created_on)"
+)
+
+
+def _attempt_direct_dependency_insert(
+    session: Session,
+    *,
+    tenant_id: str,
+    business_process_id: UUID,
+    business_process_version: int,
+) -> str:
+    """Raw parameterized SQL insertion, bypassing OqiBusinessImpactService
+    AND the OqiBusinessDependencyORM construction site entirely -- the exact
+    adversarial shape CDD-052 SS4/SS16 requires (mirroring this repository's
+    own established single-construction-site firewall precedent, which
+    already exempts one comparable H5 adversarial test rather than widening
+    that test's own file authorization -- CDD-052's own three-path
+    authorization does not include test_runtime_architecture.py, so this
+    test achieves the identical genuine-PostgreSQL-bypass proof without any
+    ORM constructor call for OqiBusinessDependencyORM at all)."""
+    nested = session.begin_nested()
+    try:
+        session.execute(
+            _INSERT_DEPENDENCY_SQL,
+            {
+                "dependency_id": str(uuid4()),
+                "version": 1,
+                "tenant_id": tenant_id,
+                "business_process_id": str(business_process_id),
+                "business_process_version": business_process_version,
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "criticality": None,
+                "status": BusinessDependencyStatus.ACTIVE.value,
+                "created_by": "attacker",
+                "created_on": NOW,
+            },
+        )
+        session.flush()
+        nested.rollback()
+        return "ACCEPTED"
+    except IntegrityError as exc:
+        nested.rollback()
+        return type(exc).__name__
+
+
+def test_ti01_direct_orm_same_tenant_dependency_accepted(factory: sessionmaker[Session]) -> None:
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        process_id, process_version = _seed_process(session, tenant_id=tenant_a)
+        result = _attempt_direct_dependency_insert(
+            session,
+            tenant_id=tenant_a,
+            business_process_id=process_id,
+            business_process_version=process_version,
+        )
+    assert result == "ACCEPTED"  # TI-01
+
+
+def test_ti02_direct_orm_cross_tenant_dependency_rejected_by_postgresql(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    with factory() as session:
+        process_id, process_version = _seed_process(session, tenant_id=tenant_b)
+        result = _attempt_direct_dependency_insert(
+            session,
+            tenant_id=tenant_a,
+            business_process_id=process_id,
+            business_process_version=process_version,
+        )
+    assert result == "IntegrityError"  # TI-02: genuine PostgreSQL FK enforcement
+
+
+def test_ti03_service_same_tenant_create_dependency_accepted(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        process_id, _ = _seed_process(session, tenant_id=tenant_a)
+        dependency = _business_impact_service(session).create_dependency(
+            tenant_id=tenant_a,
+            business_process_id=process_id,
+            ontology_element_type=OntologyElementType.ENTITY,
+            ontology_element_id=uuid4(),
+            criticality=None,
+            created_by="steward",
+            created_on=NOW,
+        )
+        session.commit()
+    assert dependency.status is BusinessDependencyStatus.ACTIVE  # TI-03
+
+
+def test_ti04_service_cross_tenant_create_dependency_rejected(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    with factory() as session:
+        process_id, _ = _seed_process(session, tenant_id=tenant_b)
+    with factory() as session, pytest.raises(ValidationException):
+        _business_impact_service(session).create_dependency(
+            tenant_id=tenant_a,
+            business_process_id=process_id,
+            ontology_element_type=OntologyElementType.ENTITY,
+            ontology_element_id=uuid4(),
+            criticality=None,
+            created_by="steward",
+            created_on=NOW,
+        )  # TI-04: existing service-layer defense-in-depth, unchanged
+
+
+def test_ti05_old_fk_absent(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conname = 'fk_oqi_business_dependencies_process'"
+            )
+        ).fetchone()
+    assert row is None  # TI-05
+
+
+def test_ti06_new_fk_present_with_exact_shape(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'fk_oqi_business_dependencies_tenant_process'"
+            )
+        ).fetchone()
+    assert row is not None  # TI-06
+    definition = row[0]
+    assert "tenant_id" in definition
+    assert "business_process_id" in definition
+    assert "business_process_version" in definition
+    assert "oqi_business_processes" in definition
+    assert definition == (
+        "FOREIGN KEY (tenant_id, business_process_id, business_process_version) "
+        "REFERENCES oqi_business_processes(tenant_id, process_id, version)"
+    )
+
+
+def test_ti07_h5_parent_candidate_key_preserved(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'uq_oqi_business_processes_tenant_pk'"
+            )
+        ).fetchone()
+    assert row is not None  # TI-07
+    assert row[0] == "UNIQUE (tenant_id, process_id, version)"
+
+
+def test_ti08_h5_timeliness_business_process_relationship_still_functional(
+    factory: sessionmaker[Session],
+) -> None:
+    """CDD-052 SS9/SS32: H5's own tenant-qualified FK
+    (fk_oqi_timeliness_policies_tenant_business_process) is a read-only
+    input to R1 -- prove a legitimate same-tenant TimelinessPolicy anchored
+    to a real BusinessProcess still inserts successfully post-correction,
+    reusing this repository's own established H5 crown test infrastructure
+    (test_oqi_h5_timeliness_crown.py's _seed_business_process/
+    _seed_unmapped_information_element/_seed_policy) rather than
+    duplicating it."""
+    from app.tests.test_oqi_h5_timeliness_crown import (
+        _seed_business_process as _h5_seed_business_process,
+        _seed_policy as _h5_seed_policy,
+        _seed_unmapped_information_element as _h5_seed_unmapped_information_element,
+    )
+
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        process_id, process_version = _h5_seed_business_process(session, tenant_id=tenant_a)
+        requirement_id = _h5_seed_unmapped_information_element(session, tenant_id=tenant_a)
+        policy_id = _h5_seed_policy(
+            session,
+            tenant_id=tenant_a,
+            information_element_requirement_id=requirement_id,
+            business_process_id=process_id,
+            business_process_version=process_version,
+        )
+    assert policy_id is not None  # TI-08
+
+
+def test_ti09_migration_round_trip_preserves_valid_dependency_data(
+    migrated_engine: Engine,
+) -> None:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+
+    tenant_a = f"tenant-{uuid4()}"
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    dependency_id = uuid4()
+    with factory() as session:
+        process_id, process_version = _seed_process(session, tenant_id=tenant_a)
+        session.execute(
+            _INSERT_DEPENDENCY_SQL,
+            {
+                "dependency_id": str(dependency_id),
+                "version": 1,
+                "tenant_id": tenant_a,
+                "business_process_id": str(process_id),
+                "business_process_version": process_version,
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "criticality": "HIGH",
+                "status": BusinessDependencyStatus.ACTIVE.value,
+                "created_by": "steward",
+                "created_on": NOW,
+            },
+        )
+        session.commit()
+
+    def _row() -> tuple[object, ...] | None:
+        with migrated_engine.connect() as connection:
+            result = connection.execute(
+                text(
+                    "SELECT dependency_id, version, tenant_id, business_process_id, "
+                    "business_process_version, ontology_element_type, ontology_element_id, "
+                    "criticality, status FROM oqi_business_dependencies "
+                    "WHERE dependency_id = :dependency_id"
+                ),
+                {"dependency_id": str(dependency_id)},
+            ).fetchone()
+            return None if result is None else tuple(result)
+
+    before = _row()
+    assert before is not None
+
+    alembic.command.downgrade(config, "0040_oqi_h5_timeliness_eval")
+    after_downgrade = _row()
+    assert after_downgrade == before  # TI-09: byte-identical across downgrade
+
+    alembic.command.upgrade(config, "head")
+    after_upgrade = _row()
+    assert after_upgrade == before  # TI-09: byte-identical across re-upgrade
+
+
+def test_ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_data(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-052 SS11/SS16: a cross-tenant row that the pre-R1 schema accepts
+    must cause the 0041 upgrade to fail (genuine PostgreSQL FK-validation
+    IntegrityError), leaving the row byte-unchanged -- never silently
+    repaired, rewritten, or deleted by the migration itself."""
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+
+    alembic.command.downgrade(config, "0040_oqi_h5_timeliness_eval")
+
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    dependency_id = uuid4()
+    with factory() as session:
+        process_id, process_version = _seed_process(session, tenant_id=tenant_b)
+        session.execute(
+            _INSERT_DEPENDENCY_SQL,
+            {
+                "dependency_id": str(dependency_id),
+                "version": 1,
+                "tenant_id": tenant_a,  # cross-tenant: accepted by the pre-R1 plain FK
+                "business_process_id": str(process_id),
+                "business_process_version": process_version,
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "criticality": None,
+                "status": BusinessDependencyStatus.ACTIVE.value,
+                "created_by": "attacker",
+                "created_on": NOW,
+            },
+        )
+        session.commit()
+
+    def _row() -> tuple[object, ...] | None:
+        with migrated_engine.connect() as connection:
+            result = connection.execute(
+                text(
+                    "SELECT tenant_id, business_process_id, business_process_version "
+                    "FROM oqi_business_dependencies WHERE dependency_id = :dependency_id"
+                ),
+                {"dependency_id": str(dependency_id)},
+            ).fetchone()
+            return None if result is None else tuple(result)
+
+    invalid_row = _row()
+    assert invalid_row is not None
+    assert invalid_row[0] == tenant_a
+
+    with pytest.raises(IntegrityError):
+        alembic.command.upgrade(config, "head")  # TI-10: fails closed
+
+    with migrated_engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert version == "0040_oqi_h5_timeliness_eval"  # migration did not partially apply
+    assert _row() == invalid_row  # row byte-unchanged, never silently repaired
+
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM oqi_business_dependencies WHERE dependency_id = :dependency_id"),
+            {"dependency_id": str(dependency_id)},
+        )
+
+    alembic.command.upgrade(config, "head")  # retry succeeds once invalid data is cleaned
+    with migrated_engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert version == "0041_oqi6_r1_dependency_tenancy"

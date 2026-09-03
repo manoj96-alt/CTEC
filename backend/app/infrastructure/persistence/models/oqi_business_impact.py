@@ -64,10 +64,20 @@ class OqiBusinessDependencyORM(BaseEntity):
     __tablename__ = "oqi_business_dependencies"
 
     __table_args__ = (
+        # CDD-052 (OQI6-R1, narrow replace-FK correction): this FK previously
+        # targeted the plain (process_id, version) primary key, proving only
+        # that the referenced process exists -- not that it belongs to this
+        # dependency's own tenant. Replaced with a tenant-qualified composite
+        # FK against `uq_oqi_business_processes_tenant_pk` (added by
+        # migration 0039 for H5 Timeliness, reused here unmodified).
         ForeignKeyConstraint(
-            ["business_process_id", "business_process_version"],
-            ["oqi_business_processes.process_id", "oqi_business_processes.version"],
-            name="fk_oqi_business_dependencies_process",
+            ["tenant_id", "business_process_id", "business_process_version"],
+            [
+                "oqi_business_processes.tenant_id",
+                "oqi_business_processes.process_id",
+                "oqi_business_processes.version",
+            ],
+            name="fk_oqi_business_dependencies_tenant_process",
         ),
         Index("idx_oqi_business_dependencies_tenant_id", "tenant_id"),
         Index("idx_oqi_business_dependencies_dependency_id", "dependency_id"),
