@@ -228,6 +228,24 @@ class IntegrityReferenceEvaluationORM(BaseEntity):
             "outcome IN ('SATISFIED', 'VIOLATED')",
             name="ck_oqi_integrity_reference_evaluations_outcome",
         ),
+        # CDD-050-Artifact-Authorization-H4-R1-Reference-Tenant-Isolation-
+        # Correction-Amendment.md SS5/SS9 (migration 0038): tenant-qualified
+        # composite FKs, structurally rejecting a row whose tenant_id
+        # disagrees with its SourceObject/resolution record's own true
+        # tenant -- replaces the original plain single-column FKs.
+        ForeignKeyConstraint(
+            ["tenant_id", "source_object_id"],
+            ["source_objects.tenant_id", "source_objects.source_object_id"],
+            name="fk_oqi_integrity_ref_eval_tenant_source_object",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "resolution_record_id"],
+            [
+                "enterprise_entity_resolution_records.tenant_id",
+                "enterprise_entity_resolution_records.record_id",
+            ],
+            name="fk_oqi_integrity_ref_eval_tenant_resolution_record",
+        ),
     )
 
     evaluation_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
@@ -240,29 +258,8 @@ class IntegrityReferenceEvaluationORM(BaseEntity):
         ),
         nullable=False,
     )
-    # Plain single-column FK, mirroring QualityFindingORM.source_object_id's
-    # own established precedent -- `source_objects` carries no unique
-    # constraint on (tenant_id, source_object_id) to target a tenant-
-    # qualified composite FK (unlike enterprise_entities/institutional_
-    # relationships, RFC-016). Tenant isolation for this reference is
-    # enforced at the query layer, identical to every existing OQI1-3
-    # evaluation/Finding table.
-    source_object_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey(
-            "source_objects.source_object_id",
-            name="fk_oqi_integrity_reference_evaluations_source_object_id",
-        ),
-        nullable=False,
-    )
-    resolution_record_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey(
-            "enterprise_entity_resolution_records.record_id",
-            name="fk_oqi_integrity_reference_evaluations_resolution_record_id",
-        ),
-        nullable=False,
-    )
+    source_object_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
+    resolution_record_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     resolution_outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     evaluation_horizon: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -282,6 +279,14 @@ class IntegrityReferenceFindingORM(BaseEntity):
         CheckConstraint(
             "status IN ('OPEN', 'RESOLVED')", name="ck_oqi_integrity_reference_findings_status"
         ),
+        # CDD-050-Artifact-Authorization-H4-R1-Reference-Tenant-Isolation-
+        # Correction-Amendment.md SS5/SS9 (migration 0038): tenant-qualified
+        # composite FK, replacing the original plain single-column FK.
+        ForeignKeyConstraint(
+            ["tenant_id", "source_object_id"],
+            ["source_objects.tenant_id", "source_objects.source_object_id"],
+            name="fk_oqi_integrity_ref_finding_tenant_source_object",
+        ),
     )
 
     finding_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
@@ -294,14 +299,7 @@ class IntegrityReferenceFindingORM(BaseEntity):
         ),
         nullable=False,
     )
-    source_object_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey(
-            "source_objects.source_object_id",
-            name="fk_oqi_integrity_reference_findings_source_object_id",
-        ),
-        nullable=False,
-    )
+    source_object_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     finding_type: Mapped[str] = mapped_column(String(40), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     state_revision: Mapped[int] = mapped_column(Integer(), nullable=False)

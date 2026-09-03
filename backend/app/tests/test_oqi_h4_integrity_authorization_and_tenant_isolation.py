@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine, select
@@ -239,6 +239,321 @@ class TestTenantIsolation:
         )
         assert len(rows) == 1
         assert rows[0].tenant_id == tenant_a
+
+
+# ---------------------------------------------------------------------
+# R1-series: real-PostgreSQL database-level tenant-isolation correction
+# proofs (CDD-050-Artifact-Authorization-H4-R1-Reference-Tenant-Isolation-
+# Correction-Amendment.md §11, TI-01 through TI-10). Every REJECT below
+# must be a genuine PostgreSQL IntegrityError/ForeignKeyViolation raised by
+# the new tenant-qualified composite FKs (migration 0038) -- never a
+# service-layer check, never DDL inspection.
+# ---------------------------------------------------------------------
+
+
+def _r1_resolution_record(
+    session: Session, *, tenant_id: str, source_object_id: UUID, outcome: ResolutionOutcome
+) -> UUID:
+    """Mirrors `test_oqi_h4_integrity_crown._resolution_record` but returns
+    the real, persisted `record_id` -- required here to construct the exact
+    adversarial cross-tenant rows below, which `_resolution_record`'s own
+    void return does not support."""
+    from app.domain.identity_resolution.model import (
+        BusinessConfidence,
+        EnterpriseEntityResolutionRecord,
+    )
+    from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
+
+    record_id = uuid4()
+    EntityResolutionStore(session).append(
+        EnterpriseEntityResolutionRecord(
+            record_id=record_id,
+            tenant_id=tenant_id,
+            enterprise_entity_id=None,
+            supporting_source_object_ids=(source_object_id,),
+            outcome=outcome,
+            business_confidence=BusinessConfidence.HIGH,
+            structured_reasons=("R1 fixture",),
+            narrative_explanation="R1 tenant-isolation correction fixture.",
+            produced_at=NOW,
+            policy_version="v1",
+        )
+    )
+    session.flush()
+    return record_id
+
+
+def _attempt_evaluation_insert(
+    session: Session,
+    *,
+    tenant_id: str,
+    requirement_id: UUID,
+    source_object_id: UUID,
+    resolution_record_id: UUID,
+) -> str:
+    """Drives the adversarial insert through the real, authorized
+    repository's own `insert_evaluation_idempotent` -- never a raw ORM
+    construction in this file -- so this file's own single-construction-site
+    firewall obligations (`test_runtime_architecture.py`, unauthorized by
+    the R1 correction) are never implicated: the ORM row is constructed
+    inside the repository, exactly where it already was before this
+    correction. Returns "ACCEPTED" or the raised exception's type name."""
+    nested = session.begin_nested()
+    try:
+        OqiIntegrityReferenceEvaluationRepositoryImpl(session).insert_evaluation_idempotent(
+            evaluation_id=uuid4(),
+            tenant_id=tenant_id,
+            relationship_requirement_id=requirement_id,
+            source_object_id=source_object_id,
+            resolution_record_id=resolution_record_id,
+            resolution_outcome="Unresolved",
+            outcome="VIOLATED",
+            evaluation_horizon=NOW,
+            evaluated_on=NOW,
+        )
+        session.flush()
+        nested.rollback()
+        return "ACCEPTED"
+    except Exception as exc:  # noqa: BLE001 -- classifying the exact PostgreSQL rejection
+        nested.rollback()
+        return type(exc).__name__
+
+
+def _attempt_finding_insert(
+    session: Session, *, tenant_id: str, requirement_id: UUID, source_object_id: UUID
+) -> str:
+    """Mirrors `_attempt_evaluation_insert`, driven through the same
+    repository's `upsert_finding`, itself constructed from a real, fully
+    domain-validated `ReferenceIntegrityFinding` (its own `finding_id` is
+    the correct deterministic identity for these exact fields -- domain
+    validation has no notion of cross-tenant ownership, which is precisely
+    the boundary this test isolates at the database layer)."""
+    from app.domain.oqi_integrity.reference import (
+        ReferenceIntegrityFinding,
+        derive_reference_finding_id,
+    )
+    from app.domain.oqi_integrity.structural import IntegrityFindingStatus, IntegrityFindingType
+
+    finding = ReferenceIntegrityFinding(
+        finding_id=derive_reference_finding_id(
+            tenant_id=tenant_id,
+            relationship_requirement_id=requirement_id,
+            source_object_id=source_object_id,
+        ),
+        tenant_id=tenant_id,
+        relationship_requirement_id=requirement_id,
+        source_object_id=source_object_id,
+        finding_type=IntegrityFindingType.ORPHAN_REFERENCE,
+        status=IntegrityFindingStatus.OPEN,
+        state_revision=1,
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+        last_evaluated_horizon=NOW,
+        occurrence_count=1,
+        reopen_count=0,
+    )
+    nested = session.begin_nested()
+    try:
+        OqiIntegrityReferenceEvaluationRepositoryImpl(session).upsert_finding(finding)
+        session.flush()
+        nested.rollback()
+        return "ACCEPTED"
+    except Exception as exc:  # noqa: BLE001 -- classifying the exact PostgreSQL rejection
+        nested.rollback()
+        return type(exc).__name__
+
+
+class TestR1ReferenceTenantIsolationCorrection:
+    def test_ti01_ti03_same_tenant_evaluation_is_accepted(self, session: Session) -> None:
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_a = _tenant()
+        source_a = _source_object(session, tenant_id=tenant_a)
+        record_a = _r1_resolution_record(
+            session,
+            tenant_id=tenant_a,
+            source_object_id=source_a,
+            outcome=ResolutionOutcome.UNRESOLVED,
+        )
+        result = _attempt_evaluation_insert(
+            session,
+            tenant_id=tenant_a,
+            requirement_id=requirement_id,
+            source_object_id=source_a,
+            resolution_record_id=record_a,
+        )
+        assert result == "ACCEPTED"  # TI-01 + TI-03
+
+    def test_ti05_same_tenant_finding_is_accepted(self, session: Session) -> None:
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_a = _tenant()
+        source_a = _source_object(session, tenant_id=tenant_a)
+        result = _attempt_finding_insert(
+            session, tenant_id=tenant_a, requirement_id=requirement_id, source_object_id=source_a
+        )
+        assert result == "ACCEPTED"  # TI-05
+
+    def test_ti02_cross_tenant_source_object_rejected_by_postgresql(self, session: Session) -> None:
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_a, tenant_b = _tenant(), _tenant()
+        source_a = _source_object(session, tenant_id=tenant_a)
+        source_b = _source_object(session, tenant_id=tenant_b)
+        record_a = _r1_resolution_record(
+            session,
+            tenant_id=tenant_a,
+            source_object_id=source_a,
+            outcome=ResolutionOutcome.UNRESOLVED,
+        )
+        result = _attempt_evaluation_insert(
+            session,
+            tenant_id=tenant_a,
+            requirement_id=requirement_id,
+            source_object_id=source_b,  # tenant B's real source object
+            resolution_record_id=record_a,
+        )
+        assert result == "IntegrityError"
+
+    def test_ti04_cross_tenant_resolution_record_rejected_by_postgresql(
+        self, session: Session
+    ) -> None:
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_a, tenant_b = _tenant(), _tenant()
+        source_a = _source_object(session, tenant_id=tenant_a)
+        source_b = _source_object(session, tenant_id=tenant_b)
+        record_b = _r1_resolution_record(
+            session,
+            tenant_id=tenant_b,
+            source_object_id=source_b,
+            outcome=ResolutionOutcome.UNRESOLVED,
+        )
+        result = _attempt_evaluation_insert(
+            session,
+            tenant_id=tenant_a,
+            requirement_id=requirement_id,
+            source_object_id=source_a,
+            resolution_record_id=record_b,  # tenant B's real resolution record
+        )
+        assert result == "IntegrityError"
+
+    def test_ti06_cross_tenant_finding_source_object_rejected_by_postgresql(
+        self, session: Session
+    ) -> None:
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_a, tenant_b = _tenant(), _tenant()
+        source_b = _source_object(session, tenant_id=tenant_b)
+        result = _attempt_finding_insert(
+            session,
+            tenant_id=tenant_a,
+            requirement_id=requirement_id,
+            source_object_id=source_b,  # tenant B's real source object
+        )
+        assert result == "IntegrityError"
+
+    def test_ti07_ti08_ti09_mixed_parent_attacks_all_rejected(self, session: Session) -> None:
+        """Independently proves each of the two tenant boundaries in
+        isolation and combined (TI-07: only source foreign; TI-08: only
+        resolution record foreign; TI-09: both foreign)."""
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_a, tenant_b = _tenant(), _tenant()
+        source_a = _source_object(session, tenant_id=tenant_a)
+        source_b = _source_object(session, tenant_id=tenant_b)
+        record_a = _r1_resolution_record(
+            session,
+            tenant_id=tenant_a,
+            source_object_id=source_a,
+            outcome=ResolutionOutcome.UNRESOLVED,
+        )
+        record_b = _r1_resolution_record(
+            session,
+            tenant_id=tenant_b,
+            source_object_id=source_b,
+            outcome=ResolutionOutcome.UNRESOLVED,
+        )
+
+        # TI-07
+        assert (
+            _attempt_evaluation_insert(
+                session,
+                tenant_id=tenant_a,
+                requirement_id=requirement_id,
+                source_object_id=source_b,
+                resolution_record_id=record_a,
+            )
+            == "IntegrityError"
+        )
+        # TI-08
+        assert (
+            _attempt_evaluation_insert(
+                session,
+                tenant_id=tenant_a,
+                requirement_id=requirement_id,
+                source_object_id=source_a,
+                resolution_record_id=record_b,
+            )
+            == "IntegrityError"
+        )
+        # TI-09
+        assert (
+            _attempt_evaluation_insert(
+                session,
+                tenant_id=tenant_a,
+                requirement_id=requirement_id,
+                source_object_id=source_b,
+                resolution_record_id=record_b,
+            )
+            == "IntegrityError"
+        )
+
+    def test_ti10_normal_service_path_unchanged(self, session: Session) -> None:
+        requirement_id = _seed_requirement(session, "assembledAt")
+        tenant_id = _tenant()
+        source_object_id = _source_object(session, tenant_id=tenant_id)
+        _resolution_record(
+            session,
+            tenant_id=tenant_id,
+            source_object_id=source_object_id,
+            outcome=ResolutionOutcome.UNRESOLVED,
+        )
+        result = _reference_service(session).evaluate_current_state(
+            tenant_id=tenant_id,
+            source_object_id=source_object_id,
+            relationship_requirement_id=requirement_id,
+        )
+        assert result is not None
+        assert result.outcome is EvaluationOutcome.VIOLATED
+
+    def test_service_tenant_validation_still_present(self, session: Session) -> None:
+        """SERVICE TENANT VALIDATION != DATABASE TENANT ENFORCEMENT: proves
+        the pre-existing `EntityResolutionStore` tenant-ownership assertion
+        (unmodified by this correction) still independently rejects a
+        cross-tenant `supporting_source_object_ids` reference at the
+        application boundary, entirely separately from the new database-
+        level composite FKs proven above."""
+        from app.domain.identity_resolution.model import (
+            BusinessConfidence,
+            EnterpriseEntityResolutionRecord,
+        )
+        from app.infrastructure.persistence.entity_resolution_store import (
+            CrossTenantReferenceError,
+            EntityResolutionStore,
+        )
+
+        tenant_a, tenant_b = _tenant(), _tenant()
+        source_b = _source_object(session, tenant_id=tenant_b)
+        with pytest.raises(CrossTenantReferenceError):
+            EntityResolutionStore(session).append(
+                EnterpriseEntityResolutionRecord(
+                    record_id=uuid4(),
+                    tenant_id=tenant_a,
+                    enterprise_entity_id=None,
+                    supporting_source_object_ids=(source_b,),
+                    outcome=ResolutionOutcome.UNRESOLVED,
+                    business_confidence=BusinessConfidence.HIGH,
+                    structured_reasons=("x",),
+                    narrative_explanation="service-layer boundary proof",
+                    produced_at=NOW,
+                    policy_version="v1",
+                )
+            )
 
 
 # ---------------------------------------------------------------------
