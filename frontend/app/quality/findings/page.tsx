@@ -120,6 +120,8 @@ function FindingsPageContent() {
             <option value="OQI1">Completeness / Validity</option>
             <option value="OQI2">Cross-Source Consistency</option>
             <option value="OQI3">Business Rules</option>
+            <option value="INTEGRITY">Integrity</option>
+            <option value="TIMELINESS">Timeliness</option>
           </select>
         </label>
         <label>

@@ -72,12 +72,15 @@ class FindingStorageFamily(StrEnum):
     .FindingFamily`) itself stays permanently closed to OQI1/OQI2/OQI3;
     `INTEGRITY` exists only here, never as a `FindingFamily` member. Answers
     WHERE a Finding is physically stored, never WHAT quality dimension it
-    represents."""
+    represents. CDD-051 §22 additively extends this a second time with
+    `TIMELINESS`, mirroring `INTEGRITY`'s own precedent exactly -- a new
+    physical storage family, never a `FindingFamily` member."""
 
     OQI1 = "OQI1"
     OQI2 = "OQI2"
     OQI3 = "OQI3"
     INTEGRITY = "INTEGRITY"
+    TIMELINESS = "TIMELINESS"
 
 
 def storage_family_from_finding_family(finding_family: FindingFamily) -> FindingStorageFamily:

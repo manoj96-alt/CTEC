@@ -57,7 +57,12 @@ class QualityDimension(StrEnum):
     member with zero `QualityRule`-shaped backing at all: Integrity Findings
     are governed relationship-cardinality/reference-resolution outcomes,
     persisted in their own `FindingStorageFamily.INTEGRITY` tables (CDD-050
-    §11), never a `QualityRule`/OQI1 Finding."""
+    §11), never a `QualityRule`/OQI1 Finding. CDD-051 §3 additively extends
+    this a fifth time with `TIMELINESS` -- like `INTEGRITY`, zero
+    `QualityRule`-shaped backing: Timeliness Findings are governed
+    freshness/ingestion-latency outcomes evaluated against a
+    `TimelinessPolicy`, persisted in their own `FindingStorageFamily.
+    TIMELINESS` tables (CDD-051 §28), never a `QualityRule`/OQI1 Finding."""
 
     COMPLETENESS = "COMPLETENESS"
     VALIDITY = "VALIDITY"
@@ -65,6 +70,7 @@ class QualityDimension(StrEnum):
     ACCURACY = "ACCURACY"
     CONFORMITY = "CONFORMITY"
     INTEGRITY = "INTEGRITY"
+    TIMELINESS = "TIMELINESS"
 
 
 class QualityFindingType(StrEnum):

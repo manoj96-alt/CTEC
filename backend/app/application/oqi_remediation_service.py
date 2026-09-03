@@ -127,6 +127,15 @@ class OqiRemediationService:
             # RemediationCandidateBasis member, no CREATE_RELATIONSHIP/
             # DELETE_RELATIONSHIP/RESOLVE_ENTITY action type.
             candidates = extract_reasonableness_candidates()
+        elif quality_dimension == "TIMELINESS":
+            # CDD-051 §23: Timeliness Findings route to zero candidates /
+            # STEWARD_INVESTIGATION, mirroring INTEGRITY's/REASONABLENESS's
+            # own precedent exactly -- refreshing evidence is re-ingestion,
+            # not a governed edit (CDD-046 §35). No new
+            # RemediationCandidateBasis member, no REFRESH_SOURCE/RELOAD_
+            # DATA/TRIGGER_CONNECTOR action type, no external-system
+            # mutation authority of any kind.
+            candidates = extract_reasonableness_candidates()
         elif finding_family is FindingFamily.OQI1:
             candidates = extract_oqi1_candidates()
         elif finding_family is FindingFamily.OQI3:
