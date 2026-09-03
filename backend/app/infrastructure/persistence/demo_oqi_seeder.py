@@ -56,6 +56,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid5
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.application.oqi_accuracy_evaluation_service import OqiAccuracyEvaluationService
@@ -64,6 +65,7 @@ from app.application.oqi_business_rule_evaluation_service import (
     OqiBusinessRuleEvaluationService,
     SingleRecordSubject,
 )
+from app.application.oqi_conformity_evaluation_service import OqiConformityEvaluationService
 from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
 from app.application.oqi_ontology_impact_evaluation_service import (
     OqiOntologyImpactEvaluationService,
@@ -75,6 +77,12 @@ from app.core.bootstrap import (
     BOOTSTRAP_ENTITY_TYPE_ID,
     BOOTSTRAP_SEED_NAMESPACE,
     BOOTSTRAP_SYSTEM_ENTITY_ID,
+)
+from app.domain.blueprint import (
+    Blueprint,
+    ConceptRequirement,
+    InformationElementRequirement,
+    Obligation,
 )
 from app.domain.identity_resolution.model import (
     BusinessConfidence,
@@ -102,6 +110,12 @@ from app.domain.oqi_business_rule.rule import (
     Operator,
     RuleFamily,
 )
+from app.domain.oqi_canonical_standard.standard import (
+    CanonicalAlias,
+    CanonicalStandard,
+    CanonicalStandardStatus,
+    CanonicalValue,
+)
 from app.domain.oqi_cross_source.correspondence import (
     ComparisonSubjectCorrespondence,
     ComparisonSubjectCorrespondenceMember,
@@ -109,10 +123,13 @@ from app.domain.oqi_cross_source.correspondence import (
 )
 from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
+from app.domain.semantic_mapping.model import SemanticMapping
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
-from app.domain.shared.value_objects import CanonicalName, Identifier
+from app.domain.shared.value_objects import CanonicalName, Description, Identifier
+from app.infrastructure.persistence.blueprint_repository import BlueprintRepositoryImpl
 from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
+from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.source_object import SourceObject
 from app.infrastructure.persistence.models.source_system import SourceSystem
@@ -129,6 +146,12 @@ from app.infrastructure.persistence.oqi_business_rule_evaluation_repository impo
 from app.infrastructure.persistence.oqi_business_rule_repository import (
     OqiBusinessRuleRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_canonical_standard_repository import (
+    OqiCanonicalStandardRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_conformity_evaluation_repository import (
+    OqiConformityEvaluationRepositoryImpl,
+)
 from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
     OqiCrossSourceCorrespondenceRepositoryImpl,
 )
@@ -142,6 +165,7 @@ from app.infrastructure.persistence.oqi_quality_rule_repository import OqiQualit
 from app.infrastructure.persistence.oqi_reference_evidence_repository import (
     OqiReferenceEvidenceRepositoryImpl,
 )
+from app.infrastructure.persistence.semantic_mapping_repository import SemanticMappingRepositoryImpl
 from app.infrastructure.persistence.source_field_repository import SourceFieldRepositoryImpl
 
 SEED_TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
@@ -171,6 +195,42 @@ _ACCURACY_QUALITY_CONDITION_ID = "oqi-demo-supplier-country-accuracy"
 _QUANTITY_FIELD_ID = _uid("sap-quantity-field")
 _REASONABLENESS_BUSINESS_CONDITION_ID = "oqi-demo-order-quantity-reasonableness"
 
+# CDD-049 §30 (OQI-H3 demo crown scenario; OQI-H3-I-R1 amendment §5-§6): a
+# NEW, distinct field pair -- deliberately NOT reusing _SAP_FIELD_ID/
+# _PLM_FIELD_ID (whose raw "US"/"MX" values remain exactly as H2 seeded
+# them, unaffected by this addition). SAP="US" (a recognized non-canonical
+# alias), PLM="USA" (the governed canonical form) -- on the SAME already-
+# resolved SAP/PLM SourceObjects, so the existing entity resolution and
+# BusinessDependency downstream chain applies without any new seeding.
+_H3_SAP_FIELD_ID = _uid("h3-sap-manufacturing-country-field")
+_H3_PLM_FIELD_ID = _uid("h3-plm-manufacturing-country-field")
+
+# The genuine governed Information Element prerequisite chain (OQI-H3-I-R1
+# amendment §5): a NEW, separately-named, Approved Blueprint -- never
+# superseding or modifying the existing canonical
+# "CTEC Semiconductor Supply Chain Blueprint" -- referencing the
+# already-seeded "Supplier" EntityType (OntologySeeder, unmodified).
+_H3_BLUEPRINT_ID = _uid("h3-demo-blueprint")
+_H3_CONCEPT_REQUIREMENT_ID = _uid("h3-demo-concept-requirement")
+_H3_INFORMATION_ELEMENT_REQUIREMENT_ID = _uid("h3-manufacturing-country-ie")
+_H3_SAP_SEMANTIC_MAPPING_ID = _uid("h3-sap-semantic-mapping")
+_H3_PLM_SEMANTIC_MAPPING_ID = _uid("h3-plm-semantic-mapping")
+_H3_SUPPLIER_ENTITY_TYPE_NAME = "Supplier"
+
+# Governed CanonicalStandard: canonical "USA", recognized alias "US".
+_H3_CANONICAL_STANDARD_ID = _uid("h3-canonical-standard-manufacturing-country-v1")
+_H3_CANONICAL_VALUE_ID = _uid("h3-canonical-value-usa")
+_H3_CANONICAL_ALIAS_ID = _uid("h3-canonical-alias-us")
+
+# Two Conformity QualityRules (one per source field) plus one Consistency
+# QualityRule/ComparisonSubjectCorrespondence pair -- all three sharing
+# _H3_INFORMATION_ELEMENT_REQUIREMENT_ID (PO-H3-01: the same governed
+# Information Element anchors both).
+_H3_SAP_CONFORMITY_CONDITION_ID = "oqi-demo-h3-sap-manufacturing-country-conformity"
+_H3_PLM_CONFORMITY_CONDITION_ID = "oqi-demo-h3-plm-manufacturing-country-conformity"
+_H3_CONSISTENCY_CONDITION_ID = "oqi-demo-h3-manufacturing-country-consistency"
+_H3_COMPARISON_SUBJECT_ID = _uid("h3-comparison-subject")
+
 
 class DemoTenantRequiredError(Exception):
     """Raised when the seeder is asked to seed any tenant other than the
@@ -187,6 +247,9 @@ class DemoOqiSeedSummary:
     accuracy_sap_outcome: str | None
     accuracy_plm_outcome: str | None
     reasonableness_outcome: str | None
+    conformity_sap_outcome: str | None
+    conformity_plm_outcome: str | None
+    h3_consistency_outcome: str | None
 
 
 class DemoOqiSeeder:
@@ -450,6 +513,7 @@ class DemoOqiSeeder:
         )
 
         self._seed_h2_context(tenant_id)
+        self._seed_h3_context(tenant_id)
         return dependency.dependency_id
 
     def _seed_h2_context(self, tenant_id: str) -> None:
@@ -559,6 +623,283 @@ class DemoOqiSeeder:
             )
         )
 
+    def _seed_h3_context(self, tenant_id: str) -> None:
+        """CDD-049 §30 (OQI-H3); OQI-H3-I-R1 amendment §5-§6: the genuine
+        governed Information Element prerequisite chain, constructed
+        entirely through existing, unmodified production code
+        (`BlueprintRepositoryImpl.create()`, `SemanticMappingRepositoryImpl.
+        create()`) -- never a fake string identifier, never a SourceField
+        fallback. A NEW, separately-named, Approved Blueprint ("OQI-H3
+        Conformity Demo Blueprint") referencing the already-seeded
+        "Supplier" EntityType -- the existing canonical Blueprint (seeded by
+        `blueprint_seed.py`) is never touched or superseded. Then the
+        governed CanonicalStandard (canonical "USA", alias "US") anchored
+        to that real Information Element, plus two Conformity QualityRules
+        and one Consistency QualityRule/ComparisonSubjectCorrespondence
+        pair, all three sharing the same real
+        information_element_requirement_id (PO-H3-01)."""
+        supplier_entity_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _H3_SUPPLIER_ENTITY_TYPE_NAME
+            )
+        )
+        assert supplier_entity_type_id is not None, (
+            f"Required governed entity type not found: {_H3_SUPPLIER_ENTITY_TYPE_NAME!r} "
+            "-- OntologySeeder must run before DemoOqiSeeder"
+        )
+
+        BlueprintRepositoryImpl(self.session).create(
+            Blueprint(
+                blueprint_id=Identifier(_H3_BLUEPRINT_ID),
+                blueprint_name=CanonicalName("OQI-H3 Conformity Demo Blueprint"),
+                lifecycle_state=LifecycleState.ACTIVE,
+                governance_status=GovernanceStatus.APPROVED,
+                created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                created_on=SEED_TIMESTAMP,
+                concept_requirements=(
+                    ConceptRequirement(
+                        concept_requirement_id=Identifier(_H3_CONCEPT_REQUIREMENT_ID),
+                        blueprint_id=Identifier(_H3_BLUEPRINT_ID),
+                        entity_type_id=Identifier(supplier_entity_type_id),
+                        obligation=Obligation.REQUIRED,
+                        information_element_requirements=(
+                            InformationElementRequirement(
+                                information_element_requirement_id=Identifier(
+                                    _H3_INFORMATION_ELEMENT_REQUIREMENT_ID
+                                ),
+                                concept_requirement_id=Identifier(_H3_CONCEPT_REQUIREMENT_ID),
+                                element_name=CanonicalName("Manufacturing Country"),
+                                description=Description(
+                                    "The governed country in which a supplier's product is "
+                                    "manufactured (OQI-H3 demo)."
+                                ),
+                                obligation=Obligation.REQUIRED,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
+        self.session.flush()
+
+        # Two NEW SourceFields on the SAME already-resolved SAP/PLM
+        # SourceObjects -- reusing the existing entity resolution (§_seed_
+        # context above) so the downstream OQI4/OQI6/Reliance chain applies
+        # to these new findings without any new entity-resolution seeding.
+        field_repo = SourceFieldRepositoryImpl(self.session)
+        field_repo.create(
+            SourceField(
+                source_field_id=Identifier(_H3_SAP_FIELD_ID),
+                source_object_id=Identifier(_SAP_OBJECT_ID),
+                field_label=CanonicalName("Manufacturing Country"),
+                lifecycle_state=LifecycleState.ACTIVE,
+                governance_status=GovernanceStatus.APPROVED,
+                created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+        field_repo.create(
+            SourceField(
+                source_field_id=Identifier(_H3_PLM_FIELD_ID),
+                source_object_id=Identifier(_PLM_OBJECT_ID),
+                field_label=CanonicalName("Manufacturing Country"),
+                lifecycle_state=LifecycleState.ACTIVE,
+                governance_status=GovernanceStatus.APPROVED,
+                created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+        self.session.flush()
+
+        # Raw evidence -- SAP observes the non-canonical alias "US"; PLM
+        # observes the governed canonical form "USA" directly. Neither is
+        # asserted "correct" here -- Accuracy remains entirely independent
+        # of Conformity/Consistency (PO-H3-02).
+        self.session.add(
+            FieldValueEvidenceORM(
+                field_value_evidence_id=_uid("h3-sap-evidence"),
+                source_field_id=_H3_SAP_FIELD_ID,
+                source_record_reference="SUP-DEMO-001",
+                observed_representation="US",
+                observed_at=SEED_TIMESTAMP,
+                received_at=SEED_TIMESTAMP,
+            )
+        )
+        self.session.add(
+            FieldValueEvidenceORM(
+                field_value_evidence_id=_uid("h3-plm-evidence"),
+                source_field_id=_H3_PLM_FIELD_ID,
+                source_record_reference="P-DEMO-001",
+                observed_representation="USA",
+                observed_at=SEED_TIMESTAMP,
+                received_at=SEED_TIMESTAMP,
+            )
+        )
+        self.session.flush()
+
+        # Approved SemanticMapping: proves the genuine SourceField ->
+        # SemanticMapping -> InformationElementRequirement resolution path
+        # works end-to-end through existing, unmodified governance (CDD-019).
+        #
+        # Only SAP's mapping is created here, not both. Independently
+        # discovered this phase (OQI-H3-I-R1): `SemanticMappingRepositoryImpl.
+        # create()` enforces, at the application layer, at most one Approved
+        # SemanticMapping per (information_element_requirement_id, tenant) --
+        # a pre-existing, CDD-019/H1-era rule, entirely unrelated to and
+        # unmodified by H3, which this repository verified is genuinely
+        # enforced (`_raise_if_ambiguous`), not merely documented. This means
+        # two DIFFERENT SourceFields cannot both hold an Approved mapping to
+        # the SAME Information Element simultaneously within one tenant --
+        # SemanticMapping is a strict 1:1 correspondence, not many:1.
+        #
+        # This does not weaken H3's own correctness: neither
+        # `OqiConformityEvaluationService` nor the Consistency canonical-
+        # projection gate ever queries `semantic_mappings` at evaluation
+        # time -- both resolve the applicable Information Element directly
+        # from the evaluating `QualityRule.information_element_requirement_id`
+        # (CDD-049 §8), which is set identically, correctly, for BOTH the
+        # SAP and PLM Conformity rules below regardless of SemanticMapping
+        # state. PLM's own convergence on the same governed Information
+        # Element is therefore proven by its QualityRule's own field, not by
+        # a second (architecturally disallowed) Approved SemanticMapping row.
+        SemanticMappingRepositoryImpl(self.session).create(
+            SemanticMapping(
+                semantic_mapping_id=Identifier(_H3_SAP_SEMANTIC_MAPPING_ID),
+                source_field_id=Identifier(_H3_SAP_FIELD_ID),
+                information_element_requirement_id=Identifier(
+                    _H3_INFORMATION_ELEMENT_REQUIREMENT_ID
+                ),
+                lifecycle_state=LifecycleState.ACTIVE,
+                governance_status=GovernanceStatus.APPROVED,
+                created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+        self.session.flush()
+
+        # Governed CanonicalStandard: canonical "USA", recognized alias
+        # "US" -- shared-platform, anchored exclusively to the real
+        # Information Element (CDD-049 §9-§11).
+        OqiCanonicalStandardRepositoryImpl(self.session).insert_standard(
+            CanonicalStandard(
+                canonical_standard_id=_H3_CANONICAL_STANDARD_ID,
+                information_element_requirement_id=_H3_INFORMATION_ELEMENT_REQUIREMENT_ID,
+                version_number=1,
+                previous_version_id=None,
+                status=CanonicalStandardStatus.ACTIVE,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+                values=(
+                    CanonicalValue(
+                        canonical_value_id=_H3_CANONICAL_VALUE_ID,
+                        canonical_standard_id=_H3_CANONICAL_STANDARD_ID,
+                        canonical_representation="USA",
+                        aliases=(
+                            CanonicalAlias(
+                                canonical_alias_id=_H3_CANONICAL_ALIAS_ID,
+                                canonical_value_id=_H3_CANONICAL_VALUE_ID,
+                                alias_representation="US",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
+        self.session.flush()
+
+        # Two Conformity QualityRules (one per source field) -- both
+        # sharing the real information_element_requirement_id, resolved
+        # dynamically per observation (CDD-049 §6, never configured
+        # per-rule).
+        quality_rule_repo = OqiQualityRuleRepositoryImpl(self.session)
+        quality_rule_repo.create(
+            QualityRule.new(
+                quality_condition_id=_H3_SAP_CONFORMITY_CONDITION_ID,
+                version=1,
+                dimension=QualityDimension.CONFORMITY,
+                finding_type=QualityFindingType.NON_CANONICAL_REPRESENTATION,
+                validity_primitive=None,
+                information_element_requirement_id=str(_H3_INFORMATION_ELEMENT_REQUIREMENT_ID),
+                rule_parameters={},
+                status=QualityRuleStatus.ACTIVE,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+        quality_rule_repo.create(
+            QualityRule.new(
+                quality_condition_id=_H3_PLM_CONFORMITY_CONDITION_ID,
+                version=1,
+                dimension=QualityDimension.CONFORMITY,
+                finding_type=QualityFindingType.NON_CANONICAL_REPRESENTATION,
+                validity_primitive=None,
+                information_element_requirement_id=str(_H3_INFORMATION_ELEMENT_REQUIREMENT_ID),
+                rule_parameters={},
+                status=QualityRuleStatus.ACTIVE,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+
+        # One Consistency QualityRule + ComparisonSubjectCorrespondence for
+        # the SAME two fields, ALSO carrying the real
+        # information_element_requirement_id -- this is what the G0
+        # canonical-projection gate (CDD-049 §16) resolves against.
+        quality_rule_repo.create(
+            QualityRule.new(
+                quality_condition_id=_H3_CONSISTENCY_CONDITION_ID,
+                version=1,
+                dimension=QualityDimension.CONSISTENCY,
+                finding_type=QualityFindingType.CROSS_SOURCE_VALUE_CONFLICT,
+                validity_primitive=None,
+                information_element_requirement_id=str(_H3_INFORMATION_ELEMENT_REQUIREMENT_ID),
+                rule_parameters={
+                    "participants": [
+                        {
+                            "role": "SAP",
+                            "source_field_id": str(_H3_SAP_FIELD_ID),
+                            "eligible": True,
+                            "expected": True,
+                            "authoritative": False,
+                        },
+                        {
+                            "role": "PLM",
+                            "source_field_id": str(_H3_PLM_FIELD_ID),
+                            "eligible": True,
+                            "expected": True,
+                            "authoritative": False,
+                        },
+                    ]
+                },
+                status=QualityRuleStatus.ACTIVE,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+
+        OqiCrossSourceCorrespondenceRepositoryImpl(self.session).create(
+            ComparisonSubjectCorrespondence.new(
+                comparison_subject_id=_H3_COMPARISON_SUBJECT_ID,
+                tenant_id=tenant_id,
+                version=1,
+                status=ComparisonSubjectCorrespondenceStatus.ACTIVE,
+                members=(
+                    ComparisonSubjectCorrespondenceMember(
+                        participant_role="SAP",
+                        source_object_id=_SAP_OBJECT_ID,
+                        source_record_reference="SUP-DEMO-001",
+                    ),
+                    ComparisonSubjectCorrespondenceMember(
+                        participant_role="PLM",
+                        source_object_id=_PLM_OBJECT_ID,
+                        source_record_reference="P-DEMO-001",
+                    ),
+                ),
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+            )
+        )
+
     # ------------------------------------------------------------------
     # Real, unmodified production evaluators -- never a directly-persisted
     # conclusion. Re-run every invocation; each is independently
@@ -608,6 +949,7 @@ class DemoOqiSeeder:
         self.session.flush()
 
         accuracy_sap, accuracy_plm, reasonableness = self._evaluate_h2(tenant_id, clock)
+        conformity_sap, conformity_plm, h3_consistency = self._evaluate_h3(tenant_id, clock)
 
         return DemoOqiSeedSummary(
             tenant_id=tenant_id,
@@ -618,6 +960,9 @@ class DemoOqiSeeder:
             accuracy_sap_outcome=accuracy_sap,
             accuracy_plm_outcome=accuracy_plm,
             reasonableness_outcome=reasonableness,
+            conformity_sap_outcome=conformity_sap,
+            conformity_plm_outcome=conformity_plm,
+            h3_consistency_outcome=h3_consistency,
         )
 
     def _evaluate_h2(
@@ -691,6 +1036,79 @@ class DemoOqiSeeder:
             None if sap_evaluation is None else sap_evaluation.outcome.value,
             None if plm_evaluation is None else plm_evaluation.outcome.value,
             None if reasonableness_evaluation is None else reasonableness_evaluation.outcome.value,
+        )
+
+    def _evaluate_h3(
+        self, tenant_id: str, clock: Callable[[], datetime]
+    ) -> tuple[str | None, str | None, str | None]:
+        """CDD-049 §30: calls the real, unmodified-by-reuse OQI-H3
+        evaluators -- `OqiConformityEvaluationService.evaluate_current_state`
+        (twice, once per source field/observation) and
+        `OqiCrossSourceEvaluationService.evaluate_current_state` (the new
+        Consistency rule, this time constructed WITH a real
+        `canonical_standard_lookup`) -- so every Conformity/Consistency
+        outcome a fresh demo shows is real evaluator output over real seeded
+        evidence and a real governed CanonicalStandard, never a
+        directly-persisted conclusion."""
+        canonical_standard_repo = OqiCanonicalStandardRepositoryImpl(self.session)
+        conformity_service = OqiConformityEvaluationService(
+            evaluation_repository=OqiConformityEvaluationRepositoryImpl(self.session),
+            canonical_standard_lookup=canonical_standard_repo,
+            clock=clock,
+        )
+        sap_conformity_rule = OqiQualityRuleRepositoryImpl(self.session).get_active(
+            _H3_SAP_CONFORMITY_CONDITION_ID
+        )
+        assert sap_conformity_rule is not None
+        sap_conformity = conformity_service.evaluate_current_state(
+            rule=sap_conformity_rule,
+            subject=EvaluationSubject(
+                lineage=SourceRecordLineageIdentity(
+                    tenant_id=tenant_id,
+                    source_object_id=_SAP_OBJECT_ID,
+                    source_record_reference="SUP-DEMO-001",
+                ),
+                source_field_id=_H3_SAP_FIELD_ID,
+            ),
+        )
+        self.session.flush()
+
+        plm_conformity_rule = OqiQualityRuleRepositoryImpl(self.session).get_active(
+            _H3_PLM_CONFORMITY_CONDITION_ID
+        )
+        assert plm_conformity_rule is not None
+        plm_conformity = conformity_service.evaluate_current_state(
+            rule=plm_conformity_rule,
+            subject=EvaluationSubject(
+                lineage=SourceRecordLineageIdentity(
+                    tenant_id=tenant_id,
+                    source_object_id=_PLM_OBJECT_ID,
+                    source_record_reference="P-DEMO-001",
+                ),
+                source_field_id=_H3_PLM_FIELD_ID,
+            ),
+        )
+        self.session.flush()
+
+        h3_consistency_rule = OqiQualityRuleRepositoryImpl(self.session).get_active(
+            _H3_CONSISTENCY_CONDITION_ID
+        )
+        assert h3_consistency_rule is not None
+        h3_correspondence = OqiCrossSourceCorrespondenceRepositoryImpl(self.session).get_active(
+            tenant_id=tenant_id, comparison_subject_id=_H3_COMPARISON_SUBJECT_ID
+        )
+        assert h3_correspondence is not None
+        h3_consistency_evaluation = OqiCrossSourceEvaluationService(
+            evaluation_repository=OqiCrossSourceEvaluationRepositoryImpl(self.session),
+            canonical_standard_lookup=canonical_standard_repo,
+            clock=clock,
+        ).evaluate_current_state(rule=h3_consistency_rule, correspondence=h3_correspondence)
+        self.session.flush()
+
+        return (
+            None if sap_conformity is None else sap_conformity.outcome.value,
+            None if plm_conformity is None else plm_conformity.outcome.value,
+            None if h3_consistency_evaluation is None else h3_consistency_evaluation.outcome.value,
         )
 
 

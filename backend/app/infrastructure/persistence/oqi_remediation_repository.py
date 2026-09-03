@@ -45,6 +45,10 @@ from app.domain.oqi_remediation.candidate import (
 from app.domain.oqi_remediation.case import FindingFamily, RemediationCase, RemediationCaseStatus
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.oqi_business_rule_finding import BusinessRuleFindingORM
+from app.infrastructure.persistence.models.oqi_canonical_standard import (
+    CanonicalStandardValueORM,
+    QualityEvaluationCanonicalStandardORM,
+)
 from app.infrastructure.persistence.models.oqi_cross_source_evaluation import (
     QualityComparisonEvaluationEvidenceORM,
     QualityComparisonEvaluationObservationORM,
@@ -91,6 +95,19 @@ class AccuracyCandidateSupport:
     observed_evidence_id: UUID
     reference_value: str
     backing_assertion_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConformityCandidateSupport:
+    """CDD-049 §24: the exact data `extract_conformity_candidates` needs,
+    resolved read-only from what the Conformity evaluator already
+    persisted."""
+
+    target_source_object_id: UUID
+    target_source_field_id: UUID
+    observed_evidence_id: UUID
+    canonical_value: str
+    canonical_value_id: UUID
 
 
 class OqiRemediationRepository(Protocol):
@@ -325,6 +342,65 @@ class OqiRemediationRepositoryImpl:
             observed_evidence_id=evidence_row.field_value_evidence_id,
             reference_value=first_assertion.asserted_value,
             backing_assertion_ids=assertion_ids,
+        )
+
+    def get_conformity_candidate_support(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> ConformityCandidateSupport | None:
+        """CDD-049 §24: resolves the exact data `extract_conformity_
+        candidates` needs -- the observed evidence that produced this
+        NON_CANONICAL_REPRESENTATION Finding's latest VIOLATED evaluation,
+        and the CanonicalStandard value that evaluation consulted. Never
+        re-derives the comparison; only reads what the Conformity evaluator
+        itself already persisted. Intentionally NOT declared on
+        `OqiRemediationRepository`'s Protocol -- mirrors `get_accuracy_
+        candidate_support`'s own precedent exactly."""
+        finding_model = self.session.get(QualityFindingORM, finding_id)
+        if finding_model is None or finding_model.tenant_id != tenant_id:
+            return None
+        evaluation_model = (
+            self.session.query(QualityEvaluationORM)
+            .filter(
+                QualityEvaluationORM.tenant_id == tenant_id,
+                QualityEvaluationORM.quality_condition_id == finding_model.quality_condition_id,
+                QualityEvaluationORM.source_object_id == finding_model.source_object_id,
+                QualityEvaluationORM.source_record_reference
+                == finding_model.source_record_reference,
+                QualityEvaluationORM.source_field_id == finding_model.source_field_id,
+                QualityEvaluationORM.outcome == "VIOLATED",
+            )
+            .order_by(QualityEvaluationORM.evaluated_on.desc())
+            .first()
+        )
+        if evaluation_model is None:
+            return None
+        evidence_row = (
+            self.session.query(QualityEvaluationEvidenceORM)
+            .filter(QualityEvaluationEvidenceORM.evaluation_id == evaluation_model.evaluation_id)
+            .order_by(QualityEvaluationEvidenceORM.sequence_index.asc())
+            .first()
+        )
+        if evidence_row is None:
+            return None
+        link_row = (
+            self.session.query(QualityEvaluationCanonicalStandardORM)
+            .filter(
+                QualityEvaluationCanonicalStandardORM.evaluation_id
+                == evaluation_model.evaluation_id
+            )
+            .first()
+        )
+        if link_row is None:
+            return None
+        canonical_value = self.session.get(CanonicalStandardValueORM, link_row.canonical_value_id)
+        if canonical_value is None:
+            return None
+        return ConformityCandidateSupport(
+            target_source_object_id=finding_model.source_object_id,
+            target_source_field_id=finding_model.source_field_id,
+            observed_evidence_id=evidence_row.field_value_evidence_id,
+            canonical_value=canonical_value.canonical_representation,
+            canonical_value_id=canonical_value.canonical_value_id,
         )
 
 

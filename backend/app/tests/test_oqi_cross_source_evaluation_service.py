@@ -77,6 +77,24 @@ class _FakeRepository:
         self.call_log.append(("upsert_finding", finding.finding_id))
         self.findings[finding.finding_id] = finding
 
+    def link_canonical_projection(
+        self,
+        *,
+        evaluation_id: UUID,
+        participant_role: str,
+        canonical_value_id: UUID,
+        standard_version: int,
+    ) -> None:
+        self.call_log.append(
+            (
+                "link_canonical_projection",
+                evaluation_id,
+                participant_role,
+                canonical_value_id,
+                standard_version,
+            )
+        )
+
     def select_known_lineage(
         self, *, source_object_id: UUID, source_record_reference: str, evaluation_horizon: datetime
     ) -> bool:

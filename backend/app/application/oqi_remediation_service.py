@@ -30,6 +30,7 @@ from app.domain.oqi_remediation.authorization import (
 from app.domain.oqi_remediation.candidate import (
     RemediationCandidate,
     extract_accuracy_candidates,
+    extract_conformity_candidates,
     extract_oqi1_candidates,
     extract_oqi2_candidates,
     extract_oqi3_candidates,
@@ -108,6 +109,13 @@ class OqiRemediationService:
                 tenant_id=tenant_id, finding_family=finding_family, finding_id=finding_id
             )
             candidates: tuple[RemediationCandidate, ...] = self._extract_accuracy_candidates(
+                tenant_id=tenant_id, finding_id=finding_id, case_id=case_id, moment=moment
+            )
+        elif quality_dimension == "CONFORMITY":
+            case_id = derive_remediation_case_id(
+                tenant_id=tenant_id, finding_family=finding_family, finding_id=finding_id
+            )
+            candidates = self._extract_conformity_candidates(
                 tenant_id=tenant_id, finding_id=finding_id, case_id=case_id, moment=moment
             )
         elif quality_dimension == "REASONABLENESS":
@@ -200,6 +208,31 @@ class OqiRemediationService:
             observed_evidence_id=support.observed_evidence_id,
             reference_value=support.reference_value,
             backing_assertion_ids=support.backing_assertion_ids,
+            now=moment,
+        )
+
+    def _extract_conformity_candidates(
+        self, *, tenant_id: str, finding_id: UUID, case_id: UUID, moment: datetime
+    ) -> tuple[RemediationCandidate, ...]:
+        """CDD-049 §24: `get_conformity_candidate_support` is intentionally
+        NOT part of `OqiRemediationRepository`'s Protocol, mirroring
+        `_extract_accuracy_candidates`'s identical precedent -- accessed
+        defensively so a repository/fake that predates this capability
+        degrades to zero candidates (STEWARD_INVESTIGATION) rather than
+        raising."""
+        getter = getattr(self._repository, "get_conformity_candidate_support", None)
+        if getter is None:
+            return ()
+        support = getter(tenant_id=tenant_id, finding_id=finding_id)
+        if support is None:
+            return ()
+        return extract_conformity_candidates(
+            case_id=case_id,
+            target_source_object_id=support.target_source_object_id,
+            target_source_field_id=support.target_source_field_id,
+            observed_evidence_id=support.observed_evidence_id,
+            canonical_value=support.canonical_value,
+            canonical_value_id=support.canonical_value_id,
             now=moment,
         )
 

@@ -340,7 +340,7 @@ def test_table_count_is_86(migrated_engine: Engine) -> None:
     # from `test_persistence_integration.py`'s, must track the current head
     # the same way its Alembic-head literal already does. CDD-048
     # (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final
-    # report): mechanically re-pinned from 102 to 109.
+    # report; OQI-H3-I-R1 amendment): mechanically re-pinned from 109 to 114.
     with migrated_engine.connect() as connection:
         table_count = connection.execute(
             text(
@@ -348,7 +348,7 @@ def test_table_count_is_86(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 109
+    assert table_count == 114
 
 
 # --- database constraints ---

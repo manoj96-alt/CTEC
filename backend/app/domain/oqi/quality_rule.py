@@ -45,24 +45,30 @@ class QualityDimension(StrEnum):
     `CONFLICTING` outcome (CDD-031, unchanged). CDD-048 §7/§14 additively
     extends this a second time with `ACCURACY` -- observation-granularity
     comparison against qualifying governed Reference Evidence, never a
-    reinterpretation of Validity/Consistency. `REASONABLENESS` is
-    deliberately NOT added here: it is BusinessRule-shaped, not
-    QualityRule-shaped (CDD-048 §10, §14) -- its own governed dimension
+    reinterpretation of Validity/Consistency. CDD-049 §4/§6 additively
+    extends this a third time with `CONFORMITY` -- is the observed
+    representation expressed in its governed canonical form, independent of
+    whether the value itself is permitted (Validity) or correct (Accuracy).
+    Conformity is OQI1-storage-shaped, exactly like Accuracy (CDD-046 §9).
+    `REASONABLENESS` is deliberately NOT added here: it is BusinessRule-shaped,
+    not QualityRule-shaped (CDD-048 §10, §14) -- its own governed dimension
     identity lives on `BusinessRule.dimension`, never on this enum."""
 
     COMPLETENESS = "COMPLETENESS"
     VALIDITY = "VALIDITY"
     CONSISTENCY = "CONSISTENCY"
     ACCURACY = "ACCURACY"
+    CONFORMITY = "CONFORMITY"
 
 
 class QualityFindingType(StrEnum):
     """CDD-039 §10: originally exactly four, closed. CDD-040 §14, §31
     additively extends this with the two cross-source Finding types.
     CDD-048 §7, §20 additively extends this a second time with
-    `REFERENCE_VALUE_UNSUPPORTED` (Accuracy). No further type is authorized
-    -- authority is explanation metadata, never a Finding-type discriminator
-    (CDD-040 §23, §31)."""
+    `REFERENCE_VALUE_UNSUPPORTED` (Accuracy). CDD-049 §6, §20 additively
+    extends this a third time with `NON_CANONICAL_REPRESENTATION`
+    (Conformity). No further type is authorized -- authority is explanation
+    metadata, never a Finding-type discriminator (CDD-040 §23, §31)."""
 
     MISSING_VALUE = "MISSING_VALUE"
     ENUM_VIOLATION = "ENUM_VIOLATION"
@@ -71,6 +77,7 @@ class QualityFindingType(StrEnum):
     CROSS_SOURCE_VALUE_CONFLICT = "CROSS_SOURCE_VALUE_CONFLICT"
     CROSS_SOURCE_PARTICIPANT_VALUE_MISSING = "CROSS_SOURCE_PARTICIPANT_VALUE_MISSING"
     REFERENCE_VALUE_UNSUPPORTED = "REFERENCE_VALUE_UNSUPPORTED"
+    NON_CANONICAL_REPRESENTATION = "NON_CANONICAL_REPRESENTATION"
 
 
 class ValidityPrimitive(StrEnum):
@@ -138,6 +145,15 @@ _ALLOWED_COMBINATIONS: frozenset[
         (
             QualityDimension.ACCURACY,
             QualityFindingType.REFERENCE_VALUE_UNSUPPORTED,
+            None,
+        ),
+        # CDD-049 §6: CONFORMITY's single row -- `finding_type` is always
+        # NON_CANONICAL_REPRESENTATION (no CONFORMITY-specific
+        # ValidityPrimitive; canonicalization logic lives in the resolver,
+        # not in a primitive dispatch here).
+        (
+            QualityDimension.CONFORMITY,
+            QualityFindingType.NON_CANONICAL_REPRESENTATION,
             None,
         ),
     }
@@ -239,6 +255,17 @@ def _validate_accuracy_parameters(rule_parameters: Mapping[str, Any]) -> None:
         raise OqiMalformedRuleError("ACCURACY rule_parameters must be empty")
 
 
+def _validate_conformity_parameters(rule_parameters: Mapping[str, Any]) -> None:
+    """CDD-049 §6: CONFORMITY's `rule_parameters` shape is deliberately
+    empty -- mirroring ACCURACY's own precedent exactly. The applicable
+    `CanonicalStandard` is resolved dynamically per observation via the
+    rule's own `information_element_requirement_id` (CDD-049 §8), never
+    configured per-rule -- so no Conformity-specific key is authorized
+    here."""
+    if dict(rule_parameters) != {}:
+        raise OqiMalformedRuleError("CONFORMITY rule_parameters must be empty")
+
+
 def validate_rule_shape(
     *,
     dimension: QualityDimension,
@@ -268,6 +295,10 @@ def validate_rule_shape(
 
     if dimension is QualityDimension.ACCURACY:
         _validate_accuracy_parameters(rule_parameters)
+        return
+
+    if dimension is QualityDimension.CONFORMITY:
+        _validate_conformity_parameters(rule_parameters)
         return
 
     if validity_primitive is ValidityPrimitive.ENUM_MEMBERSHIP:

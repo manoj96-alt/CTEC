@@ -231,7 +231,6 @@ def test_empty_source_object_ids_short_circuits_to_false_without_querying() -> N
         CoverageDimension.UNIQUENESS,
         CoverageDimension.TIMELINESS,
         CoverageDimension.INTEGRITY,
-        CoverageDimension.CONFORMITY,
     ],
 )
 def test_unsupported_dimension_dispatch_returns_false_without_querying(
@@ -300,6 +299,23 @@ def test_accuracy_dispatches_to_accuracy_repository() -> None:
         )
     assert result is True
     accuracy_cls.return_value.has_qualifying_coverage_for_dimension.assert_called_once()
+
+
+def test_conformity_dispatches_to_conformity_evaluation_repository() -> None:
+    """CDD-049 §21 (OQI-H3-I-R1 narrow correction, disclosed in the H3-I-R1
+    amendment): CONFORMITY is OQI1-storage-shaped -- dispatches to
+    `OqiConformityEvaluationRepositoryImpl`, never unconditionally False."""
+    repo = _repo()
+    with patch(
+        "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
+        "OqiConformityEvaluationRepositoryImpl"
+    ) as conformity_cls:
+        conformity_cls.return_value.has_qualifying_coverage_for_dimension.return_value = True
+        result = repo.has_qualifying_coverage_for_dimension(
+            tenant_id=TENANT, source_object_ids=(uuid4(),), dimension=CoverageDimension.CONFORMITY
+        )
+    assert result is True
+    conformity_cls.return_value.has_qualifying_coverage_for_dimension.assert_called_once()
 
 
 def test_reasonableness_dispatches_to_business_rule_evaluation_repository() -> None:
