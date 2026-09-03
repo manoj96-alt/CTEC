@@ -61,6 +61,7 @@ from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import
     CurrentOntologyImpactORM,
 )
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
+from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
 from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
     OqiBusinessRuleEvaluationRepositoryImpl,
 )
@@ -327,6 +328,31 @@ class OqiBusinessImpactRepositoryImpl:
                 CurrentOntologyImpactORM.status == CurrentImpactStatus.ACTIVE.value,
                 CurrentOntologyImpactORM.finding_family == FindingStorageFamily.INTEGRITY.value,
                 IntegrityReferenceFindingORM.status == "OPEN",
+            )
+        )
+        # CDD-051 §24: one new indirect-path branch -- a Timeliness
+        # Finding's subject is a source_object_id, reaching an ontology
+        # subject only via OQI4 propagation (identical shape to Reference
+        # Integrity's own indirect-path branch above), never a direct
+        # EnterpriseEntity subject.
+        selects.append(
+            select(
+                literal(FindingStorageFamily.TIMELINESS.value).label("family"),
+                TimelinessFindingORM.finding_id,
+                TimelinessFindingORM.state_revision,
+            )
+            .select_from(CurrentOntologyImpactORM)
+            .join(
+                TimelinessFindingORM,
+                TimelinessFindingORM.finding_id == CurrentOntologyImpactORM.finding_id,
+            )
+            .where(
+                CurrentOntologyImpactORM.tenant_id == tenant_id,
+                CurrentOntologyImpactORM.ontology_element_type == ontology_element_type.value,
+                CurrentOntologyImpactORM.ontology_element_id == ontology_element_id,
+                CurrentOntologyImpactORM.status == CurrentImpactStatus.ACTIVE.value,
+                CurrentOntologyImpactORM.finding_family == FindingStorageFamily.TIMELINESS.value,
+                TimelinessFindingORM.status == "OPEN",
             )
         )
 

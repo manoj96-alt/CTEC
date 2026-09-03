@@ -221,16 +221,20 @@ def test_empty_source_object_ids_short_circuits_to_false_without_querying() -> N
 # ACCURACY, REASONABLENESS, and INTEGRITY (CDD-050 §24) are removed from
 # this parametrize list -- they now have live evaluators/dispatch and are
 # proven to dispatch correctly (not unconditionally False) by the tests
-# immediately below this class. UNIQUENESS/TIMELINESS remain genuinely
-# unsupported.
+# immediately below this class. TIMELINESS is likewise removed (CDD-051
+# §25; CDD-051-Artifact-Authorization-I2-Coverage-Test-Parametrization-
+# Correction.md). UNIQUENESS remains genuinely unsupported.
 # ---------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "dimension",
     [
+        # CDD-051-Artifact-Authorization-I2-Coverage-Test-Parametrization-
+        # Correction.md: TIMELINESS is no longer unsupported as of CDD-051
+        # §25 -- removed from this list, proven supported instead by
+        # test_timeliness_dispatches_to_timeliness_evaluation_repository.
         CoverageDimension.UNIQUENESS,
-        CoverageDimension.TIMELINESS,
     ],
 )
 def test_unsupported_dimension_dispatch_returns_false_without_querying(
@@ -354,6 +358,23 @@ def test_integrity_dispatches_to_integrity_evaluation_repositories() -> None:
         )
     assert result is True
     reference_cls.return_value.has_qualifying_coverage.assert_called_once()
+
+
+def test_timeliness_dispatches_to_timeliness_evaluation_repository() -> None:
+    """CDD-051 §25: TIMELINESS is existence-only, subject-scoped, mirroring
+    INTEGRITY's own dispatch discipline exactly -- dispatches to
+    `OqiTimelinessEvaluationRepositoryImpl`, never unconditionally False."""
+    repo = _repo()
+    with patch(
+        "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
+        "OqiTimelinessEvaluationRepositoryImpl"
+    ) as timeliness_cls:
+        timeliness_cls.return_value.has_qualifying_coverage.return_value = True
+        result = repo.has_qualifying_coverage_for_dimension(
+            tenant_id=TENANT, source_object_ids=(uuid4(),), dimension=CoverageDimension.TIMELINESS
+        )
+    assert result is True
+    timeliness_cls.return_value.has_qualifying_coverage.assert_called_once()
 
 
 # ---------------------------------------------------------------------

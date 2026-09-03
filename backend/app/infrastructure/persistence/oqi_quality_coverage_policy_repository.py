@@ -54,6 +54,9 @@ from app.infrastructure.persistence.oqi_integrity_structural_evaluation_reposito
 from app.infrastructure.persistence.oqi_quality_evaluation_repository import (
     OqiQualityEvaluationRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_timeliness_evaluation_repository import (
+    OqiTimelinessEvaluationRepositoryImpl,
+)
 
 #: CDD-047 §11, Artifact Authorization §4: distinct from every existing
 #: OQI advisory-lock seed (1=OQI1, 2=OQI2, 3=OQI3, 4=OQI6) -- the exactly
@@ -301,9 +304,18 @@ class OqiQualityCoveragePolicyRepositoryImpl:
             return OqiIntegrityStructuralEvaluationRepositoryImpl(
                 self.session
             ).has_qualifying_coverage(tenant_id=tenant_id, enterprise_entity_ids=entity_ids)
-        # UNIQUENESS, TIMELINESS: no evaluator exists (CDD-047 §14,
-        # unchanged). Never query, never infer, never synthesize --
-        # unconditionally uncovered.
+        # CDD-051 §25: TIMELINESS is subject-scoped, existence-only --
+        # at least one Timeliness evaluation row (any outcome, any
+        # finding type) exists for one of the caller-supplied
+        # source_object_ids. Mirrors INTEGRITY's own existence-only
+        # discipline (no outcome/finding-type special-casing).
+        if dimension is CoverageDimension.TIMELINESS:
+            return OqiTimelinessEvaluationRepositoryImpl(self.session).has_qualifying_coverage(
+                tenant_id=tenant_id, source_object_ids=source_object_ids
+            )
+        # UNIQUENESS: no evaluator exists (CDD-047 §14, unchanged). Never
+        # query, never infer, never synthesize -- unconditionally
+        # uncovered.
         return False
 
     def _resolve_entity_ids_for_source_objects(

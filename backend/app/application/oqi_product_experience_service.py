@@ -29,6 +29,7 @@ from app.application.oqi_remediation_service import OqiRemediationService
 from app.domain.oqi_business_impact.dependency import Criticality
 from app.domain.oqi_business_impact.impact import BusinessImpactOutcome
 from app.domain.oqi_business_impact.reliance import RelianceState
+from app.domain.oqi_finding_origin.origin import FindingStorageFamily
 from app.domain.oqi_ontology_impact.evaluation import (
     CurrentImpactStatus,
     FindingFamily,
@@ -48,6 +49,10 @@ from app.infrastructure.persistence.models.oqi_business_rule_finding import Busi
 from app.infrastructure.persistence.models.oqi_cross_source_finding import (
     QualityComparisonFindingORM,
 )
+from app.infrastructure.persistence.models.oqi_integrity import (
+    IntegrityReferenceFindingORM,
+    IntegrityStructuralFindingORM,
+)
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
 from app.infrastructure.persistence.models.oqi_remediation import (
     OqiRemediationCaseORM,
@@ -58,6 +63,7 @@ from app.infrastructure.persistence.models.oqi_remediation_agent import (
     AgentRecommendationORM,
     AgentRunORM,
 )
+from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
 from app.infrastructure.persistence.oqi_business_impact_repository import (
     OqiBusinessImpactRepositoryImpl,
 )
@@ -479,15 +485,122 @@ class OqiProductExperienceService:
                         last_seen_at=model3.last_seen_at,
                     )
                 )
+        # CDD-051 §26 (OQI-H5-I2): closes the pre-existing H4 product-
+        # visibility gap for FindingStorageFamily.INTEGRITY, and adds
+        # FindingStorageFamily.TIMELINESS -- visibility only, no evaluation
+        # semantic change to either dimension. `condition_label` is the
+        # Finding's own `finding_type` (no `quality_condition_id`-shaped
+        # label exists for these families).
+        if family is None or family == FindingStorageFamily.INTEGRITY.value:
+            query_structural = select(IntegrityStructuralFindingORM).where(
+                IntegrityStructuralFindingORM.tenant_id == tenant_id
+            )
+            if status is not None:
+                query_structural = query_structural.where(
+                    IntegrityStructuralFindingORM.status == status
+                )
+            for model_structural in self.session.execute(query_structural).scalars().all():
+                resolved.append(
+                    ResolvedFinding(
+                        # ResolvedFinding.family's declared type stays the
+                        # closed FindingFamily (unmodified, CDD-051 §26) --
+                        # FindingStorageFamily.INTEGRITY is a deliberate,
+                        # narrowly-scoped runtime-only widening, contained
+                        # entirely within these three new list_findings
+                        # branches; every other method/call site keeps its
+                        # exact existing FindingFamily-only contract.
+                        family=FindingStorageFamily.INTEGRITY,  # type: ignore[arg-type]
+                        finding_id=model_structural.finding_id,
+                        condition_label=model_structural.finding_type,
+                        status=model_structural.status,
+                        state_revision=model_structural.state_revision,
+                        first_seen_at=model_structural.first_seen_at,
+                        last_seen_at=model_structural.last_seen_at,
+                    )
+                )
+            query_reference = select(IntegrityReferenceFindingORM).where(
+                IntegrityReferenceFindingORM.tenant_id == tenant_id
+            )
+            if status is not None:
+                query_reference = query_reference.where(
+                    IntegrityReferenceFindingORM.status == status
+                )
+            for model_reference in self.session.execute(query_reference).scalars().all():
+                resolved.append(
+                    ResolvedFinding(
+                        # ResolvedFinding.family's declared type stays the
+                        # closed FindingFamily (unmodified, CDD-051 §26) --
+                        # FindingStorageFamily.INTEGRITY is a deliberate,
+                        # narrowly-scoped runtime-only widening, contained
+                        # entirely within these three new list_findings
+                        # branches; every other method/call site keeps its
+                        # exact existing FindingFamily-only contract.
+                        family=FindingStorageFamily.INTEGRITY,  # type: ignore[arg-type]
+                        finding_id=model_reference.finding_id,
+                        condition_label=model_reference.finding_type,
+                        status=model_reference.status,
+                        state_revision=model_reference.state_revision,
+                        first_seen_at=model_reference.first_seen_at,
+                        last_seen_at=model_reference.last_seen_at,
+                    )
+                )
+
+        if family is None or family == FindingStorageFamily.TIMELINESS.value:
+            query5 = select(TimelinessFindingORM).where(TimelinessFindingORM.tenant_id == tenant_id)
+            if status is not None:
+                query5 = query5.where(TimelinessFindingORM.status == status)
+            for model5 in self.session.execute(query5).scalars().all():
+                resolved.append(
+                    ResolvedFinding(
+                        family=FindingStorageFamily.TIMELINESS,  # type: ignore[arg-type]
+                        finding_id=model5.finding_id,
+                        condition_label=model5.finding_type,
+                        status=model5.status,
+                        state_revision=model5.state_revision,
+                        first_seen_at=model5.first_seen_at,
+                        last_seen_at=model5.last_seen_at,
+                    )
+                )
+
         resolved.sort(key=lambda r: (r.last_seen_at, str(r.finding_id)), reverse=True)
         page = resolved[offset : offset + limit]
         next_cursor = str(offset + limit) if offset + limit < len(resolved) else None
 
         rows: list[FindingSummaryRow] = []
         for finding in page:
-            entity_id = self._resolve_entity(
-                tenant_id=tenant_id, family=finding.family, finding_id=finding.finding_id
-            )
+            # CDD-051 §26: `_resolve_entity` stays untouched, permanently
+            # scoped to the closed FindingFamily (OQI1/OQI2/OQI3) vocabulary
+            # -- INTEGRITY/TIMELINESS resolve entity impact via their own
+            # additive OQI4 resolver methods instead (CDD-050 §20, CDD-051
+            # §22), mirrored here rather than inside `_resolve_entity`.
+            entity_id: UUID | None
+            if isinstance(finding.family, FindingFamily):
+                entity_id = self._resolve_entity(
+                    tenant_id=tenant_id, family=finding.family, finding_id=finding.finding_id
+                )
+            elif finding.family is FindingStorageFamily.INTEGRITY:
+                entity_id = None
+                try:
+                    entity_id = self._impact_repo.resolve_integrity_structural_finding_subject(
+                        tenant_id=tenant_id, finding_id=finding.finding_id
+                    ).entity_id
+                except FindingNotFoundError:
+                    try:
+                        result = self._impact_repo.resolve_integrity_reference_finding_subject(
+                            tenant_id=tenant_id, finding_id=finding.finding_id
+                        )
+                        entity_id = result.entity_id
+                    except FindingNotFoundError:
+                        entity_id = None
+            else:
+                entity_id = None
+                try:
+                    result = self._impact_repo.resolve_timeliness_finding_subject(
+                        tenant_id=tenant_id, finding_id=finding.finding_id
+                    )
+                    entity_id = result.entity_id
+                except FindingNotFoundError:
+                    entity_id = None
             highest: Criticality | None = None
             reliance_state: RelianceState | None = None
             entity_type: str | None = None
