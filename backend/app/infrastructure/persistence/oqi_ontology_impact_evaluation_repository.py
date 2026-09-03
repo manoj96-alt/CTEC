@@ -60,6 +60,7 @@ from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import
     OntologyImpactPathORM,
 )
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
+from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
 from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
     OqiCrossSourceCorrespondenceRepositoryImpl,
 )
@@ -317,6 +318,46 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
         if model is None or model.tenant_id != tenant_id:
             raise FindingNotFoundError(
                 f"No Reference Integrity Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return self.resolve_direct_impact(
+            tenant_id=tenant_id, source_object_ids=(model.source_object_id,)
+        )
+
+    # ------------------------------------------------------------------
+    # OQI-H5 Timeliness origin/subject resolution (CDD-051 §22) -- additive,
+    # read-only, mirroring H4 Integrity's own additive precedent exactly
+    # (CDD-050 §20). Never touching `resolve_finding_subject`/`resolve_
+    # finding_origin` above, which stay FindingFamily-typed and serve
+    # OQI1/2/3 only (FindingFamily itself stays permanently closed). A
+    # Timeliness Finding's subject is a `source_object_id` directly --
+    # genuinely the same ER-eligible shape `resolve_direct_impact` already
+    # handles for OQI1/2/3/Reference Integrity, so subject resolution
+    # delegates to it unchanged.
+    # ------------------------------------------------------------------
+
+    def resolve_timeliness_finding_origin(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> QualityFindingOrigin:
+        model = self.session.get(TimelinessFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Timeliness Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return QualityFindingOrigin(
+            tenant_id=tenant_id,
+            finding_storage_family=FindingStorageFamily.TIMELINESS,
+            quality_dimension=QualityDimension.TIMELINESS.value,
+            finding_id=finding_id,
+            finding_state_revision=model.state_revision,
+        )
+
+    def resolve_timeliness_finding_subject(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> DirectImpactResult:
+        model = self.session.get(TimelinessFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Timeliness Finding {finding_id} for tenant {tenant_id!r}"
             )
         return self.resolve_direct_impact(
             tenant_id=tenant_id, source_object_ids=(model.source_object_id,)

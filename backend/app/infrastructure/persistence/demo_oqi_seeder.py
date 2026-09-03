@@ -53,7 +53,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid5
 
 from sqlalchemy import select
@@ -77,6 +77,7 @@ from app.application.oqi_ontology_impact_evaluation_service import (
     OqiOntologyImpactEvaluationService,
 )
 from app.application.oqi_reference_evidence_service import OqiReferenceEvidenceService
+from app.application.oqi_timeliness_evaluation_service import OqiTimelinessEvaluationService
 from app.core.bootstrap import (
     BOOTSTRAP_BUSINESS_DOMAIN_ID,
     BOOTSTRAP_DEMO_TENANT_ID,
@@ -104,7 +105,7 @@ from app.domain.oqi.quality_rule import (
     QualityRuleStatus,
 )
 from app.domain.oqi_business_impact.dependency import Criticality
-from app.domain.oqi_business_impact.process import BusinessImpactCategory
+from app.domain.oqi_business_impact.process import BusinessImpactCategory, create_business_process
 from app.domain.oqi_business_rule.rule import (
     BusinessRule,
     BusinessRuleInputBinding,
@@ -133,6 +134,7 @@ from app.domain.oqi_integrity.requirement import (
     IntegrityRelationshipCardinalityStatus,
 )
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
+from app.domain.oqi_timeliness.policy import new_timeliness_policy
 from app.domain.semantic_mapping.model import SemanticMapping
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
 from app.domain.shared.value_objects import CanonicalName, Description, Identifier
@@ -188,6 +190,12 @@ from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository im
 from app.infrastructure.persistence.oqi_quality_rule_repository import OqiQualityRuleRepositoryImpl
 from app.infrastructure.persistence.oqi_reference_evidence_repository import (
     OqiReferenceEvidenceRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_timeliness_evaluation_repository import (
+    OqiTimelinessEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_timeliness_policy_repository import (
+    OqiTimelinessPolicyRepositoryImpl,
 )
 from app.infrastructure.persistence.semantic_mapping_repository import SemanticMappingRepositoryImpl
 from app.infrastructure.persistence.source_field_repository import SourceFieldRepositoryImpl
@@ -277,6 +285,34 @@ _H4_SOURCE_SYSTEM_D_ID = _uid("h4-source-system-d")
 _H4_SOURCE_OBJECT_D_ID = _uid("h4-source-object-d")
 _H4_RESOLUTION_RECORD_D_ID = _uid("h4-resolution-record-d")
 
+# CDD-051 §27 (OQI-H5 demo crown scenario): no Shipment/Carrier entity
+# exists anywhere in this repository (OQI-H5-DR §E, §AD) -- these are new,
+# demo-only fixtures, never a new production ontology/domain. Scenario A
+# (stale) deliberately reuses the already-governed, already-resolved
+# _SAP_OBJECT_ID (a new SourceField on the SAME object) so its Finding's
+# ontology impact/Reliance chain (once OQI-H5-I2 wires the OQI6 union_all)
+# requires zero further seeding -- it is the identical continuity discipline
+# H3 already established for _SAP_FIELD_ID/_PLM_FIELD_ID. Scenario B (fresh)
+# introduces a genuinely new Carrier source. Scenario C (NOT_EVALUABLE)
+# reuses the existing PLM object with a new, deliberately policy-less field.
+_H5_BLUEPRINT_ID = _uid("h5-demo-blueprint")
+_H5_CONCEPT_REQUIREMENT_ID = _uid("h5-demo-concept-requirement")
+_H5_SAP_IE_ID = _uid("h5-sap-shipment-eta-ie")
+_H5_CARRIER_IE_ID = _uid("h5-carrier-shipment-eta-ie")
+_H5_UNMONITORED_IE_ID = _uid("h5-unmonitored-ie")
+_H5_SAP_FIELD_ID = _uid("h5-sap-shipment-eta-field")
+_H5_CARRIER_FIELD_ID = _uid("h5-carrier-shipment-eta-field")
+_H5_UNMONITORED_FIELD_ID = _uid("h5-unmonitored-field")
+_H5_SAP_SEMANTIC_MAPPING_ID = _uid("h5-sap-semantic-mapping")
+_H5_CARRIER_SEMANTIC_MAPPING_ID = _uid("h5-carrier-semantic-mapping")
+_H5_UNMONITORED_SEMANTIC_MAPPING_ID = _uid("h5-unmonitored-semantic-mapping")
+_H5_CARRIER_SYSTEM_ID = _uid("h5-carrier-system")
+_H5_CARRIER_OBJECT_ID = _uid("h5-carrier-object")
+_H5_BUSINESS_PROCESS_ID = _uid("h5-customer-delivery-promise-process")
+_H5_SAP_POLICY_ID = _uid("h5-sap-shipment-eta-policy")
+_H5_CARRIER_POLICY_ID = _uid("h5-carrier-shipment-eta-policy")
+_H5_FRESHNESS_WINDOW_SECONDS = 1800  # 30 minutes, governed per policy (CDD-051 §8)
+
 
 class DemoTenantRequiredError(Exception):
     """Raised when the seeder is asked to seed any tenant other than the
@@ -300,6 +336,9 @@ class DemoOqiSeedSummary:
     h4_structural_b_outcome: str | None
     h4_structural_c_outcome: str | None
     h4_reference_d_outcome: str | None
+    h5_sap_stale_outcome: str | None
+    h5_carrier_fresh_outcome: str | None
+    h5_unmonitored_evaluated: bool
 
 
 class DemoOqiSeeder:
@@ -565,6 +604,7 @@ class DemoOqiSeeder:
         self._seed_h2_context(tenant_id)
         self._seed_h3_context(tenant_id)
         self._seed_h4_context(tenant_id)
+        self._seed_h5_context(tenant_id)
         return dependency.dependency_id
 
     def _seed_h2_context(self, tenant_id: str) -> None:
@@ -1150,6 +1190,267 @@ class DemoOqiSeeder:
             )
         self.session.flush()
 
+    def _seed_h5_context(self, tenant_id: str) -> None:
+        """CDD-051 §27 (OQI-H5 demo crown scenario): one new governed
+        Blueprint with three InformationElementRequirements ("SAP Shipment
+        ETA", "Carrier Shipment ETA", "Unmonitored"); a new Carrier
+        SourceSystem/SourceObject (Scenario B); a new SourceField on the
+        ALREADY-governed, ALREADY-resolved `_SAP_OBJECT_ID` (Scenario A); a
+        new policy-less field on the existing PLM object (Scenario C); one
+        new governed `BusinessProcess` ("Customer Delivery Promise (Demo)");
+        two ACTIVE `TimelinessPolicy` rows (SAP, Carrier) -- deliberately
+        none for the Unmonitored anchor. No Timeliness Evaluation/Finding
+        row is directly inserted here -- those arise only through
+        `_evaluate_h5`'s calls to the real `OqiTimelinessEvaluationService`
+        (CDD-051 §27, mirroring CDD-050 §34's identical discipline)."""
+        supplier_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(EntityType.entity_type_name == "Supplier")
+        )
+        assert supplier_type_id is not None, (
+            "Required governed entity type not found: 'Supplier' -- OntologySeeder must run "
+            "before DemoOqiSeeder"
+        )
+
+        existing_blueprint = BlueprintRepositoryImpl(self.session).get_by_id(_H5_BLUEPRINT_ID)
+        if existing_blueprint is None:
+            blueprint = Blueprint(
+                blueprint_id=Identifier(_H5_BLUEPRINT_ID),
+                blueprint_name=CanonicalName("H5 Shipment Timeliness Blueprint (Demo)"),
+                lifecycle_state=LifecycleState.ACTIVE,
+                governance_status=GovernanceStatus.APPROVED,
+                created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                created_on=SEED_TIMESTAMP,
+                concept_requirements=(
+                    ConceptRequirement(
+                        concept_requirement_id=Identifier(_H5_CONCEPT_REQUIREMENT_ID),
+                        blueprint_id=Identifier(_H5_BLUEPRINT_ID),
+                        entity_type_id=Identifier(supplier_type_id),
+                        obligation=Obligation.OPTIONAL,
+                        information_element_requirements=(
+                            InformationElementRequirement(
+                                information_element_requirement_id=Identifier(_H5_SAP_IE_ID),
+                                concept_requirement_id=Identifier(_H5_CONCEPT_REQUIREMENT_ID),
+                                element_name=CanonicalName("SAP Shipment ETA"),
+                                description=Description(
+                                    "CDD-051 H5 demo fixture: SAP-observed shipment ETA."
+                                ),
+                                obligation=Obligation.OPTIONAL,
+                            ),
+                            InformationElementRequirement(
+                                information_element_requirement_id=Identifier(_H5_CARRIER_IE_ID),
+                                concept_requirement_id=Identifier(_H5_CONCEPT_REQUIREMENT_ID),
+                                element_name=CanonicalName("Carrier Shipment ETA"),
+                                description=Description(
+                                    "CDD-051 H5 demo fixture: carrier-observed shipment ETA."
+                                ),
+                                obligation=Obligation.OPTIONAL,
+                            ),
+                            InformationElementRequirement(
+                                information_element_requirement_id=Identifier(
+                                    _H5_UNMONITORED_IE_ID
+                                ),
+                                concept_requirement_id=Identifier(_H5_CONCEPT_REQUIREMENT_ID),
+                                element_name=CanonicalName("Unmonitored Shipment Field"),
+                                description=Description(
+                                    "CDD-051 H5 demo fixture: evidence exists, no governed "
+                                    "TimelinessPolicy -- NOT_EVALUABLE (Scenario C)."
+                                ),
+                                obligation=Obligation.OPTIONAL,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            BlueprintRepositoryImpl(self.session).create(blueprint)
+            self.session.flush()
+
+        if self.session.get(SourceSystem, _H5_CARRIER_SYSTEM_ID) is None:
+            self.session.add(
+                SourceSystem(
+                    source_system_id=_H5_CARRIER_SYSTEM_ID,
+                    tenant_id=tenant_id,
+                    source_system_name="Carrier / TMS Feed (demo)",
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                )
+            )
+            self.session.flush()
+        if self.session.get(SourceObject, _H5_CARRIER_OBJECT_ID) is None:
+            self.session.add(
+                SourceObject(
+                    source_object_id=_H5_CARRIER_OBJECT_ID,
+                    tenant_id=tenant_id,
+                    source_object_name="Carrier Shipment Object (demo)",
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    source_system_id=_H5_CARRIER_SYSTEM_ID,
+                )
+            )
+            self.session.flush()
+
+        field_repo = SourceFieldRepositoryImpl(self.session)
+        mapping_repo = SemanticMappingRepositoryImpl(self.session)
+        for field_id, object_id, mapping_id, ie_id, label in (
+            (
+                _H5_SAP_FIELD_ID,
+                _SAP_OBJECT_ID,
+                _H5_SAP_SEMANTIC_MAPPING_ID,
+                _H5_SAP_IE_ID,
+                "Shipment ETA",
+            ),
+            (
+                _H5_CARRIER_FIELD_ID,
+                _H5_CARRIER_OBJECT_ID,
+                _H5_CARRIER_SEMANTIC_MAPPING_ID,
+                _H5_CARRIER_IE_ID,
+                "Shipment ETA",
+            ),
+            (
+                _H5_UNMONITORED_FIELD_ID,
+                _PLM_OBJECT_ID,
+                _H5_UNMONITORED_SEMANTIC_MAPPING_ID,
+                _H5_UNMONITORED_IE_ID,
+                "Unmonitored Shipment Field",
+            ),
+        ):
+            if field_repo.get_by_id(field_id) is None:
+                field_repo.create(
+                    SourceField(
+                        source_field_id=Identifier(field_id),
+                        source_object_id=Identifier(object_id),
+                        field_label=CanonicalName(label),
+                        lifecycle_state=LifecycleState.ACTIVE,
+                        governance_status=GovernanceStatus.APPROVED,
+                        created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                        created_on=SEED_TIMESTAMP,
+                    )
+                )
+                self.session.flush()
+            if mapping_repo.get_by_id(mapping_id) is None:
+                mapping_repo.create(
+                    SemanticMapping(
+                        semantic_mapping_id=Identifier(mapping_id),
+                        source_field_id=Identifier(field_id),
+                        information_element_requirement_id=Identifier(ie_id),
+                        lifecycle_state=LifecycleState.ACTIVE,
+                        governance_status=GovernanceStatus.APPROVED,
+                        created_by=Identifier(BOOTSTRAP_SYSTEM_ENTITY_ID),
+                        created_on=SEED_TIMESTAMP,
+                    )
+                )
+                self.session.flush()
+
+        # Scenario A: stale (observed 6h before SEED_TIMESTAMP, well beyond
+        # the 30-minute freshness window).
+        if self.session.get(FieldValueEvidenceORM, _uid("h5-sap-evidence")) is None:
+            self.session.add(
+                FieldValueEvidenceORM(
+                    field_value_evidence_id=_uid("h5-sap-evidence"),
+                    source_field_id=_H5_SAP_FIELD_ID,
+                    source_record_reference="SHIP-DEMO-001",
+                    observed_representation="2026-01-01T12:00:00Z",
+                    observed_at=SEED_TIMESTAMP - timedelta(hours=6),
+                    received_at=SEED_TIMESTAMP - timedelta(hours=6),
+                )
+            )
+        # Scenario B: fresh (observed 5 minutes before SEED_TIMESTAMP).
+        if self.session.get(FieldValueEvidenceORM, _uid("h5-carrier-evidence")) is None:
+            self.session.add(
+                FieldValueEvidenceORM(
+                    field_value_evidence_id=_uid("h5-carrier-evidence"),
+                    source_field_id=_H5_CARRIER_FIELD_ID,
+                    source_record_reference="SHIP-DEMO-001",
+                    observed_representation="2026-01-01T18:00:00Z",
+                    observed_at=SEED_TIMESTAMP - timedelta(minutes=5),
+                    received_at=SEED_TIMESTAMP - timedelta(minutes=5),
+                )
+            )
+        # Scenario C: evidence exists, but its anchor has no governed policy.
+        if self.session.get(FieldValueEvidenceORM, _uid("h5-unmonitored-evidence")) is None:
+            self.session.add(
+                FieldValueEvidenceORM(
+                    field_value_evidence_id=_uid("h5-unmonitored-evidence"),
+                    source_field_id=_H5_UNMONITORED_FIELD_ID,
+                    source_record_reference="SHIP-DEMO-001",
+                    observed_representation="n/a",
+                    observed_at=SEED_TIMESTAMP - timedelta(minutes=5),
+                    received_at=SEED_TIMESTAMP - timedelta(minutes=5),
+                )
+            )
+        self.session.flush()
+
+        impact_repo = OqiBusinessImpactRepositoryImpl(self.session)
+        if (
+            impact_repo.get_latest_business_process(
+                tenant_id=tenant_id, process_id=_H5_BUSINESS_PROCESS_ID
+            )
+            is None
+        ):
+            process = create_business_process(
+                process_id=_H5_BUSINESS_PROCESS_ID,
+                tenant_id=tenant_id,
+                name="Customer Delivery Promise (Demo)",
+                description="Deterministic OQI-H5 demo-showcase business process.",
+                category=BusinessImpactCategory.CUSTOMER,
+                created_by="demo-seeder",
+                created_on=SEED_TIMESTAMP,
+            )
+            impact_repo.insert_business_process(process)
+            self.session.flush()
+
+        policy_repo = OqiTimelinessPolicyRepositoryImpl(self.session)
+        if (
+            policy_repo.get_active_policy_for_anchor(
+                tenant_id=tenant_id,
+                information_element_requirement_id=_H5_SAP_IE_ID,
+                business_process_id=_H5_BUSINESS_PROCESS_ID,
+                business_process_version=1,
+            )
+            is None
+        ):
+            policy_repo.insert_policy(
+                new_timeliness_policy(
+                    policy_id=_H5_SAP_POLICY_ID,
+                    tenant_id=tenant_id,
+                    information_element_requirement_id=_H5_SAP_IE_ID,
+                    business_process_id=_H5_BUSINESS_PROCESS_ID,
+                    business_process_version=1,
+                    freshness_window_seconds=_H5_FRESHNESS_WINDOW_SECONDS,
+                    ingestion_sla_seconds=None,
+                    created_by="demo-seeder",
+                    created_on=SEED_TIMESTAMP,
+                )
+            )
+        if (
+            policy_repo.get_active_policy_for_anchor(
+                tenant_id=tenant_id,
+                information_element_requirement_id=_H5_CARRIER_IE_ID,
+                business_process_id=_H5_BUSINESS_PROCESS_ID,
+                business_process_version=1,
+            )
+            is None
+        ):
+            policy_repo.insert_policy(
+                new_timeliness_policy(
+                    policy_id=_H5_CARRIER_POLICY_ID,
+                    tenant_id=tenant_id,
+                    information_element_requirement_id=_H5_CARRIER_IE_ID,
+                    business_process_id=_H5_BUSINESS_PROCESS_ID,
+                    business_process_version=1,
+                    freshness_window_seconds=_H5_FRESHNESS_WINDOW_SECONDS,
+                    ingestion_sla_seconds=None,
+                    created_by="demo-seeder",
+                    created_on=SEED_TIMESTAMP,
+                )
+            )
+        self.session.flush()
+
     # ------------------------------------------------------------------
     # Real, unmodified production evaluators -- never a directly-persisted
     # conclusion. Re-run every invocation; each is independently
@@ -1201,6 +1502,9 @@ class DemoOqiSeeder:
         accuracy_sap, accuracy_plm, reasonableness = self._evaluate_h2(tenant_id, clock)
         conformity_sap, conformity_plm, h3_consistency = self._evaluate_h3(tenant_id, clock)
         structural_a, structural_b, structural_c, reference_d = self._evaluate_h4(tenant_id, clock)
+        h5_sap_stale, h5_carrier_fresh, h5_unmonitored_evaluated = self._evaluate_h5(
+            tenant_id, clock
+        )
 
         return DemoOqiSeedSummary(
             tenant_id=tenant_id,
@@ -1218,6 +1522,9 @@ class DemoOqiSeeder:
             h4_structural_b_outcome=structural_b,
             h4_structural_c_outcome=structural_c,
             h4_reference_d_outcome=reference_d,
+            h5_sap_stale_outcome=h5_sap_stale,
+            h5_carrier_fresh_outcome=h5_carrier_fresh,
+            h5_unmonitored_evaluated=h5_unmonitored_evaluated,
         )
 
     def _evaluate_h2(
@@ -1431,6 +1738,55 @@ class DemoOqiSeeder:
             None if eval_b is None else eval_b.outcome.value,
             None if eval_c is None else eval_c.outcome.value,
             None if eval_d is None else eval_d.outcome.value,
+        )
+
+    def _evaluate_h5(
+        self, tenant_id: str, clock: Callable[[], datetime]
+    ) -> tuple[str | None, str | None, bool]:
+        """CDD-051 §27: calls the real, unmodified-by-reuse OQI-H5
+        `OqiTimelinessEvaluationService.evaluate_current_state` three times
+        (SAP -- stale, Carrier -- fresh, Unmonitored -- no governed policy)
+        -- so every Timeliness outcome a fresh demo shows is real evaluator
+        output over real seeded evidence and governed policy, never a
+        directly-persisted conclusion."""
+        timeliness_repo = OqiTimelinessEvaluationRepositoryImpl(self.session)
+        service = OqiTimelinessEvaluationService(
+            evaluation_repository=timeliness_repo,
+            evidence_lookup=timeliness_repo,
+            policy_lookup=OqiTimelinessPolicyRepositoryImpl(self.session),
+            semantic_mapping_lookup=SemanticMappingRepositoryImpl(self.session),
+            clock=clock,
+        )
+
+        sap_results = service.evaluate_current_state(
+            tenant_id=tenant_id,
+            information_element_requirement_id=_H5_SAP_IE_ID,
+            business_process_id=_H5_BUSINESS_PROCESS_ID,
+            business_process_version=1,
+            evaluation_horizon=SEED_TIMESTAMP,
+        )
+        self.session.flush()
+        carrier_results = service.evaluate_current_state(
+            tenant_id=tenant_id,
+            information_element_requirement_id=_H5_CARRIER_IE_ID,
+            business_process_id=_H5_BUSINESS_PROCESS_ID,
+            business_process_version=1,
+            evaluation_horizon=SEED_TIMESTAMP,
+        )
+        self.session.flush()
+        unmonitored_results = service.evaluate_current_state(
+            tenant_id=tenant_id,
+            information_element_requirement_id=_H5_UNMONITORED_IE_ID,
+            business_process_id=_H5_BUSINESS_PROCESS_ID,
+            business_process_version=1,
+            evaluation_horizon=SEED_TIMESTAMP,
+        )
+        self.session.flush()
+
+        return (
+            None if not sap_results else sap_results[0].outcome.value,
+            None if not carrier_results else carrier_results[0].outcome.value,
+            len(unmonitored_results) > 0,
         )
 
 

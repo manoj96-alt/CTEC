@@ -595,11 +595,11 @@ def test_migration_round_trips_90_94_90_94(migrated_engine: Engine) -> None:
     # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
     # final report; OQI-H3-I-R1 amendment): mechanically re-pinned from 109 to 114. The historical
     # 90 boundary (at 0024) is correctly pinned, unaffected.
-    assert _table_count() == 120
+    assert _table_count() == 123
     alembic.command.downgrade(config, "0024_oqi5_remediation")
     assert _table_count() == 90
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 120
+    assert _table_count() == 123
 
 
 # =====================================================================

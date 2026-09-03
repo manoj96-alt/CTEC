@@ -348,11 +348,11 @@ def test_migration_round_trips_94_100_94_100(migrated_engine: Engine) -> None:
     # from 109 to 114 (+5 new tables from migrations 0031-0033). The
     # historical 94 boundary (at 0025, before OQI6) is correctly pinned and
     # unaffected -- it must NOT change.
-    assert _table_count() == 120
+    assert _table_count() == 123
     alembic.command.downgrade(config, "0025_oqi5_agent_reasoning")
     assert _table_count() == 94
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 120
+    assert _table_count() == 123
 
 
 # =====================================================================

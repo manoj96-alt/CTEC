@@ -38,7 +38,7 @@ def test_coverage_dimension_is_exactly_nine() -> None:
     }
 
 
-def test_quality_dimension_is_exactly_six_after_h4_integrity() -> None:
+def test_quality_dimension_is_exactly_seven_after_h5_timeliness() -> None:
     """CDD-047 §5: H1 must not expand QualityDimension -- proven true for
     H1 by construction (H1 introduced ACCURACY nowhere). CDD-048 §7, §14
     (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final
@@ -47,12 +47,14 @@ def test_quality_dimension_is_exactly_six_after_h4_integrity() -> None:
     this amendment) additively extends it a third time with exactly one more
     member, CONFORMITY. CDD-050 §18 additively extends it a fourth time with
     INTEGRITY -- the first member with zero QualityRule-shaped backing at
-    all. REASONABLENESS is deliberately NOT added here (nor ever will be),
-    since it is BusinessRule-shaped, not QualityRule-shaped (CDD-048 §10,
-    §14). This test proves the two vocabularies remain genuinely
-    independent -- CoverageDimension having nine members does not imply
-    QualityDimension tracks it member-for-member."""
-    assert len(list(QualityDimension)) == 6
+    all. CDD-051 §3 additively extends it a fifth time with TIMELINESS --
+    like INTEGRITY, zero QualityRule-shaped backing. REASONABLENESS is
+    deliberately NOT added here (nor ever will be), since it is
+    BusinessRule-shaped, not QualityRule-shaped (CDD-048 §10, §14). This
+    test proves the two vocabularies remain genuinely independent --
+    CoverageDimension having nine members does not imply QualityDimension
+    tracks it member-for-member."""
+    assert len(list(QualityDimension)) == 7
     assert {member.value for member in QualityDimension} == {
         "COMPLETENESS",
         "VALIDITY",
@@ -60,6 +62,7 @@ def test_quality_dimension_is_exactly_six_after_h4_integrity() -> None:
         "ACCURACY",
         "CONFORMITY",
         "INTEGRITY",
+        "TIMELINESS",
     }
 
 

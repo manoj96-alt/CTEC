@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -28,6 +29,24 @@ class OqiBusinessProcessORM(BaseEntity):
     __table_args__ = (
         Index("idx_oqi_business_processes_tenant_id", "tenant_id"),
         Index("idx_oqi_business_processes_process_id", "process_id"),
+        # CDD-051 §9 (OQI-H5 governance, narrow additive correction): this
+        # table carried `tenant_id` but no tenant-qualified composite
+        # candidate key, so its existing consumer
+        # (`OqiBusinessDependencyORM`) has always used a plain,
+        # non-tenant-qualified composite FK on `(process_id, version)` --
+        # the identical defect class H4-R1 corrected elsewhere (CDD-050
+        # Artifact Authorization H4-R1 amendment). Added here, additively,
+        # ONLY so `oqi_timeliness_policies` can compose a proper
+        # tenant-qualified FK against this table (migration 0039). Safe by
+        # construction, requires no data backfill: `(process_id, version)`
+        # is already this table's primary key, so `(tenant_id, process_id,
+        # version)` is trivially unique as a superset of an already-unique
+        # key. `OqiBusinessDependencyORM`'s own existing FK is explicitly
+        # NOT corrected here -- out of H5 scope, disclosed as a future,
+        # separately-governed OQI6-R1 recommendation (CDD-051 §9).
+        UniqueConstraint(
+            "tenant_id", "process_id", "version", name="uq_oqi_business_processes_tenant_pk"
+        ),
     )
 
     process_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)

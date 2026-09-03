@@ -1521,6 +1521,47 @@ def test_oqi_h4_integrity_orms_have_single_construction_site() -> None:
     ], "IntegrityReferenceFindingORM constructed outside its single authorized site"
 
 
+def test_oqi_h5_timeliness_orms_have_single_construction_site() -> None:
+    """CDD-051 Artifact Authorization row 9 (mechanical set): single-
+    construction-site firewall for the 3 new OQI-H5 Timeliness ORM classes,
+    mirroring H4's own Integrity firewall-extension precedent exactly --
+    each has exactly one authorized repository construction site."""
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_timeliness.py",
+                # test_oqi_h5_timeliness_crown.py's own DB-constraint tests
+                # and test_oqi_h5_timeliness_authorization_and_tenant_
+                # isolation.py's own adversarial tests deliberately construct
+                # raw oqi_timeliness ORM rows, bypassing every repository/
+                # domain validation, in exactly the tests proving the
+                # database-level CHECK/FK constraints reject a violation
+                # even when the application layer is bypassed -- the
+                # identical established pattern as test_oqi_h4_integrity_
+                # crown.py's own raw oqi_integrity ORM construction.
+                "test_oqi_h5_timeliness_crown.py",
+                "test_oqi_h5_timeliness_authorization_and_tenant_isolation.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("TimelinessPolicyORM") == [
+        "infrastructure/persistence/oqi_timeliness_policy_repository.py"
+    ], "TimelinessPolicyORM constructed outside its single authorized site"
+    assert _construction_sites("TimelinessEvaluationORM") == [
+        "infrastructure/persistence/oqi_timeliness_evaluation_repository.py"
+    ], "TimelinessEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("TimelinessFindingORM") == [
+        "infrastructure/persistence/oqi_timeliness_evaluation_repository.py"
+    ], "TimelinessFindingORM constructed outside its single authorized site"
+
+
 def test_oqi5_i2_agent_orms_have_single_construction_site() -> None:
     """CDD-043 Artifact Authorization §3 row 6 / GC1: single-construction-
     site firewall for the 4 new OQI5-I2 ORM classes, mirroring OQI1-4's
@@ -1567,7 +1608,20 @@ def test_oqi6_business_impact_orms_have_single_construction_site() -> None:
             path
             for path in backend_root.rglob("*.py")
             if f"{class_name}(" in path.read_text(encoding="utf-8")
-            and path.name not in {"oqi_business_impact.py"}
+            and path.name
+            not in {
+                "oqi_business_impact.py",
+                # CDD-051 §9 (OQI-H5 governance): test_oqi_h5_timeliness_
+                # authorization_and_tenant_isolation.py's own TI-10
+                # deliberately constructs a raw OqiBusinessProcessORM row,
+                # bypassing every repository/domain validation, to prove
+                # the new uq_oqi_business_processes_tenant_pk constraint
+                # rejects a duplicate (tenant_id, process_id, version) even
+                # when the application layer is bypassed -- the identical
+                # established pattern as the OQI1/H4 adversarial-test
+                # exclusions elsewhere in this file.
+                "test_oqi_h5_timeliness_authorization_and_tenant_isolation.py",
+            }
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
 
