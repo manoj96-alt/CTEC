@@ -45,7 +45,6 @@ from app.infrastructure.persistence.models.oqi_business_impact import (
     CurrentRelianceORM,
     OqiBusinessDependencyORM,
     OqiBusinessImpactEvaluationORM,
-    OqiBusinessProcessORM,
     OqiRelianceEvaluationORM,
 )
 from app.infrastructure.persistence.oqi_business_impact_repository import (
@@ -1210,7 +1209,7 @@ def test_ti09_migration_round_trip_preserves_valid_dependency_data(
 
     def _row() -> tuple[object, ...] | None:
         with migrated_engine.connect() as connection:
-            return connection.execute(
+            result = connection.execute(
                 text(
                     "SELECT dependency_id, version, tenant_id, business_process_id, "
                     "business_process_version, ontology_element_type, ontology_element_id, "
@@ -1219,6 +1218,7 @@ def test_ti09_migration_round_trip_preserves_valid_dependency_data(
                 ),
                 {"dependency_id": str(dependency_id)},
             ).fetchone()
+            return None if result is None else tuple(result)
 
     before = _row()
     assert before is not None
@@ -1269,13 +1269,14 @@ def test_ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_data(
 
     def _row() -> tuple[object, ...] | None:
         with migrated_engine.connect() as connection:
-            return connection.execute(
+            result = connection.execute(
                 text(
                     "SELECT tenant_id, business_process_id, business_process_version "
                     "FROM oqi_business_dependencies WHERE dependency_id = :dependency_id"
                 ),
                 {"dependency_id": str(dependency_id)},
             ).fetchone()
+            return None if result is None else tuple(result)
 
     invalid_row = _row()
     assert invalid_row is not None
