@@ -28,6 +28,7 @@ from app.domain.oqi_quality_coverage.policy import (
     QualityCoveragePolicy,
     QualityCoveragePolicyStatus,
 )
+from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
 from app.infrastructure.persistence.models.oqi_quality_coverage_policy import (
     QualityCoveragePolicyDimensionORM,
     QualityCoveragePolicyORM,
@@ -43,6 +44,12 @@ from app.infrastructure.persistence.oqi_conformity_evaluation_repository import 
 )
 from app.infrastructure.persistence.oqi_cross_source_evaluation_repository import (
     OqiCrossSourceEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_integrity_reference_evaluation_repository import (
+    OqiIntegrityReferenceEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_integrity_structural_evaluation_repository import (
+    OqiIntegrityStructuralEvaluationRepositoryImpl,
 )
 from app.infrastructure.persistence.oqi_quality_evaluation_repository import (
     OqiQualityEvaluationRepositoryImpl,
@@ -275,7 +282,47 @@ class OqiQualityCoveragePolicyRepositoryImpl:
             ).has_qualifying_coverage_for_dimension(
                 tenant_id=tenant_id, source_object_ids=source_object_ids, dimension=dimension.value
             )
-        # UNIQUENESS, TIMELINESS, INTEGRITY: no evaluator exists (CDD-047
-        # §14, unchanged). Never query, never infer, never synthesize --
+        # CDD-050 §24: INTEGRITY is subject-scoped, existence-only, across
+        # BOTH new evaluation tables -- Reference keys directly on
+        # `source_object_id` (an exact match to the coverage anchor);
+        # Structural keys on `enterprise_entity_id`, which requires
+        # resolving the anchor's own `source_object_ids` through the SAME
+        # already-governed, unmodified ER mechanism `resolve_direct_impact`
+        # uses (CDD-042 §4.3) -- never a new resolution, never an inferred
+        # target.
+        if dimension is CoverageDimension.INTEGRITY:
+            if OqiIntegrityReferenceEvaluationRepositoryImpl(self.session).has_qualifying_coverage(
+                tenant_id=tenant_id, source_object_ids=source_object_ids
+            ):
+                return True
+            entity_ids = self._resolve_entity_ids_for_source_objects(
+                tenant_id=tenant_id, source_object_ids=source_object_ids
+            )
+            return OqiIntegrityStructuralEvaluationRepositoryImpl(
+                self.session
+            ).has_qualifying_coverage(tenant_id=tenant_id, enterprise_entity_ids=entity_ids)
+        # UNIQUENESS, TIMELINESS: no evaluator exists (CDD-047 §14,
+        # unchanged). Never query, never infer, never synthesize --
         # unconditionally uncovered.
         return False
+
+    def _resolve_entity_ids_for_source_objects(
+        self, *, tenant_id: str, source_object_ids: tuple[UUID, ...]
+    ) -> tuple[UUID, ...]:
+        """CDD-050 §24: reuses `EntityResolutionStore`'s own established
+        per-source-object lookup (mirroring `resolve_direct_impact`'s exact
+        mechanism, CDD-042 §4.3) -- creates zero new resolution records,
+        never infers a target."""
+        store = EntityResolutionStore(self.session)
+        entity_ids: set[UUID] = set()
+        for source_object_id in source_object_ids:
+            record = store.get_current_record(
+                tenant_id, EntityResolutionStore.understanding_key((source_object_id,))
+            )
+            if (
+                record is not None
+                and record.outcome == "Resolved"
+                and record.enterprise_entity_id is not None
+            ):
+                entity_ids.add(record.enterprise_entity_id)
+        return tuple(entity_ids)

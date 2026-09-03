@@ -20,6 +20,7 @@ temporal-coherence requirement."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import literal, or_, select, text, union_all
@@ -29,6 +30,7 @@ from app.domain.oqi_business_impact.dependency import BusinessDependency, Busine
 from app.domain.oqi_business_impact.impact import BusinessImpactEvaluation, CurrentBusinessImpact
 from app.domain.oqi_business_impact.process import BusinessProcess
 from app.domain.oqi_business_impact.reliance import CurrentReliance, RelianceEvaluation
+from app.domain.oqi_finding_origin.origin import FindingStorageFamily
 from app.domain.oqi_ontology_impact.evaluation import (
     CurrentImpactStatus,
     FindingFamily,
@@ -50,6 +52,10 @@ from app.infrastructure.persistence.models.oqi_cross_source_evaluation import (
 )
 from app.infrastructure.persistence.models.oqi_cross_source_finding import (
     QualityComparisonFindingORM,
+)
+from app.infrastructure.persistence.models.oqi_integrity import (
+    IntegrityReferenceFindingORM,
+    IntegrityStructuralFindingORM,
 )
 from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
     CurrentOntologyImpactORM,
@@ -79,9 +85,19 @@ OQI_BUSINESS_IMPACT_ADVISORY_LOCK_SEED = 4
 @dataclass(frozen=True, slots=True)
 class SubjectFindingState:
     """The exact governed facts CDD-044 needs about one ontology subject's
-    own Finding/coverage state -- nothing more."""
+    own Finding/coverage state -- nothing more.
 
-    open_finding_refs: tuple[tuple[FindingFamily, UUID, int], ...]
+    CDD-050 §22: `open_finding_refs`'s first tuple element now legitimately
+    carries either a `FindingFamily` (OQI1/OQI2/OQI3) or a
+    `FindingStorageFamily.INTEGRITY` member -- both StrEnum, both safe for
+    the `.value`/`str()` access every existing downstream consumer
+    (`oqi_business_impact_service.py`, `domain/oqi_business_impact/
+    reliance.py`) already performs, neither of which this phase authorizes
+    touching. `Any` is a deliberate, narrow type-escape at exactly this one
+    crossing point -- every value placed here really is a `.value`-bearing
+    StrEnum member; nothing about runtime behavior changes."""
+
+    open_finding_refs: tuple[tuple[Any, UUID, int], ...]
     any_evaluation_ever_run: bool
 
 
@@ -266,13 +282,63 @@ class OqiBusinessImpactRepositoryImpl:
                 BusinessRuleFindingORM.status == "OPEN",
             )
         )
+        # CDD-050 §22: exactly two new indirect-path branches -- Integrity
+        # Findings reach a subject only via OQI4 propagation (Structural's
+        # own subject is a direct EnterpriseEntity, never a source_object_id,
+        # so it has no direct-path branch above; the same is true for
+        # Reference unless/until its source resolves, per §20's own
+        # resolver). Mirrors the three existing indirect-path branches'
+        # exact shape.
+        selects.append(
+            select(
+                literal(FindingStorageFamily.INTEGRITY.value).label("family"),
+                IntegrityStructuralFindingORM.finding_id,
+                IntegrityStructuralFindingORM.state_revision,
+            )
+            .select_from(CurrentOntologyImpactORM)
+            .join(
+                IntegrityStructuralFindingORM,
+                IntegrityStructuralFindingORM.finding_id == CurrentOntologyImpactORM.finding_id,
+            )
+            .where(
+                CurrentOntologyImpactORM.tenant_id == tenant_id,
+                CurrentOntologyImpactORM.ontology_element_type == ontology_element_type.value,
+                CurrentOntologyImpactORM.ontology_element_id == ontology_element_id,
+                CurrentOntologyImpactORM.status == CurrentImpactStatus.ACTIVE.value,
+                CurrentOntologyImpactORM.finding_family == FindingStorageFamily.INTEGRITY.value,
+                IntegrityStructuralFindingORM.status == "OPEN",
+            )
+        )
+        selects.append(
+            select(
+                literal(FindingStorageFamily.INTEGRITY.value).label("family"),
+                IntegrityReferenceFindingORM.finding_id,
+                IntegrityReferenceFindingORM.state_revision,
+            )
+            .select_from(CurrentOntologyImpactORM)
+            .join(
+                IntegrityReferenceFindingORM,
+                IntegrityReferenceFindingORM.finding_id == CurrentOntologyImpactORM.finding_id,
+            )
+            .where(
+                CurrentOntologyImpactORM.tenant_id == tenant_id,
+                CurrentOntologyImpactORM.ontology_element_type == ontology_element_type.value,
+                CurrentOntologyImpactORM.ontology_element_id == ontology_element_id,
+                CurrentOntologyImpactORM.status == CurrentImpactStatus.ACTIVE.value,
+                CurrentOntologyImpactORM.finding_family == FindingStorageFamily.INTEGRITY.value,
+                IntegrityReferenceFindingORM.status == "OPEN",
+            )
+        )
 
         combined = union_all(*selects)
         rows = self.session.execute(combined).all()
-        open_refs = {
-            (FindingFamily(family), finding_id, state_revision)
-            for family, finding_id, state_revision in rows
-        }
+        open_refs: set[tuple[Any, UUID, int]] = set()
+        for family, finding_id, state_revision in rows:
+            try:
+                resolved_family: Any = FindingFamily(family)
+            except ValueError:
+                resolved_family = FindingStorageFamily(family)
+            open_refs.add((resolved_family, finding_id, state_revision))
 
         # CDD-044 §41's own coverage formula, byte-for-byte unmodified --
         # this is the exact legacy value CDD-047 §16/§18 requires be passed
@@ -614,9 +680,19 @@ class OqiBusinessImpactRepositoryImpl:
         from app.domain.oqi_remediation.case import derive_remediation_case_id
         from app.infrastructure.persistence.models.oqi_remediation import OqiRemediationCaseORM
 
+        try:
+            remediation_family = RemediationFindingFamily(finding_family.value)
+        except ValueError:
+            # CDD-050 §25: a FindingStorageFamily.INTEGRITY-origin Finding
+            # (or any other family RemediationFindingFamily -- OQI1/2/3
+            # only -- does not recognize) never creates an
+            # OqiRemediationCaseORM row at all: zero candidates always
+            # (mirrors REASONABLENESS's own precedent), so honestly, no
+            # pending case can ever exist for it.
+            return False
         case_id = derive_remediation_case_id(
             tenant_id=tenant_id,
-            finding_family=RemediationFindingFamily(finding_family.value),
+            finding_family=remediation_family,
             finding_id=finding_id,
         )
         model = self.session.get(OqiRemediationCaseORM, case_id)

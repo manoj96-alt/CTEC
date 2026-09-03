@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.oqi.quality_rule import QualityDimension, QualityFindingType
 from app.domain.oqi_finding_origin.origin import (
+    FindingStorageFamily,
     QualityFindingOrigin,
     quality_dimension_for_oqi1_finding_type,
     storage_family_from_finding_family,
@@ -47,6 +48,10 @@ from app.infrastructure.persistence.models.oqi_business_rule_evaluation import (
 from app.infrastructure.persistence.models.oqi_business_rule_finding import BusinessRuleFindingORM
 from app.infrastructure.persistence.models.oqi_cross_source_finding import (
     QualityComparisonFindingORM,
+)
+from app.infrastructure.persistence.models.oqi_integrity import (
+    IntegrityReferenceFindingORM,
+    IntegrityStructuralFindingORM,
 )
 from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
     CurrentOntologyImpactORM,
@@ -243,6 +248,78 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
             quality_dimension=quality_dimension,
             finding_id=finding_id,
             finding_state_revision=resolved.finding_state_revision,
+        )
+
+    # ------------------------------------------------------------------
+    # OQI-H4 Integrity origin/subject resolution (CDD-050 §20) -- additive,
+    # read-only, never touching `resolve_finding_subject`/`resolve_finding_
+    # origin` above, which stay FindingFamily-typed and serve OQI1/2/3 only
+    # (FindingFamily itself stays permanently closed, PO-H4-02). Returns
+    # `DirectImpactResult` (not `ResolvedFindingSubject`) for the "_subject"
+    # pair: Structural's subject is already a real, known EnterpriseEntity
+    # -- routing it through `resolve_direct_impact`'s ER lookup would
+    # dishonestly downgrade a known entity to IMPACT_UNKNOWN, since
+    # `source_object_ids` there means genuine ER-eligible source objects,
+    # never an entity id. Reference's subject genuinely does need that same
+    # ER lookup (identical shape to OQI1/2/3's own), so it delegates to
+    # `resolve_direct_impact` unchanged.
+    # ------------------------------------------------------------------
+
+    def resolve_integrity_structural_finding_origin(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> QualityFindingOrigin:
+        model = self.session.get(IntegrityStructuralFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Structural Integrity Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return QualityFindingOrigin(
+            tenant_id=tenant_id,
+            finding_storage_family=FindingStorageFamily.INTEGRITY,
+            quality_dimension=QualityDimension.INTEGRITY.value,
+            finding_id=finding_id,
+            finding_state_revision=model.state_revision,
+        )
+
+    def resolve_integrity_structural_finding_subject(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> DirectImpactResult:
+        model = self.session.get(IntegrityStructuralFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Structural Integrity Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return DirectImpactResult(ImpactOutcome.IMPACTED, None, model.enterprise_entity_id)
+
+    def resolve_integrity_reference_finding_origin(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> QualityFindingOrigin:
+        model = self.session.get(IntegrityReferenceFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Reference Integrity Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return QualityFindingOrigin(
+            tenant_id=tenant_id,
+            finding_storage_family=FindingStorageFamily.INTEGRITY,
+            quality_dimension=QualityDimension.INTEGRITY.value,
+            finding_id=finding_id,
+            finding_state_revision=model.state_revision,
+        )
+
+    def resolve_integrity_reference_finding_subject(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> DirectImpactResult:
+        """CDD-050 §20: the SOURCE-side entity, if and only if that
+        `source_object_id` is itself independently resolved -- never a
+        fabricated target entity for the orphaned reference itself."""
+        model = self.session.get(IntegrityReferenceFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Reference Integrity Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return self.resolve_direct_impact(
+            tenant_id=tenant_id, source_object_ids=(model.source_object_id,)
         )
 
     # ------------------------------------------------------------------

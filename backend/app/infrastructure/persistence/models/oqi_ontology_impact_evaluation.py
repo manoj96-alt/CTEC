@@ -45,7 +45,9 @@ class OntologyImpactEvaluationORM(BaseEntity):
 
     evaluation_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    finding_family: Mapped[str] = mapped_column(String(8), nullable=False)
+    # CDD-050 §11, migration 0037: widened from String(8) -- "INTEGRITY" (9
+    # chars) does not fit the original width.
+    finding_family: Mapped[str] = mapped_column(String(16), nullable=False)
     finding_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     finding_state_revision: Mapped[int] = mapped_column(Integer(), nullable=False)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -145,7 +147,9 @@ class CurrentOntologyImpactORM(BaseEntity):
 
     current_impact_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    finding_family: Mapped[str] = mapped_column(String(8), nullable=False)
+    # CDD-050 §11, migration 0037: widened from String(8) -- "INTEGRITY" (9
+    # chars) does not fit the original width.
+    finding_family: Mapped[str] = mapped_column(String(16), nullable=False)
     finding_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     ontology_element_type: Mapped[str] = mapped_column(String(16), nullable=False)
     ontology_element_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)

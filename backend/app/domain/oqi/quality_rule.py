@@ -52,13 +52,19 @@ class QualityDimension(StrEnum):
     Conformity is OQI1-storage-shaped, exactly like Accuracy (CDD-046 §9).
     `REASONABLENESS` is deliberately NOT added here: it is BusinessRule-shaped,
     not QualityRule-shaped (CDD-048 §10, §14) -- its own governed dimension
-    identity lives on `BusinessRule.dimension`, never on this enum."""
+    identity lives on `BusinessRule.dimension`, never on this enum. CDD-050
+    §6 additively extends this a fourth time with `INTEGRITY` -- the first
+    member with zero `QualityRule`-shaped backing at all: Integrity Findings
+    are governed relationship-cardinality/reference-resolution outcomes,
+    persisted in their own `FindingStorageFamily.INTEGRITY` tables (CDD-050
+    §11), never a `QualityRule`/OQI1 Finding."""
 
     COMPLETENESS = "COMPLETENESS"
     VALIDITY = "VALIDITY"
     CONSISTENCY = "CONSISTENCY"
     ACCURACY = "ACCURACY"
     CONFORMITY = "CONFORMITY"
+    INTEGRITY = "INTEGRITY"
 
 
 class QualityFindingType(StrEnum):

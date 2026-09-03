@@ -120,6 +120,13 @@ class OqiRemediationService:
             )
         elif quality_dimension == "REASONABLENESS":
             candidates = extract_reasonableness_candidates()
+        elif quality_dimension == "INTEGRITY":
+            # CDD-050 §25: both Structural and Reference Integrity Findings
+            # route to zero candidates / STEWARD_INVESTIGATION, mirroring
+            # REASONABLENESS's own precedent exactly -- no new
+            # RemediationCandidateBasis member, no CREATE_RELATIONSHIP/
+            # DELETE_RELATIONSHIP/RESOLVE_ENTITY action type.
+            candidates = extract_reasonableness_candidates()
         elif finding_family is FindingFamily.OQI1:
             candidates = extract_oqi1_candidates()
         elif finding_family is FindingFamily.OQI3:

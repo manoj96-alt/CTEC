@@ -63,13 +63,21 @@ _VALID_QUALITY_DIMENSION_VALUES: frozenset[str] = frozenset(
 
 
 class FindingStorageFamily(StrEnum):
-    """CDD-048 §12.2: `FindingFamily` renamed in code identity only. Closed,
-    exactly these three -- zero new members in H2. Answers WHERE a Finding
-    is physically stored, never WHAT quality dimension it represents."""
+    """CDD-048 §12.2: `FindingFamily` renamed in code identity only. Closed to
+    exactly three in H2 -- zero new members there. CDD-050 §11 additively
+    extends this a first time ever with `INTEGRITY`: ONE semantic storage
+    family spanning TWO physical table pairs (Structural and Reference
+    Integrity), never split into `INTEGRITY_STRUCTURAL`/`INTEGRITY_REFERENCE`
+    -- `FindingFamily` (`app.domain.oqi_ontology_impact.evaluation
+    .FindingFamily`) itself stays permanently closed to OQI1/OQI2/OQI3;
+    `INTEGRITY` exists only here, never as a `FindingFamily` member. Answers
+    WHERE a Finding is physically stored, never WHAT quality dimension it
+    represents."""
 
     OQI1 = "OQI1"
     OQI2 = "OQI2"
     OQI3 = "OQI3"
+    INTEGRITY = "INTEGRITY"
 
 
 def storage_family_from_finding_family(finding_family: FindingFamily) -> FindingStorageFamily:
