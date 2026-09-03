@@ -79,6 +79,16 @@ class OqiBusinessDependencyORM(BaseEntity):
             ],
             name="fk_oqi_business_dependencies_tenant_process",
         ),
+        # CDD-053 (OQI6-R2, narrow replace-FK correction): additive tenant-
+        # qualified candidate key required so `oqi_business_impact_evaluations`
+        # can compose a proper tenant-qualified FK against this table. Safe
+        # by construction, requires no data backfill: `(dependency_id,
+        # version)` is already this table's primary key, so `(tenant_id,
+        # dependency_id, version)` is trivially unique as a superset of an
+        # already-unique key.
+        UniqueConstraint(
+            "tenant_id", "dependency_id", "version", name="uq_oqi_business_dependencies_tenant_pk"
+        ),
         Index("idx_oqi_business_dependencies_tenant_id", "tenant_id"),
         Index("idx_oqi_business_dependencies_dependency_id", "dependency_id"),
         Index(
@@ -106,10 +116,20 @@ class OqiBusinessImpactEvaluationORM(BaseEntity):
     __tablename__ = "oqi_business_impact_evaluations"
 
     __table_args__ = (
+        # CDD-053 (OQI6-R2, narrow replace-FK correction): this FK previously
+        # targeted the plain (dependency_id, version) primary key, proving
+        # only that the referenced dependency exists -- not that it belongs
+        # to this evaluation's own tenant. Replaced with a tenant-qualified
+        # composite FK against `uq_oqi_business_dependencies_tenant_pk`
+        # (added above for this exact purpose).
         ForeignKeyConstraint(
-            ["business_dependency_id", "business_dependency_version"],
-            ["oqi_business_dependencies.dependency_id", "oqi_business_dependencies.version"],
-            name="fk_oqi_business_impact_evaluations_dependency",
+            ["tenant_id", "business_dependency_id", "business_dependency_version"],
+            [
+                "oqi_business_dependencies.tenant_id",
+                "oqi_business_dependencies.dependency_id",
+                "oqi_business_dependencies.version",
+            ],
+            name="fk_oqi_business_impact_evaluations_tenant_dependency",
         ),
         ForeignKeyConstraint(
             ["considered_current_impact_id"],

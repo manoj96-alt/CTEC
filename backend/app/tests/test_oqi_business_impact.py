@@ -1300,3 +1300,327 @@ def test_ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_data(
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     assert version == "0041_oqi6_r1_dependency_tenancy"
+
+
+# =====================================================================
+# CDD-053 (OQI6-R2): permanent tenant-isolation adversarial matrix for
+# oqi_business_impact_evaluations' foreign key to oqi_business_dependencies
+# (R2-TI-01 through R2-TI-12). Uses raw parameterized SQL, not
+# OqiBusinessImpactEvaluationORM construction, for the direct-persistence
+# bypass proofs -- that ORM class is also covered by this repository's
+# single-construction-site firewall (test_runtime_architecture.py), and
+# CDD-053 SS24 explicitly corrects R1's own disclosed test-naming
+# imprecision: these tests are named "direct_persistence", never "direct_orm".
+# =====================================================================
+
+_INSERT_EVALUATION_SQL = text(
+    "INSERT INTO oqi_business_impact_evaluations "
+    "(evaluation_id, tenant_id, business_dependency_id, business_dependency_version, "
+    "ontology_element_type, ontology_element_id, outcome, considered_current_impact_id, evaluated_at) "
+    "VALUES (:evaluation_id, :tenant_id, :business_dependency_id, :business_dependency_version, "
+    ":ontology_element_type, :ontology_element_id, :outcome, NULL, :evaluated_at)"
+)
+
+
+def _seed_dependency(session: Session, *, tenant_id: str) -> tuple[UUID, int]:
+    process_id, _ = _seed_process(session, tenant_id=tenant_id)
+    dependency = _business_impact_service(session).create_dependency(
+        tenant_id=tenant_id,
+        business_process_id=process_id,
+        ontology_element_type=OntologyElementType.ENTITY,
+        ontology_element_id=uuid4(),
+        criticality=None,
+        created_by="steward",
+        created_on=NOW,
+    )
+    session.commit()
+    return dependency.dependency_id, dependency.version
+
+
+def _attempt_direct_persistence_evaluation_insert(
+    session: Session,
+    *,
+    tenant_id: str,
+    business_dependency_id: UUID,
+    business_dependency_version: int,
+) -> str:
+    """Raw parameterized SQL insertion, bypassing OqiBusinessImpactService
+    AND the OqiBusinessImpactEvaluationORM construction site entirely -- the
+    exact adversarial shape CDD-053 SS5/SS24 requires."""
+    nested = session.begin_nested()
+    try:
+        session.execute(
+            _INSERT_EVALUATION_SQL,
+            {
+                "evaluation_id": str(uuid4()),
+                "tenant_id": tenant_id,
+                "business_dependency_id": str(business_dependency_id),
+                "business_dependency_version": business_dependency_version,
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "outcome": BusinessImpactOutcome.BUSINESS_IMPACT_IDENTIFIED.value,
+                "evaluated_at": NOW,
+            },
+        )
+        session.flush()
+        nested.rollback()
+        return "ACCEPTED"
+    except IntegrityError as exc:
+        nested.rollback()
+        return type(exc).__name__
+
+
+def test_r2ti01_direct_persistence_same_tenant_evaluation_accepted(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        dependency_id, dependency_version = _seed_dependency(session, tenant_id=tenant_a)
+        result = _attempt_direct_persistence_evaluation_insert(
+            session,
+            tenant_id=tenant_a,
+            business_dependency_id=dependency_id,
+            business_dependency_version=dependency_version,
+        )
+    assert result == "ACCEPTED"  # R2-TI-01
+
+
+def test_r2ti02_direct_persistence_cross_tenant_evaluation_rejected_by_postgresql(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    with factory() as session:
+        dependency_id, dependency_version = _seed_dependency(session, tenant_id=tenant_b)
+        result = _attempt_direct_persistence_evaluation_insert(
+            session,
+            tenant_id=tenant_a,
+            business_dependency_id=dependency_id,
+            business_dependency_version=dependency_version,
+        )
+    assert result == "IntegrityError"  # R2-TI-02: genuine PostgreSQL FK enforcement
+
+
+def test_r2ti03_service_same_tenant_evaluate_business_impact_accepted(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        dependency_id, _ = _seed_dependency(session, tenant_id=tenant_a)
+        evaluation = _business_impact_service(session).evaluate_business_impact_for_dependency(
+            tenant_id=tenant_a, dependency_id=dependency_id, evaluated_at=NOW
+        )
+        session.commit()
+    assert evaluation.business_dependency_id == dependency_id  # R2-TI-03
+
+
+def test_r2ti04_service_cross_tenant_evaluate_business_impact_rejected(
+    factory: sessionmaker[Session],
+) -> None:
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    with factory() as session:
+        dependency_id, _ = _seed_dependency(session, tenant_id=tenant_b)
+    with factory() as session, pytest.raises(ValidationException):
+        _business_impact_service(session).evaluate_business_impact_for_dependency(
+            tenant_id=tenant_a, dependency_id=dependency_id, evaluated_at=NOW
+        )  # R2-TI-04: existing service-layer defense-in-depth, unchanged
+
+
+def test_r2ti05_old_fk_absent(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conname = 'fk_oqi_business_impact_evaluations_dependency'"
+            )
+        ).fetchone()
+    assert row is None  # R2-TI-05
+
+
+def test_r2ti06_new_fk_present_with_exact_shape(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'fk_oqi_business_impact_evaluations_tenant_dependency'"
+            )
+        ).fetchone()
+    assert row is not None  # R2-TI-06
+    assert row[0] == (
+        "FOREIGN KEY (tenant_id, business_dependency_id, business_dependency_version) "
+        "REFERENCES oqi_business_dependencies(tenant_id, dependency_id, version)"
+    )
+
+
+def test_r2ti07_dependency_tenant_candidate_key_present(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'uq_oqi_business_dependencies_tenant_pk'"
+            )
+        ).fetchone()
+    assert row is not None  # R2-TI-07
+    assert row[0] == "UNIQUE (tenant_id, dependency_id, version)"
+
+
+def test_r2ti08_r1_dependency_process_boundary_preserved(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        parent_key = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'uq_oqi_business_processes_tenant_pk'"
+            )
+        ).fetchone()
+        child_fk = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'fk_oqi_business_dependencies_tenant_process'"
+            )
+        ).fetchone()
+    assert parent_key is not None and parent_key[0] == "UNIQUE (tenant_id, process_id, version)"
+    assert child_fk is not None and child_fk[0] == (
+        "FOREIGN KEY (tenant_id, business_process_id, business_process_version) "
+        "REFERENCES oqi_business_processes(tenant_id, process_id, version)"
+    )  # R2-TI-08
+
+
+def test_r2ti09_migration_round_trip_preserves_valid_evaluation_data(
+    migrated_engine: Engine,
+) -> None:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+
+    tenant_a = f"tenant-{uuid4()}"
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    evaluation_id = uuid4()
+    with factory() as session:
+        dependency_id, dependency_version = _seed_dependency(session, tenant_id=tenant_a)
+        session.execute(
+            _INSERT_EVALUATION_SQL,
+            {
+                "evaluation_id": str(evaluation_id),
+                "tenant_id": tenant_a,
+                "business_dependency_id": str(dependency_id),
+                "business_dependency_version": dependency_version,
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "outcome": BusinessImpactOutcome.BUSINESS_IMPACT_IDENTIFIED.value,
+                "evaluated_at": NOW,
+            },
+        )
+        session.commit()
+
+    def _row() -> tuple[object, ...] | None:
+        with migrated_engine.connect() as connection:
+            result = connection.execute(
+                text(
+                    "SELECT evaluation_id, tenant_id, business_dependency_id, "
+                    "business_dependency_version, ontology_element_type, ontology_element_id, "
+                    "outcome FROM oqi_business_impact_evaluations WHERE evaluation_id = :evaluation_id"
+                ),
+                {"evaluation_id": str(evaluation_id)},
+            ).fetchone()
+            return None if result is None else tuple(result)
+
+    before = _row()
+    assert before is not None
+
+    alembic.command.downgrade(config, "0041_oqi6_r1_dependency_tenancy")
+    after_downgrade = _row()
+    assert after_downgrade == before  # R2-TI-09: byte-identical across downgrade
+
+    alembic.command.upgrade(config, "head")
+    after_upgrade = _row()
+    assert after_upgrade == before  # R2-TI-09: byte-identical across re-upgrade
+
+
+def test_r2ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_evaluation(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-053 SS15: a cross-tenant evaluation row that the pre-R2 schema
+    accepts must cause the 0042 upgrade to fail (genuine PostgreSQL
+    FK-validation IntegrityError), leaving the row byte-unchanged -- never
+    silently repaired, rewritten, or deleted by the migration itself."""
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+
+    alembic.command.downgrade(config, "0041_oqi6_r1_dependency_tenancy")
+
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    evaluation_id = uuid4()
+    with factory() as session:
+        dependency_id, dependency_version = _seed_dependency(session, tenant_id=tenant_b)
+        session.execute(
+            _INSERT_EVALUATION_SQL,
+            {
+                "evaluation_id": str(evaluation_id),
+                "tenant_id": tenant_a,  # cross-tenant: accepted by the pre-R2 plain FK
+                "business_dependency_id": str(dependency_id),
+                "business_dependency_version": dependency_version,
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "outcome": BusinessImpactOutcome.BUSINESS_IMPACT_IDENTIFIED.value,
+                "evaluated_at": NOW,
+            },
+        )
+        session.commit()
+
+    def _row() -> tuple[object, ...] | None:
+        with migrated_engine.connect() as connection:
+            result = connection.execute(
+                text(
+                    "SELECT tenant_id, business_dependency_id, business_dependency_version "
+                    "FROM oqi_business_impact_evaluations WHERE evaluation_id = :evaluation_id"
+                ),
+                {"evaluation_id": str(evaluation_id)},
+            ).fetchone()
+            return None if result is None else tuple(result)
+
+    invalid_row = _row()
+    assert invalid_row is not None
+    assert invalid_row[0] == tenant_a
+
+    with pytest.raises(IntegrityError):
+        alembic.command.upgrade(config, "head")  # R2-TI-10: fails closed
+
+    with migrated_engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert version == "0041_oqi6_r1_dependency_tenancy"  # migration did not partially apply
+    assert _row() == invalid_row  # row byte-unchanged, never silently repaired
+
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM oqi_business_impact_evaluations WHERE evaluation_id = :evaluation_id"),
+            {"evaluation_id": str(evaluation_id)},
+        )
+
+    alembic.command.upgrade(config, "head")  # retry succeeds once invalid data is cleaned
+    with migrated_engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert version == "0042_oqi6_r2_evaluation_tenancy"
+
+
+def test_r2ti11_h5_timeliness_unaffected(factory: sessionmaker[Session]) -> None:
+    """CDD-053 SS20/SS26: R2 touches neither oqi_timeliness_policies nor the
+    BusinessProcess tenant FK it depends on -- reuse test_oqi_h5_timeliness_
+    crown.py's own established seeding infrastructure, as R1's own analogous
+    test already does, rather than duplicating it."""
+    from app.tests.test_oqi_h5_timeliness_crown import (
+        _seed_business_process as _h5_seed_business_process,
+        _seed_policy as _h5_seed_policy,
+        _seed_unmapped_information_element as _h5_seed_unmapped_information_element,
+    )
+
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        process_id, process_version = _h5_seed_business_process(session, tenant_id=tenant_a)
+        requirement_id = _h5_seed_unmapped_information_element(session, tenant_id=tenant_a)
+        policy_id = _h5_seed_policy(
+            session,
+            tenant_id=tenant_a,
+            information_element_requirement_id=requirement_id,
+            business_process_id=process_id,
+            business_process_version=process_version,
+        )
+    assert policy_id is not None  # R2-TI-11
