@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import alembic.command
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -1299,7 +1300,8 @@ def test_ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_data(
     alembic.command.upgrade(config, "head")  # retry succeeds once invalid data is cleaned
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert version == "0041_oqi6_r1_dependency_tenancy"
+    current_head = ScriptDirectory.from_config(config).get_current_head()
+    assert version == current_head
 
 
 # =====================================================================
@@ -1591,7 +1593,9 @@ def test_r2ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_evaluation
 
     with migrated_engine.begin() as connection:
         connection.execute(
-            text("DELETE FROM oqi_business_impact_evaluations WHERE evaluation_id = :evaluation_id"),
+            text(
+                "DELETE FROM oqi_business_impact_evaluations WHERE evaluation_id = :evaluation_id"
+            ),
             {"evaluation_id": str(evaluation_id)},
         )
 
