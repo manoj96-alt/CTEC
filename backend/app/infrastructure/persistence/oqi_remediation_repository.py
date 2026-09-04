@@ -28,6 +28,7 @@ from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.domain.oqi_cross_source.evaluation import ComparisonObservationType
@@ -179,24 +180,80 @@ class OqiRemediationRepositoryImpl:
         return None if model is None else _case_to_domain(model)
 
     def save_case(self, case: RemediationCase) -> None:
-        model = self.session.get(OqiRemediationCaseORM, case.case_id)
-        if model is None:
-            self.session.add(_case_to_orm(case))
-            return
-        model.status = case.status.value
-        model.external_execution_claimed = case.external_execution_claimed
-        model.external_execution_claimed_on = case.external_execution_claimed_on
-        model.updated_on = case.updated_on
+        """Production-Remediation-Orchestration-I (CDD-058 §14): a genuine
+        atomic `INSERT ... ON CONFLICT (case_id) DO UPDATE`, replacing the
+        original check-then-insert pattern -- under real concurrency (two
+        callers racing to `extract_candidates` for the identical Finding,
+        both computing the identical deterministic `case_id`), the prior
+        `session.get()`-then-branch logic let both callers observe "absent"
+        and both attempt an `INSERT`, so the loser raised an uncaught
+        `IntegrityError` on the primary key instead of converging. The
+        `case_id` itself is deterministic from the Finding's own stable
+        identity (never regenerated), so an upsert-on-conflict is exactly
+        as correct for the "first ever extraction" race as it already is
+        for every legitimate subsequent status transition (`construct_
+        instruction`/`approve`/`report_external_execution`/`refresh_case`
+        all already call this same method to persist a case whose full,
+        already-computed-correct next state the caller supplies) -- there
+        is no case where a conflicting concurrent writer's own row should
+        NOT simply be overwritten with the (deterministically identical,
+        or legitimately newer) state being saved."""
+        model = _case_to_orm(case)
+        statement = (
+            pg_insert(OqiRemediationCaseORM)
+            .values(
+                case_id=model.case_id,
+                tenant_id=model.tenant_id,
+                finding_family=model.finding_family,
+                finding_id=model.finding_id,
+                status=model.status,
+                external_execution_claimed=model.external_execution_claimed,
+                external_execution_claimed_on=model.external_execution_claimed_on,
+                created_on=model.created_on,
+                updated_on=model.updated_on,
+            )
+            .on_conflict_do_update(
+                index_elements=[OqiRemediationCaseORM.case_id],
+                set_={
+                    "status": model.status,
+                    "external_execution_claimed": model.external_execution_claimed,
+                    "external_execution_claimed_on": model.external_execution_claimed_on,
+                    "updated_on": model.updated_on,
+                },
+            )
+        )
+        self.session.execute(statement)
 
     def save_candidates_idempotent(self, candidates: tuple[RemediationCandidate, ...]) -> None:
         """CDD-043 §12: candidates are immutable and deterministically
-        identified, so re-extracting the same evidence set is a no-op --
-        mirroring `insert_evaluation_idempotent`'s check-then-insert
-        technique rather than a database-level upsert."""
+        identified, so re-extracting the same evidence set is a genuine
+        no-op. Production-Remediation-Orchestration-I (CDD-058 §14):
+        replaced the original check-then-insert pattern with a genuine
+        atomic `INSERT ... ON CONFLICT (candidate_id) DO NOTHING` -- under
+        real concurrency, two callers extracting the identical
+        deterministic candidate set for the same Finding now converge to
+        exactly one durable row per candidate, with zero uncaught
+        `IntegrityError` on either side."""
         for candidate in candidates:
-            if self.session.get(OqiRemediationCandidateORM, candidate.candidate_id) is not None:
-                continue
-            self.session.add(_candidate_to_orm(candidate))
+            model = _candidate_to_orm(candidate)
+            statement = (
+                pg_insert(OqiRemediationCandidateORM)
+                .values(
+                    candidate_id=model.candidate_id,
+                    case_id=model.case_id,
+                    target_source_object_id=model.target_source_object_id,
+                    target_source_field_id=model.target_source_field_id,
+                    proposed_value=model.proposed_value,
+                    supporting_evidence_ids=model.supporting_evidence_ids,
+                    conflicting_evidence_ids=model.conflicting_evidence_ids,
+                    missing_participant_roles=model.missing_participant_roles,
+                    authority_participant_role=model.authority_participant_role,
+                    basis=model.basis,
+                    extracted_at=model.extracted_at,
+                )
+                .on_conflict_do_nothing(index_elements=[OqiRemediationCandidateORM.candidate_id])
+            )
+            self.session.execute(statement)
 
     def get_candidates_for_case(self, case_id: UUID) -> tuple[RemediationCandidate, ...]:
         models = (
@@ -215,9 +272,32 @@ class OqiRemediationRepositoryImpl:
         return None if model is None else _candidate_to_domain(model)
 
     def save_instruction(self, instruction: RemediationInstruction) -> None:
-        if self.session.get(OqiRemediationInstructionORM, instruction.instruction_id) is not None:
-            return
-        self.session.add(_instruction_to_orm(instruction))
+        """Production-Remediation-Orchestration-I (CDD-058 §14): immutable,
+        deterministically-identified, replaced check-then-insert with a
+        genuine atomic `INSERT ... ON CONFLICT (instruction_id) DO NOTHING`
+        for the identical concurrency-safety reason as `save_candidates_
+        idempotent`."""
+        model = _instruction_to_orm(instruction)
+        statement = (
+            pg_insert(OqiRemediationInstructionORM)
+            .values(
+                instruction_id=model.instruction_id,
+                tenant_id=model.tenant_id,
+                finding_id=model.finding_id,
+                finding_state_revision=model.finding_state_revision,
+                case_id=model.case_id,
+                candidate_id=model.candidate_id,
+                target_source_object_id=model.target_source_object_id,
+                target_source_field_id=model.target_source_field_id,
+                action_type=model.action_type,
+                payload_digest=model.payload_digest,
+                agent_recommendation_id=model.agent_recommendation_id,
+                created_by=model.created_by,
+                created_on=model.created_on,
+            )
+            .on_conflict_do_nothing(index_elements=[OqiRemediationInstructionORM.instruction_id])
+        )
+        self.session.execute(statement)
 
     def get_instruction(self, instruction_id: UUID) -> RemediationInstruction | None:
         model = self.session.get(OqiRemediationInstructionORM, instruction_id)

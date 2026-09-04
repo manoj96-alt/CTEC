@@ -37,6 +37,8 @@ from app.api.oqi.schemas import (
     OntologyImpactPathSegment,
     OntologyImpactResponse,
     OntologyImpactResultView,
+    PrepareRemediationRequest,
+    PrepareRemediationResponse,
     RecordHumanVerifiedEvidenceRequest,
     ReferenceEvidenceAssertionResponse,
     ReferenceEvidenceConflictListResponse,
@@ -44,10 +46,13 @@ from app.api.oqi.schemas import (
     RelianceHistoryEntry,
     RelianceResponse,
     RelianceResultView,
+    RemediationAuthorizationResponseView,
     RemediationAuthorizationView,
+    RemediationCandidateResponseView,
     RemediationCandidateView,
     RemediationCaseActionResponse,
     RemediationExternalExecutionView,
+    RemediationInstructionResponseView,
     RemediationResponse,
     ReportExecutionRequest,
     SpecialistAssessmentView,
@@ -65,6 +70,10 @@ from app.application.oqi_reference_evidence_service import (
     OqiReferenceEvidenceService,
 )
 from app.application.oqi_remediation_service import OqiRemediationError
+from app.application.production_remediation_orchestration_service import (
+    ProductionRemediationOrchestrationError,
+    ProductionRemediationOrchestrationService,
+)
 from app.core.dependency_container import Container
 from app.domain.oqi_ontology_impact.evaluation import OntologyElementType
 from app.infrastructure.persistence.oqi_reference_evidence_repository import (
@@ -83,6 +92,36 @@ _REMEDIATION_ERROR_HTTP_STATUS: dict[str, int] = {
     "REMEDIATION_AUTHORIZATION_ALREADY_CONSUMED": 409,
     "REMEDIATION_ACTION_MISMATCH": 409,
 }
+
+_PRODUCTION_REMEDIATION_ERROR_HTTP_STATUS: dict[str, int] = {
+    "REMEDIATION_FINDING_NOT_FOUND": 404,
+    "REMEDIATION_TENANT_MISMATCH": 404,
+}
+
+
+def _record_success(
+    dependencies: Container,
+    correlation: UUID,
+    authenticated: TrustedPrincipal,
+    *,
+    operation: str,
+    code: str,
+) -> None:
+    """CDD-058 §28/§34: successful-outcome audit recording, reusing the
+    pre-existing `SecurityAuditService` exactly as
+    `app.api.oqi.dependencies._record_denied` already does for denials -- no
+    new observability infrastructure."""
+    audit = dependencies.security_audit
+    if audit is not None:
+        audit.record(
+            operation=operation,
+            category="AUTHORIZATION",
+            outcome="SUCCESS",
+            code=code,
+            correlation_id=correlation,
+            principal=authenticated,
+            endpoint_classification=_ENDPOINT_CLASSIFICATION,
+        )
 
 
 def oqi_session(value: Annotated[Container, Depends(container)]) -> Iterator[Session]:
@@ -115,6 +154,12 @@ def evaluation_orchestration_service(
     session: Annotated[Session, Depends(oqi_session)],
 ) -> OqiEvaluationOrchestrationService:
     return OqiEvaluationOrchestrationService(session)
+
+
+def remediation_orchestration_service(
+    session: Annotated[Session, Depends(oqi_session)],
+) -> ProductionRemediationOrchestrationService:
+    return ProductionRemediationOrchestrationService(session)
 
 
 _REFERENCE_EVIDENCE_ERROR_HTTP_STATUS: dict[str, int] = {}
@@ -419,6 +464,74 @@ def get_remediation(
 
 
 @router.post(
+    "/findings/{finding_id}/remediation/prepare",
+    response_model=PrepareRemediationResponse,
+    status_code=202,
+)
+def prepare_remediation(
+    finding_id: UUID,
+    body: PrepareRemediationRequest,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+    remediation_orchestrator: Annotated[
+        ProductionRemediationOrchestrationService, Depends(remediation_orchestration_service)
+    ],
+) -> PrepareRemediationResponse:
+    """CDD-058 §4/§7-§12: explicit, tenant-scoped, human/steward-triggered
+    remediation-preparation action. Tenant authority is sourced exclusively
+    from `authenticated.tenant_id` -- `PrepareRemediationRequest` carries no
+    `tenant_id` field at all. Never invoked automatically after evaluation."""
+    authorize(authenticated, "oqi-remediation:prepare", dependencies, correlation)
+    try:
+        result = remediation_orchestrator.prepare_remediation(
+            tenant_id=authenticated.tenant_id,
+            finding_id=finding_id,
+            requested_by=authenticated.principal_id,
+            correlation_id=body.correlation_id,
+        )
+    except ProductionRemediationOrchestrationError as exc:
+        raise HTTPException(
+            _PRODUCTION_REMEDIATION_ERROR_HTTP_STATUS.get(exc.code, 409),
+            detail={"code": exc.code},
+        ) from exc
+    _record_success(
+        dependencies,
+        correlation,
+        authenticated,
+        operation="PREPARE_REMEDIATION",
+        code=result.case_status,
+    )
+    return PrepareRemediationResponse(
+        correlation_id=result.correlation_id,
+        case_id=result.case_id,
+        finding_id=result.finding_id,
+        case_status=result.case_status,
+        candidates=tuple(
+            RemediationCandidateResponseView(
+                candidate_id=c.candidate_id, proposed_value=c.proposed_value, basis=c.basis
+            )
+            for c in result.candidates
+        ),
+        instructions=tuple(
+            RemediationInstructionResponseView(
+                instruction_id=i.instruction_id, candidate_id=i.candidate_id
+            )
+            for i in result.instructions
+        ),
+        authorizations=tuple(
+            RemediationAuthorizationResponseView(
+                authorization_id=a.authorization_id,
+                instruction_id=a.instruction_id,
+                status=a.status,
+            )
+            for a in result.authorizations
+        ),
+        agent_reasoning_status=result.agent_reasoning_status,
+    )
+
+
+@router.post(
     "/remediation/authorizations/{authorization_id}/decide",
     response_model=RemediationCaseActionResponse,
 )
@@ -443,6 +556,13 @@ def decide_authorization(
         raise HTTPException(
             _REMEDIATION_ERROR_HTTP_STATUS.get(exc.code, 409), detail={"code": exc.code}
         ) from exc
+    _record_success(
+        dependencies,
+        correlation,
+        authenticated,
+        operation="DECIDE_REMEDIATION_AUTHORIZATION",
+        code=status_value,
+    )
     return RemediationCaseActionResponse(case_status=status_value)
 
 
@@ -468,6 +588,61 @@ def report_execution(
         raise HTTPException(
             _REMEDIATION_ERROR_HTTP_STATUS.get(exc.code, 409), detail={"code": exc.code}
         ) from exc
+    _record_success(
+        dependencies,
+        correlation,
+        authenticated,
+        operation="REPORT_REMEDIATION_EXECUTION",
+        code=status_value,
+    )
+    # CDD-058 §19/§21: the execution-report transaction must durably commit
+    # before remediation-scoped reevaluation begins -- explicit here rather
+    # than relying on `oqi_session`'s own end-of-request commit, so the
+    # required ordering is guaranteed regardless of how this dependency's
+    # own commit timing might change. Reevaluation failure never affects
+    # this endpoint's own response -- execution reporting and reevaluation
+    # are deliberately separate durable stages (CDD-058 §22/§28).
+    #
+    # `remediation_orchestrator` is deliberately NOT a FastAPI `Depends()`
+    # parameter here (unlike `/remediation/prepare`'s own use of
+    # `remediation_orchestration_service`): every declared dependency is
+    # resolved before this function's own body runs, so a `Depends()` on
+    # this route would force `oqi_session` (and therefore a real
+    # `Container.ontology_sessions`) to resolve even for callers exercising
+    # only this route's pre-existing scope/error-mapping behavior against a
+    # fake `OqiProductExperienceService` with no real session at all
+    # (`test_oqi_api_router.py`, unmodified, unauthorized to touch). Reusing
+    # the existing `service.session` this route's own dependency chain
+    # already produces (falling back to a no-op skip when a caller's own
+    # service double carries no `.session`, exactly the same "no real
+    # backing store available" case `oqi_session` itself gates on) achieves
+    # the identical production behavior without adding a new required
+    # dependency to this already-existing, already-tested route.
+    session = getattr(service, "session", None)
+    if session is None:
+        return RemediationCaseActionResponse(case_status=status_value)
+    session.commit()
+    try:
+        reevaluation = ProductionRemediationOrchestrationService(
+            session
+        ).reevaluate_after_execution(
+            tenant_id=authenticated.tenant_id, authorization_id=authorization_id
+        )
+    except Exception:  # noqa: BLE001 -- reevaluation is best-effort here; its own
+        # internal per-stage failures already report honestly (CDD-058 §23/§28)
+        # and never resolve a Finding falsely. An unexpected exception escaping
+        # this call must still never crash the already-durable execution-report
+        # response -- the execution report itself already committed above.
+        session.rollback()
+    else:
+        if reevaluation is not None:
+            _record_success(
+                dependencies,
+                correlation,
+                authenticated,
+                operation="REEVALUATE_AFTER_REMEDIATION_EXECUTION",
+                code=reevaluation.case_status,
+            )
     return RemediationCaseActionResponse(case_status=status_value)
 
 

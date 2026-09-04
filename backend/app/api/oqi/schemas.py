@@ -285,3 +285,51 @@ class EvaluateResponse(BaseModel):
     ontology_impact: OntologyImpactResultView
     business_impact: tuple[BusinessImpactResultView, ...]
     reliance: RelianceResultView
+
+
+class PrepareRemediationRequest(BaseModel):
+    """CDD-058 §8: `finding_id` is a path parameter, never a body field.
+    No `tenant_id` field exists on this contract at all -- tenant
+    authority is sourced exclusively from the authenticated
+    `TrustedPrincipal`, never from request-body content. `extra="forbid"`
+    ensures an injected body `tenant_id` (or any other unknown field) is
+    rejected with HTTP 422, never silently ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    correlation_id: UUID | None = None
+
+
+class RemediationCandidateResponseView(BaseModel):
+    candidate_id: UUID
+    proposed_value: str
+    basis: str
+
+
+class RemediationInstructionResponseView(BaseModel):
+    instruction_id: UUID
+    candidate_id: UUID
+
+
+class RemediationAuthorizationResponseView(BaseModel):
+    authorization_id: UUID
+    instruction_id: UUID
+    status: str
+
+
+class PrepareRemediationResponse(BaseModel):
+    """CDD-058 §41: transport acceptance (`HTTP 202`) is distinct from
+    domain outcome -- a response with zero candidates/instructions/
+    authorizations and `case_status="STEWARD_INVESTIGATION"` is a fully
+    successful preparation run, never a failure. `agent_reasoning_status`
+    is always `"NOT_INVOKED"` in this phase (CDD-058 §11/§20) -- never a
+    fabricated AI result."""
+
+    correlation_id: UUID | None
+    case_id: UUID
+    finding_id: UUID
+    case_status: str
+    candidates: tuple[RemediationCandidateResponseView, ...]
+    instructions: tuple[RemediationInstructionResponseView, ...]
+    authorizations: tuple[RemediationAuthorizationResponseView, ...]
+    agent_reasoning_status: str
