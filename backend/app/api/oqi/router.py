@@ -22,8 +22,12 @@ from app.api.oqi.schemas import (
     AssertGovernedReferenceDatasetRequest,
     BusinessImpactDependency,
     BusinessImpactResponse,
+    BusinessImpactResultView,
     CommandCenterResponse,
     DecideAuthorizationRequest,
+    DimensionResultView,
+    EvaluateRequest,
+    EvaluateResponse,
     EvidenceCandidate,
     EvidenceParticipant,
     EvidenceResponse,
@@ -32,12 +36,14 @@ from app.api.oqi.schemas import (
     FindingSummary,
     OntologyImpactPathSegment,
     OntologyImpactResponse,
+    OntologyImpactResultView,
     RecordHumanVerifiedEvidenceRequest,
     ReferenceEvidenceAssertionResponse,
     ReferenceEvidenceConflictListResponse,
     ReferenceEvidenceConflictResponse,
     RelianceHistoryEntry,
     RelianceResponse,
+    RelianceResultView,
     RemediationAuthorizationView,
     RemediationCandidateView,
     RemediationCaseActionResponse,
@@ -48,6 +54,9 @@ from app.api.oqi.schemas import (
 )
 from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.api.supplier_risk.dependencies import container, correlation_id, principal
+from app.application.oqi_evaluation_orchestration_service import (
+    OqiEvaluationOrchestrationService,
+)
 from app.application.oqi_product_experience_service import (
     OqiProductExperienceService,
 )
@@ -100,6 +109,12 @@ def reference_evidence_service(
     session: Annotated[Session, Depends(oqi_session)],
 ) -> OqiReferenceEvidenceService:
     return OqiReferenceEvidenceService(repository=OqiReferenceEvidenceRepositoryImpl(session))
+
+
+def evaluation_orchestration_service(
+    session: Annotated[Session, Depends(oqi_session)],
+) -> OqiEvaluationOrchestrationService:
+    return OqiEvaluationOrchestrationService(session)
 
 
 _REFERENCE_EVIDENCE_ERROR_HTTP_STATUS: dict[str, int] = {}
@@ -567,3 +582,50 @@ def list_reference_evidence_conflicts(
         )
     )
     return ReferenceEvidenceConflictListResponse(items=items)
+
+
+@router.post("/evaluate", response_model=EvaluateResponse, status_code=202)
+def evaluate(
+    body: EvaluateRequest,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+    service: Annotated[
+        OqiEvaluationOrchestrationService, Depends(evaluation_orchestration_service)
+    ],
+) -> EvaluateResponse:
+    """CDD-056 §7-§9: explicit, tenant-scoped production evaluation trigger.
+    Tenant authority is sourced exclusively from `authenticated.tenant_id`
+    -- `EvaluateRequest` carries no `tenant_id` field at all."""
+    authorize(authenticated, "oqi-evaluation:trigger", dependencies, correlation)
+    result = service.evaluate(
+        tenant_id=authenticated.tenant_id,
+        information_element_requirement_id=body.information_element_requirement_id,
+        source_record_reference=body.source_record_reference,
+        business_process_id=body.business_process_id,
+        business_process_version=body.business_process_version,
+        correlation_id=body.correlation_id,
+    )
+    return EvaluateResponse(
+        correlation_id=result.correlation_id,
+        evaluated_at=result.evaluated_at,
+        dimensions=tuple(
+            DimensionResultView(
+                dimension=d.dimension,
+                status=d.status,
+                evaluation_id=d.evaluation_id,
+                outcome=d.outcome,
+            )
+            for d in result.dimensions
+        ),
+        ontology_impact=OntologyImpactResultView(
+            status=result.ontology_impact.status, outcome=result.ontology_impact.outcome
+        ),
+        business_impact=tuple(
+            BusinessImpactResultView(
+                dependency_id=b.dependency_id, status=b.status, outcome=b.outcome
+            )
+            for b in result.business_impact
+        ),
+        reliance=RelianceResultView(status=result.reliance.status, state=result.reliance.state),
+    )

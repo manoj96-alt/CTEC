@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class CommandCenterResponse(BaseModel):
@@ -233,3 +233,55 @@ class ReferenceEvidenceConflictResponse(BaseModel):
 
 class ReferenceEvidenceConflictListResponse(BaseModel):
     items: tuple[ReferenceEvidenceConflictResponse, ...]
+
+
+class EvaluateRequest(BaseModel):
+    """CDD-056 §8: no `tenant_id` field exists on this contract at all --
+    tenant authority is sourced exclusively from the authenticated
+    `TrustedPrincipal`, never from request-body content. `extra="forbid"`
+    ensures an injected body `tenant_id` (or any other unknown field) is
+    rejected with HTTP 422, never silently ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    correlation_id: UUID | None = None
+    information_element_requirement_id: UUID
+    source_record_reference: str
+    business_process_id: UUID
+    business_process_version: int
+
+
+class DimensionResultView(BaseModel):
+    dimension: str
+    status: str
+    evaluation_id: UUID | None = None
+    outcome: str | None = None
+
+
+class OntologyImpactResultView(BaseModel):
+    status: str
+    outcome: str | None = None
+
+
+class BusinessImpactResultView(BaseModel):
+    dependency_id: UUID
+    status: str
+    outcome: str | None = None
+
+
+class RelianceResultView(BaseModel):
+    status: str
+    state: str | None = None
+
+
+class EvaluateResponse(BaseModel):
+    """CDD-056 §9: transport acceptance (`HTTP 202`) is distinct from
+    domain/quality outcome -- a response containing only NOT_EVALUABLE
+    dimension entries is a fully successful orchestration run."""
+
+    correlation_id: UUID | None
+    evaluated_at: datetime
+    dimensions: tuple[DimensionResultView, ...]
+    ontology_impact: OntologyImpactResultView
+    business_impact: tuple[BusinessImpactResultView, ...]
+    reliance: RelianceResultView
