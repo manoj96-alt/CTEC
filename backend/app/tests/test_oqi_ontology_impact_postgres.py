@@ -28,7 +28,9 @@ from uuid import UUID, uuid4
 import alembic.command
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, event, inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.oqi_ontology_impact_evaluation_service import (
@@ -41,8 +43,17 @@ from app.domain.identity_resolution.model import (
     ResolutionOutcome,
 )
 from app.domain.oqi_ontology_impact.evaluation import (
+    CurrentImpactStatus,
+    CurrentOntologyImpact,
     FindingFamily,
+    ImpactBasis,
+    ImpactClass,
     ImpactOutcome,
+    OntologyElementType,
+    OntologyImpactEvaluation,
+    OntologyImpactObservation,
+    derive_current_ontology_impact_id,
+    derive_ontology_impact_evaluation_id,
 )
 from app.domain.oqi_ontology_impact.policy import (
     ImpactPropagationPolicy,
@@ -53,6 +64,9 @@ from app.infrastructure.persistence.entity_resolution_store import EntityResolut
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
 from app.infrastructure.persistence.models.institutional_relationship import (
     InstitutionalRelationship,
+)
+from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
+    CurrentOntologyImpactORM,
 )
 from app.infrastructure.persistence.models.relationship_type import RelationshipType
 from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository import (
@@ -1528,3 +1542,475 @@ def test_bounded_graph_performance_sanity(migrated_engine: Engine) -> None:
         elapsed = time.monotonic() - started
         assert candidates  # traversal reaches something within the depth cap
         assert elapsed < 15.0
+
+
+# =====================================================================
+# OQI4-R1 tenant-isolation matrix (CDD-055 SS25). Raw parameterized SQL is
+# used only for the adversarial `current_ontology_impacts` insert itself
+# (CDD-055 SS24) -- the single-construction-site firewall in
+# test_runtime_architecture.py confines both OntologyImpactEvaluationORM
+# and CurrentOntologyImpactORM construction to this file's own repository.
+# Legitimate evaluation rows are seeded through the governed repository's
+# own `insert_evaluation_idempotent` (the authorized construction site),
+# never a raw INSERT, per CDD-055 SS24's explicit preference.
+# =====================================================================
+
+_INSERT_CURRENT_ONTOLOGY_IMPACT_SQL = text(
+    "INSERT INTO current_ontology_impacts "
+    "(current_impact_id, tenant_id, finding_family, finding_id, ontology_element_type, "
+    "ontology_element_id, impact_kind, status, latest_evaluation_id, first_seen_at, last_seen_at) "
+    "VALUES (:current_impact_id, :tenant_id, :finding_family, :finding_id, :ontology_element_type, "
+    ":ontology_element_id, :impact_kind, :status, :latest_evaluation_id, :now, :now)"
+)
+
+
+def _seed_ontology_impact_evaluation(
+    session: Session,
+    *,
+    tenant_id: str,
+    finding_id: UUID | None = None,
+    traversed_state_digest: str | None = None,
+) -> UUID:
+    """Seeds a real, immutable OntologyImpactEvaluation row through the
+    governed repository's own `insert_evaluation_idempotent` -- the single
+    authorized construction site for `OntologyImpactEvaluationORM` -- never
+    a raw INSERT and never the full Finding/entity-resolution cascade
+    `test_direct_impact_resolved` exercises (unnecessary for proving the
+    Current* pointer's own tenant-authority boundary). Returns the
+    deterministic `evaluation_id`."""
+    finding_id = finding_id if finding_id is not None else uuid4()
+    digest = traversed_state_digest if traversed_state_digest is not None else "d" * 64
+    evaluation_id = derive_ontology_impact_evaluation_id(
+        tenant_id=tenant_id,
+        finding_family=FindingFamily.OQI1,
+        finding_id=finding_id,
+        finding_state_revision=1,
+        traversed_state_digest=digest,
+    )
+    evaluation = OntologyImpactEvaluation(
+        evaluation_id=evaluation_id,
+        tenant_id=tenant_id,
+        finding_family=FindingFamily.OQI1,
+        finding_id=finding_id,
+        finding_state_revision=1,
+        outcome=ImpactOutcome.IMPACTED,
+        resolution_record_id=None,
+        traversed_state_digest=digest,
+        evaluated_at=NOW,
+        observations=(
+            OntologyImpactObservation(
+                ontology_element_type=OntologyElementType.ENTITY,
+                ontology_element_id=uuid4(),
+                impact_kind=ImpactClass.DIRECT,
+                basis=ImpactBasis.DIRECT_ENTITY_IDENTITY_LINEAGE,
+                depth=0,
+            ),
+        ),
+        paths=(),
+    )
+    _repo(session).insert_evaluation_idempotent(evaluation)
+    session.flush()
+    return evaluation_id
+
+
+def _attempt_direct_persistence_current_ontology_impact_insert(
+    session: Session, *, tenant_id: str, latest_evaluation_id: UUID
+) -> str:
+    """Raw parameterized SQL insertion, bypassing
+    OqiOntologyImpactEvaluationRepositoryImpl.upsert_current_impact AND the
+    CurrentOntologyImpactORM construction site entirely -- the exact
+    adversarial shape CDD-055 SS24 requires. Returns "ACCEPTED" if
+    PostgreSQL committed the row, or the exception class name if rejected."""
+    nested = session.begin_nested()
+    try:
+        session.execute(
+            _INSERT_CURRENT_ONTOLOGY_IMPACT_SQL,
+            {
+                "current_impact_id": str(uuid4()),
+                "tenant_id": tenant_id,
+                "finding_family": FindingFamily.OQI1.value,
+                "finding_id": str(uuid4()),
+                "ontology_element_type": OntologyElementType.ENTITY.value,
+                "ontology_element_id": str(uuid4()),
+                "impact_kind": ImpactClass.DIRECT.value,
+                "status": CurrentImpactStatus.ACTIVE.value,
+                "latest_evaluation_id": str(latest_evaluation_id),
+                "now": NOW,
+            },
+        )
+        session.flush()
+        nested.rollback()
+        return "ACCEPTED"
+    except IntegrityError as exc:
+        nested.rollback()
+        return type(exc).__name__
+
+
+def test_oqi4r1ti01_direct_persistence_same_tenant_current_ontology_impact_accepted(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_a = f"tenant-{uuid4()}"
+    with factory() as session:
+        evaluation_id = _seed_ontology_impact_evaluation(session, tenant_id=tenant_a)
+        result = _attempt_direct_persistence_current_ontology_impact_insert(
+            session, tenant_id=tenant_a, latest_evaluation_id=evaluation_id
+        )
+    assert result == "ACCEPTED"  # OQI4-R1-TI-01
+
+
+def test_oqi4r1ti02_direct_persistence_cross_tenant_current_ontology_impact_rejected_by_postgresql(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    with factory() as session:
+        evaluation_id_b = _seed_ontology_impact_evaluation(session, tenant_id=tenant_b)
+        result = _attempt_direct_persistence_current_ontology_impact_insert(
+            session, tenant_id=tenant_a, latest_evaluation_id=evaluation_id_b
+        )
+    assert result == "IntegrityError"  # OQI4-R1-TI-02: genuine PostgreSQL FK enforcement
+
+
+def test_oqi4r1ti03_ontology_impact_evaluations_tenant_candidate_key_present(
+    migrated_engine: Engine,
+) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'uq_ontology_impact_evaluations_tenant_pk'"
+            )
+        ).fetchone()
+    assert row is not None  # OQI4-R1-TI-03
+    assert row[0] == "UNIQUE (tenant_id, evaluation_id)"
+
+
+def test_oqi4r1ti04_current_ontology_impacts_tenant_fk_present_with_exact_shape(
+    migrated_engine: Engine,
+) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'fk_current_ontology_impacts_tenant_evaluation'"
+            )
+        ).fetchone()
+    assert row is not None  # OQI4-R1-TI-04
+    assert row[0] == (
+        "FOREIGN KEY (tenant_id, latest_evaluation_id) "
+        "REFERENCES ontology_impact_evaluations(tenant_id, evaluation_id)"
+    )
+
+
+def test_oqi4r1ti05_current_ontology_impacts_old_fk_absent(migrated_engine: Engine) -> None:
+    with migrated_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conname = 'fk_current_ontology_impacts_latest_evaluation_id'"
+            )
+        ).fetchone()
+    assert row is None  # OQI4-R1-TI-05
+
+
+def test_oqi4r1ti06_service_path_direct_impact_still_succeeds(
+    migrated_engine: Engine,
+) -> None:
+    """OQI4-R1-TI-06: the normal governed service path -- direct-impact
+    resolution through `evaluate_current_state` -- continues to work
+    unmodified against the corrected schema (reuses this file's own
+    established `test_direct_impact_resolved` fixture shape)."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        source_object_id = _seed_source_object(session, tenant_id=tenant_id)
+        from app.infrastructure.persistence.source_field_repository import (
+            SourceFieldRepositoryImpl,
+        )
+        from app.tests.test_source_field_persistence_postgres import _source_field
+
+        field = _source_field(source_object_id=source_object_id, field_label="mrp_controller")
+        SourceFieldRepositoryImpl(session).create(field)
+        session.flush()
+
+        entity_id = _entity(session, tenant_id=tenant_id, name=f"Material-{uuid4()}")
+        _resolve_entity(
+            session, tenant_id=tenant_id, source_object_id=source_object_id, entity_id=entity_id
+        )
+        finding_id = _oqi1_finding(
+            session,
+            tenant_id=tenant_id,
+            source_object_id=source_object_id,
+            source_field_id=field.source_field_id.value,
+        )
+        session.commit()
+
+    with factory() as session:
+        evaluation = _service(session).evaluate_current_state(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI1, finding_id=finding_id
+        )
+        session.commit()
+    assert evaluation is not None
+    assert evaluation.outcome is ImpactOutcome.IMPACTED
+
+    with factory() as session:
+        current = session.get(
+            CurrentOntologyImpactORM,
+            derive_current_ontology_impact_id(
+                tenant_id=tenant_id,
+                finding_family=FindingFamily.OQI1,
+                finding_id=finding_id,
+                ontology_element_type=OntologyElementType.ENTITY,
+                ontology_element_id=entity_id,
+                impact_kind=ImpactClass.DIRECT,
+            ),
+        )
+    assert current is not None
+    assert current.latest_evaluation_id == evaluation.evaluation_id
+
+
+def test_oqi4r1ti07_current_pointer_lifecycle_moves_forward_on_reevaluation(
+    migrated_engine: Engine,
+) -> None:
+    """OQI4-R1-TI-07: reevaluation of the same governed current-impact
+    natural identity inserts a new immutable evaluation and moves
+    `latest_evaluation_id` forward, exercised directly against the
+    governed repository's own `upsert_current_impact` (the single
+    authorized construction site), post-migration."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_a = f"tenant-{uuid4()}"
+    finding_id = uuid4()
+    element_id = uuid4()
+    current_impact_id = derive_current_ontology_impact_id(
+        tenant_id=tenant_a,
+        finding_family=FindingFamily.OQI1,
+        finding_id=finding_id,
+        ontology_element_type=OntologyElementType.ENTITY,
+        ontology_element_id=element_id,
+        impact_kind=ImpactClass.DIRECT,
+    )
+
+    with factory() as session:
+        evaluation_id_1 = _seed_ontology_impact_evaluation(
+            session, tenant_id=tenant_a, finding_id=finding_id, traversed_state_digest="a" * 64
+        )
+        _repo(session).upsert_current_impact(
+            CurrentOntologyImpact(
+                current_impact_id=current_impact_id,
+                tenant_id=tenant_a,
+                finding_family=FindingFamily.OQI1,
+                finding_id=finding_id,
+                ontology_element_type=OntologyElementType.ENTITY,
+                ontology_element_id=element_id,
+                impact_kind=ImpactClass.DIRECT,
+                status=CurrentImpactStatus.ACTIVE,
+                latest_evaluation_id=evaluation_id_1,
+                first_seen_at=NOW,
+                last_seen_at=NOW,
+            )
+        )
+        session.commit()
+
+    with factory() as session:
+        evaluation_id_2 = _seed_ontology_impact_evaluation(
+            session, tenant_id=tenant_a, finding_id=finding_id, traversed_state_digest="b" * 64
+        )
+        _repo(session).upsert_current_impact(
+            CurrentOntologyImpact(
+                current_impact_id=current_impact_id,
+                tenant_id=tenant_a,
+                finding_family=FindingFamily.OQI1,
+                finding_id=finding_id,
+                ontology_element_type=OntologyElementType.ENTITY,
+                ontology_element_id=element_id,
+                impact_kind=ImpactClass.DIRECT,
+                status=CurrentImpactStatus.ACTIVE,
+                latest_evaluation_id=evaluation_id_2,
+                first_seen_at=NOW,
+                last_seen_at=NOW,
+            )
+        )
+        session.commit()
+
+    with factory() as session:
+        current = session.get(CurrentOntologyImpactORM, current_impact_id)
+    assert current is not None
+    assert current.latest_evaluation_id == evaluation_id_2
+    assert evaluation_id_1 != evaluation_id_2
+
+
+def test_oqi4r1ti08_tenant_aware_uuid_identity_is_not_the_db_authority_mechanism(
+    migrated_engine: Engine,
+) -> None:
+    """OQI4-R1-TI-08: two tenants' identical logical evaluation inputs
+    produce distinct, non-colliding `evaluation_id` values (tenant-aware
+    UUID5 identity), while a direct-persistence cross-tenant Current*
+    pointer using a real, existing foreign `evaluation_id` is still
+    rejected -- identity distinctness is not the DB authority mechanism."""
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    shared_finding_id = uuid4()
+    with factory() as session:
+        evaluation_id_a = _seed_ontology_impact_evaluation(
+            session, tenant_id=tenant_a, finding_id=shared_finding_id
+        )
+        evaluation_id_b = _seed_ontology_impact_evaluation(
+            session, tenant_id=tenant_b, finding_id=shared_finding_id
+        )
+        assert evaluation_id_a != evaluation_id_b
+
+        result = _attempt_direct_persistence_current_ontology_impact_insert(
+            session, tenant_id=tenant_a, latest_evaluation_id=evaluation_id_b
+        )
+    assert result == "IntegrityError"
+
+
+def test_oqi4r1ti09_migration_downgrade_restores_exact_pre_r1_schema(
+    migrated_engine: Engine,
+) -> None:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+    alembic.command.downgrade(config, "0043_oqi6_r3_current_tenancy")  # OQI4-R1-TI-09
+    with migrated_engine.connect() as connection:
+        restored = connection.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'fk_current_ontology_impacts_latest_evaluation_id'"
+            )
+        ).fetchone()
+        new_fk = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conname = 'fk_current_ontology_impacts_tenant_evaluation'"
+            )
+        ).fetchone()
+        new_key = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conname = 'uq_ontology_impact_evaluations_tenant_pk'"
+            )
+        ).fetchone()
+    assert restored is not None
+    assert restored[0] == (
+        "FOREIGN KEY (latest_evaluation_id) REFERENCES ontology_impact_evaluations(evaluation_id)"
+    )
+    assert new_fk is None
+    assert new_key is None
+    alembic.command.upgrade(config, "head")  # restore protected schema for subsequent tests
+
+
+def test_oqi4r1ti10_migration_upgrade_after_downgrade_restores_protected_schema(
+    migrated_engine: Engine,
+) -> None:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+
+    def _table_count() -> int:
+        with migrated_engine.connect() as connection:
+            return int(
+                connection.execute(
+                    text(
+                        "SELECT COUNT(*) FROM information_schema.tables "
+                        "WHERE table_schema='public' AND table_type='BASE TABLE' "
+                        "AND table_name != 'alembic_version'"
+                    )
+                ).scalar_one()
+            )
+
+    assert _table_count() == 123  # OQI4-R1-TI-10
+    alembic.command.downgrade(config, "0043_oqi6_r3_current_tenancy")
+    assert _table_count() == 123
+    alembic.command.upgrade(config, "head")
+    assert _table_count() == 123
+    with migrated_engine.connect() as connection:
+        new_fk = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conname = 'fk_current_ontology_impacts_tenant_evaluation'"
+            )
+        ).fetchone()
+    assert new_fk is not None
+
+
+def test_oqi4r1ti11_to_ti13_migration_fails_closed_on_invalid_legacy_cross_tenant_pointer(
+    migrated_engine: Engine,
+) -> None:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
+    alembic.command.downgrade(config, "0043_oqi6_r3_current_tenancy")
+
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    evaluation_id_b = uuid4()
+    current_impact_id = uuid4()
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO ontology_impact_evaluations "
+                "(evaluation_id, tenant_id, finding_family, finding_id, finding_state_revision, "
+                "outcome, traversed_state_digest, evaluated_at) "
+                "VALUES (:evaluation_id, :tenant_id, 'OQI1', :finding_id, 1, 'IMPACTED', "
+                ":digest, :now)"
+            ),
+            {
+                "evaluation_id": str(evaluation_id_b),
+                "tenant_id": tenant_b,
+                "finding_id": str(uuid4()),
+                "digest": "c" * 64,
+                "now": NOW,
+            },
+        )
+        # Legal only under the pre-R1 weak FK: a tenantA current pointer
+        # referencing tenantB's evaluation.
+        connection.execute(
+            text(
+                "INSERT INTO current_ontology_impacts "
+                "(current_impact_id, tenant_id, finding_family, finding_id, "
+                "ontology_element_type, ontology_element_id, impact_kind, status, "
+                "latest_evaluation_id, first_seen_at, last_seen_at) "
+                "VALUES (:current_impact_id, :tenant_id, 'OQI1', :finding_id, 'ENTITY', "
+                ":element_id, 'DIRECT', 'ACTIVE', :latest_evaluation_id, :now, :now)"
+            ),
+            {
+                "current_impact_id": str(current_impact_id),
+                "tenant_id": tenant_a,
+                "finding_id": str(uuid4()),
+                "element_id": str(uuid4()),
+                "latest_evaluation_id": str(evaluation_id_b),
+                "now": NOW,
+            },
+        )
+
+    with pytest.raises(IntegrityError):
+        alembic.command.upgrade(config, "head")  # OQI4-R1-TI-11
+
+    with migrated_engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert version == "0043_oqi6_r3_current_tenancy"  # OQI4-R1-TI-12 (historical, pinned)
+
+    def _row() -> tuple[str, UUID] | None:
+        with migrated_engine.connect() as connection:
+            result = connection.execute(
+                text(
+                    "SELECT tenant_id, latest_evaluation_id FROM current_ontology_impacts "
+                    "WHERE current_impact_id = :current_impact_id"
+                ),
+                {"current_impact_id": str(current_impact_id)},
+            ).fetchone()
+            return (result[0], result[1]) if result is not None else None
+
+    assert _row() == (tenant_a, evaluation_id_b)  # OQI4-R1-TI-13: invalid row unchanged
+
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM current_ontology_impacts WHERE current_impact_id = :current_impact_id"
+            ),
+            {"current_impact_id": str(current_impact_id)},
+        )
+
+    alembic.command.upgrade(config, "head")  # retry succeeds once invalid data is cleaned
+    with migrated_engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    current_head = ScriptDirectory.from_config(config).get_current_head()
+    assert version == current_head  # OQI4-R1-TI-14: current repository head, resolved dynamically

@@ -41,6 +41,15 @@ class OntologyImpactEvaluationORM(BaseEntity):
             "traversed_state_digest",
             name="uq_ontology_impact_evaluations_natural_key",
         ),
+        # CDD-055 (OQI4-R1, narrow replace-FK correction): additive tenant-
+        # qualified candidate key required so `current_ontology_impacts` can
+        # compose a proper tenant-qualified FK against this table. Safe by
+        # construction, requires no data backfill: `evaluation_id` is
+        # already this table's primary key, so `(tenant_id, evaluation_id)`
+        # is trivially unique as a superset of an already-unique key.
+        UniqueConstraint(
+            "tenant_id", "evaluation_id", name="uq_ontology_impact_evaluations_tenant_pk"
+        ),
     )
 
     evaluation_id: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
@@ -123,10 +132,20 @@ class CurrentOntologyImpactORM(BaseEntity):
     __tablename__ = "current_ontology_impacts"
 
     __table_args__ = (
+        # CDD-055 (OQI4-R1, narrow replace-FK correction): this FK previously
+        # targeted the plain (globally-unique) `evaluation_id` primary key,
+        # proving only that the referenced evaluation exists -- not that it
+        # belongs to this pointer's own tenant. Replaced with a
+        # tenant-qualified composite FK against
+        # `uq_ontology_impact_evaluations_tenant_pk` (added above for this
+        # exact purpose).
         ForeignKeyConstraint(
-            ["latest_evaluation_id"],
-            ["ontology_impact_evaluations.evaluation_id"],
-            name="fk_current_ontology_impacts_latest_evaluation_id",
+            ["tenant_id", "latest_evaluation_id"],
+            [
+                "ontology_impact_evaluations.tenant_id",
+                "ontology_impact_evaluations.evaluation_id",
+            ],
+            name="fk_current_ontology_impacts_tenant_evaluation",
         ),
         UniqueConstraint(
             "tenant_id",
