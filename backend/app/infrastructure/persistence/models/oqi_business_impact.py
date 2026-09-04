@@ -136,6 +136,18 @@ class OqiBusinessImpactEvaluationORM(BaseEntity):
             ["current_ontology_impacts.current_impact_id"],
             name="fk_oqi_business_impact_evaluations_current_impact",
         ),
+        # CDD-054 (OQI6-R3, narrow replace-FK correction): additive tenant-
+        # qualified candidate key required so `current_business_impacts` can
+        # compose a proper tenant-qualified FK against this table. Safe by
+        # construction, requires no data backfill: `evaluation_id` is
+        # already this table's primary key, so `(tenant_id, evaluation_id)`
+        # is trivially unique as a superset of an already-unique key. This
+        # table carries no version column, unlike `oqi_business_processes`/
+        # `oqi_business_dependencies` (CDD-052/CDD-053) -- the candidate key
+        # is two columns, not three.
+        UniqueConstraint(
+            "tenant_id", "evaluation_id", name="uq_oqi_business_impact_evaluations_tenant_pk"
+        ),
         Index("idx_oqi_business_impact_evaluations_tenant_id", "tenant_id"),
         Index(
             "idx_oqi_business_impact_evaluations_dependency",
@@ -158,10 +170,20 @@ class CurrentBusinessImpactORM(BaseEntity):
     __tablename__ = "current_business_impacts"
 
     __table_args__ = (
+        # CDD-054 (OQI6-R3, narrow replace-FK correction): this FK previously
+        # targeted the plain (globally-unique) `evaluation_id` primary key,
+        # proving only that the referenced evaluation exists -- not that it
+        # belongs to this pointer's own tenant. Replaced with a
+        # tenant-qualified composite FK against
+        # `uq_oqi_business_impact_evaluations_tenant_pk` (added above for
+        # this exact purpose).
         ForeignKeyConstraint(
-            ["latest_evaluation_id"],
-            ["oqi_business_impact_evaluations.evaluation_id"],
-            name="fk_current_business_impacts_latest_evaluation_id",
+            ["tenant_id", "latest_evaluation_id"],
+            [
+                "oqi_business_impact_evaluations.tenant_id",
+                "oqi_business_impact_evaluations.evaluation_id",
+            ],
+            name="fk_current_business_impacts_tenant_evaluation",
         ),
         Index("idx_current_business_impacts_tenant_id", "tenant_id"),
     )
@@ -177,6 +199,15 @@ class OqiRelianceEvaluationORM(BaseEntity):
     __tablename__ = "oqi_reliance_evaluations"
 
     __table_args__ = (
+        # CDD-054 (OQI6-R3, narrow replace-FK correction): additive tenant-
+        # qualified candidate key required so `current_reliance` can compose
+        # a proper tenant-qualified FK against this table. Safe by
+        # construction, requires no data backfill: `evaluation_id` is
+        # already this table's primary key, so `(tenant_id, evaluation_id)`
+        # is trivially unique as a superset of an already-unique key.
+        UniqueConstraint(
+            "tenant_id", "evaluation_id", name="uq_oqi_reliance_evaluations_tenant_pk"
+        ),
         Index("idx_oqi_reliance_evaluations_tenant_id", "tenant_id"),
         Index(
             "idx_oqi_reliance_evaluations_subject",
@@ -200,10 +231,20 @@ class CurrentRelianceORM(BaseEntity):
     __tablename__ = "current_reliance"
 
     __table_args__ = (
+        # CDD-054 (OQI6-R3, narrow replace-FK correction): this FK previously
+        # targeted the plain (globally-unique) `evaluation_id` primary key,
+        # proving only that the referenced evaluation exists -- not that it
+        # belongs to this pointer's own tenant. Replaced with a
+        # tenant-qualified composite FK against
+        # `uq_oqi_reliance_evaluations_tenant_pk` (added above for this
+        # exact purpose).
         ForeignKeyConstraint(
-            ["latest_evaluation_id"],
-            ["oqi_reliance_evaluations.evaluation_id"],
-            name="fk_current_reliance_latest_evaluation_id",
+            ["tenant_id", "latest_evaluation_id"],
+            [
+                "oqi_reliance_evaluations.tenant_id",
+                "oqi_reliance_evaluations.evaluation_id",
+            ],
+            name="fk_current_reliance_tenant_evaluation",
         ),
         Index("idx_current_reliance_tenant_id", "tenant_id"),
     )
