@@ -1603,7 +1603,8 @@ def test_r2ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_evaluation
     alembic.command.upgrade(config, "head")  # retry succeeds once invalid data is cleaned
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert version == "0042_oqi6_r2_evaluation_tenancy"
+    current_head = ScriptDirectory.from_config(config).get_current_head()
+    assert version == current_head
 
 
 def test_r2ti11_h5_timeliness_unaffected(factory: sessionmaker[Session]) -> None:
