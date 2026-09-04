@@ -613,7 +613,7 @@ def evaluate(
             DimensionResultView(
                 dimension=d.dimension,
                 status=d.status,
-                evaluation_id=d.evaluation_id,
+                finding_id=d.finding_id,
                 outcome=d.outcome,
             )
             for d in result.dimensions

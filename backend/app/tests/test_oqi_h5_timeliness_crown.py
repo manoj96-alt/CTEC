@@ -436,7 +436,13 @@ def test_stale_evidence_is_violated(session: Session) -> None:
     assert result[0].finding_type is TimelinessFindingType.STALE_SOURCE_EVIDENCE
     assert result[0].outcome is EvaluationOutcome.VIOLATED
 
-    findings = session.execute(select(TimelinessEvaluationORM)).all()
+    # CDD-057: scoped to this test's own tenant -- a blanket whole-table
+    # count is unsafe once another legitimate tenant's TimelinessEvaluation
+    # rows can exist in the same session-scoped database (e.g. Production
+    # Orchestration's own crown, run earlier in the same pytest session).
+    findings = session.execute(
+        select(TimelinessEvaluationORM).where(TimelinessEvaluationORM.tenant_id == tenant_id)
+    ).all()
     assert len(findings) == 1
 
 
@@ -720,7 +726,10 @@ def test_repeated_identical_evaluation_is_idempotent(session: Session) -> None:
         business_process_version=process_version,
         evaluation_horizon=NOW,
     )
-    rows = session.execute(select(TimelinessEvaluationORM)).all()
+    # CDD-057: scoped to this test's own tenant, same reason as above.
+    rows = session.execute(
+        select(TimelinessEvaluationORM).where(TimelinessEvaluationORM.tenant_id == tenant_id)
+    ).all()
     assert len(rows) == 1  # second call was a genuine no-op, not a duplicate
 
 

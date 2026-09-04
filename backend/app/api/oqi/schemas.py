@@ -254,7 +254,7 @@ class EvaluateRequest(BaseModel):
 class DimensionResultView(BaseModel):
     dimension: str
     status: str
-    evaluation_id: UUID | None = None
+    finding_id: UUID | None = None
     outcome: str | None = None
 
 

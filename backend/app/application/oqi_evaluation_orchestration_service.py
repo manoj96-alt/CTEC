@@ -22,11 +22,29 @@ affected by this file.
 Integrity and H5 Timeliness Findings are never OQI4 inputs; only
 Completeness/Validity/Accuracy/Conformity (all OQI1-storage-shaped) and
 Reasonableness (OQI3) and Consistency (OQI2) evaluations feed OQI4.
+Structural Integrity, Reference Integrity, and Timeliness carry their own,
+separate Finding storage families -- `finding_id` on their `DimensionResult`
+entries is populated from that dimension's own Finding storage, never from
+`FindingFamily`, and never appended to `finding_refs`.
 
 Tenant authority is a required keyword argument on every public method here
 -- callers (the API layer) must source it exclusively from
 `TrustedPrincipal.tenant_id`, never from request-body content (CDD-056
-SS6)."""
+SS6).
+
+Transaction boundaries (CDD-056 SS22, Production-Orchestration-I-R1
+correction): no single transaction spans the entire chain. Each DQ
+dimension's own evaluation is committed immediately after it completes
+successfully, before the next dimension (or OQI4) is attempted; a
+dimension-level technical failure rolls back only that dimension's own
+uncommitted work and is reported `FAILED` (CDD-056 SS23), never crashing the
+request and never discarding an earlier, already-committed dimension's
+state. OQI4 commits once per `(finding_family, finding_id)` pair, mirroring
+R1-R4's own independently-transacted pattern (SS22). OQI6 Business Impact +
+Reliance remain the single shared transaction already designed into
+`OqiBusinessImpactService` (SS22, unchanged) -- a failure anywhere in that
+block rolls back the whole block once and is reported honestly as `FAILED`,
+never as a fabricated partial success."""
 
 from __future__ import annotations
 
@@ -68,7 +86,10 @@ from app.domain.oqi.quality_rule import QualityDimension, QualityRule, QualityRu
 from app.domain.oqi_business_rule.finding import derive_business_rule_finding_id
 from app.domain.oqi_business_rule.rule import BusinessRule
 from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+from app.domain.oqi_integrity.reference import derive_reference_finding_id
+from app.domain.oqi_integrity.structural import derive_structural_finding_id
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
+from app.domain.oqi_timeliness.evaluation import derive_timeliness_finding_id
 from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
 from app.infrastructure.persistence.models.oqi_business_rule import (
     BusinessRuleInputBindingORM,
@@ -137,7 +158,7 @@ from app.infrastructure.persistence.semantic_mapping_repository import (
 class DimensionResult:
     dimension: str
     status: str  # "EVALUATED" | "NOT_EVALUABLE" | "FAILED"
-    evaluation_id: UUID | None = None
+    finding_id: UUID | None = None
     outcome: str | None = None
 
 
@@ -171,9 +192,11 @@ class OrchestrationResult:
 
 
 class OqiEvaluationOrchestrationService:
-    """CDD-056: composition-only orchestrator. Owns no persistence of its
-    own; every write happens through an existing, unmodified evaluator's own
-    existing transaction boundary."""
+    """CDD-056: composition-only orchestrator. Owns no persistence
+    semantics of its own beyond the stage-boundary commit/rollback pattern
+    documented in this module's own docstring -- every domain decision
+    still happens through an existing, unmodified evaluator's own existing
+    logic."""
 
     def __init__(
         self, session: Session, *, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
@@ -302,233 +325,290 @@ class OqiEvaluationOrchestrationService:
             else None
         )
 
-        # --- 1/2. COMPLETENESS + VALIDITY (OQI1) ---
+        # --- 1/2. COMPLETENESS + VALIDITY (OQI1) --- own transaction per
+        # dimension (CDD-056 SS22): committed immediately after each
+        # dimension completes, so a later dimension's or later stage's
+        # technical failure can never roll this one back.
         quality_repo = OqiQualityEvaluationRepositoryImpl(self.session)
         quality_service = OqiQualityEvaluationService(
             evaluation_repository=quality_repo,
             clock=self._clock,
         )
         for dim in (QualityDimension.COMPLETENESS, QualityDimension.VALIDITY):
-            rule = (
+            try:
+                rule = (
+                    self._resolve_active_quality_rule(
+                        information_element_requirement_id=information_element_requirement_id,
+                        dimension=dim,
+                    )
+                    if subject is not None
+                    else None
+                )
+                if rule is None or subject is None:
+                    dimension_results.append(DimensionResult(dim.value, "NOT_EVALUABLE"))
+                    continue
+                oqi1_evaluation = quality_service.evaluate_current_state(rule=rule, subject=subject)
+                if oqi1_evaluation is None:
+                    dimension_results.append(DimensionResult(dim.value, "NOT_EVALUABLE"))
+                    continue
+                finding_id = derive_quality_finding_id(
+                    tenant_id=tenant_id,
+                    quality_condition_id=oqi1_evaluation.quality_condition_id,
+                    subject_type=subject.subject_type,
+                    subject_identity=canonical_subject_identity(subject),
+                )
+                # A SATISFIED outcome with no pre-existing Finding never
+                # creates one (CDD-039 SS23-25) -- report `finding_id=None`
+                # and feed OQI4 only a Finding that genuinely persisted.
+                persisted_finding_id = (
+                    finding_id if quality_repo.get_finding(finding_id) is not None else None
+                )
+                dimension_results.append(
+                    DimensionResult(
+                        dim.value, "EVALUATED", persisted_finding_id, oqi1_evaluation.outcome.value
+                    )
+                )
+                if persisted_finding_id is not None:
+                    finding_refs.append((FindingFamily.OQI1, persisted_finding_id))
+                self.session.commit()
+            except Exception:  # noqa: BLE001 -- reported FAILED, never NOT_EVALUABLE (CDD-056 SS23)
+                self.session.rollback()
+                dimension_results.append(DimensionResult(dim.value, "FAILED"))
+
+        # --- 3. ACCURACY --- own transaction (CDD-056 SS22).
+        try:
+            accuracy_rule = (
                 self._resolve_active_quality_rule(
                     information_element_requirement_id=information_element_requirement_id,
-                    dimension=dim,
+                    dimension=QualityDimension.ACCURACY,
                 )
                 if subject is not None
                 else None
             )
-            if rule is None or subject is None:
-                dimension_results.append(DimensionResult(dim.value, "NOT_EVALUABLE"))
-                continue
-            oqi1_evaluation = quality_service.evaluate_current_state(rule=rule, subject=subject)
-            if oqi1_evaluation is None:
-                dimension_results.append(DimensionResult(dim.value, "NOT_EVALUABLE"))
-                continue
-            dimension_results.append(
-                DimensionResult(
-                    dim.value,
-                    "EVALUATED",
-                    oqi1_evaluation.evaluation_id,
-                    oqi1_evaluation.outcome.value,
-                )
-            )
-            finding_id = derive_quality_finding_id(
-                tenant_id=tenant_id,
-                quality_condition_id=oqi1_evaluation.quality_condition_id,
-                subject_type=subject.subject_type,
-                subject_identity=canonical_subject_identity(subject),
-            )
-            # A SATISFIED outcome with no pre-existing Finding never creates
-            # one (CDD-039 SS23-25) -- only feed OQI4 a Finding that genuinely
-            # persisted.
-            if quality_repo.get_finding(finding_id) is not None:
-                finding_refs.append((FindingFamily.OQI1, finding_id))
-
-        # --- 3. ACCURACY ---
-        accuracy_rule = (
-            self._resolve_active_quality_rule(
-                information_element_requirement_id=information_element_requirement_id,
-                dimension=QualityDimension.ACCURACY,
-            )
-            if subject is not None
-            else None
-        )
-        if accuracy_rule is None or subject is None:
-            dimension_results.append(
-                DimensionResult(QualityDimension.ACCURACY.value, "NOT_EVALUABLE")
-            )
-        else:
-            accuracy_repo = OqiAccuracyEvaluationRepositoryImpl(self.session)
-            accuracy_service = OqiAccuracyEvaluationService(
-                evaluation_repository=accuracy_repo,
-                reference_evidence_lookup=OqiReferenceEvidenceService(
-                    repository=OqiReferenceEvidenceRepositoryImpl(self.session), clock=self._clock
-                ),
-                clock=self._clock,
-            )
-            accuracy_evaluation = accuracy_service.evaluate_current_state(
-                rule=accuracy_rule, subject=subject
-            )
-            if accuracy_evaluation is None:
+            if accuracy_rule is None or subject is None:
                 dimension_results.append(
                     DimensionResult(QualityDimension.ACCURACY.value, "NOT_EVALUABLE")
                 )
             else:
-                dimension_results.append(
-                    DimensionResult(
-                        QualityDimension.ACCURACY.value,
-                        "EVALUATED",
-                        accuracy_evaluation.evaluation_id,
-                        accuracy_evaluation.outcome.value,
+                accuracy_repo = OqiAccuracyEvaluationRepositoryImpl(self.session)
+                accuracy_service = OqiAccuracyEvaluationService(
+                    evaluation_repository=accuracy_repo,
+                    reference_evidence_lookup=OqiReferenceEvidenceService(
+                        repository=OqiReferenceEvidenceRepositoryImpl(self.session),
+                        clock=self._clock,
+                    ),
+                    clock=self._clock,
+                )
+                accuracy_evaluation = accuracy_service.evaluate_current_state(
+                    rule=accuracy_rule, subject=subject
+                )
+                if accuracy_evaluation is None:
+                    dimension_results.append(
+                        DimensionResult(QualityDimension.ACCURACY.value, "NOT_EVALUABLE")
                     )
-                )
-                accuracy_finding_id = derive_quality_finding_id(
-                    tenant_id=tenant_id,
-                    quality_condition_id=accuracy_evaluation.quality_condition_id,
-                    subject_type=subject.subject_type,
-                    subject_identity=canonical_subject_identity(subject),
-                )
-                if accuracy_repo.get_finding(accuracy_finding_id) is not None:
-                    finding_refs.append((FindingFamily.OQI1, accuracy_finding_id))
+                else:
+                    accuracy_finding_id = derive_quality_finding_id(
+                        tenant_id=tenant_id,
+                        quality_condition_id=accuracy_evaluation.quality_condition_id,
+                        subject_type=subject.subject_type,
+                        subject_identity=canonical_subject_identity(subject),
+                    )
+                    persisted_accuracy_finding_id = (
+                        accuracy_finding_id
+                        if accuracy_repo.get_finding(accuracy_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            QualityDimension.ACCURACY.value,
+                            "EVALUATED",
+                            persisted_accuracy_finding_id,
+                            accuracy_evaluation.outcome.value,
+                        )
+                    )
+                    if persisted_accuracy_finding_id is not None:
+                        finding_refs.append((FindingFamily.OQI1, persisted_accuracy_finding_id))
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult(QualityDimension.ACCURACY.value, "FAILED"))
 
-        # --- 5. REASONABLENESS (OQI3) ---
-        business_rule = (
-            self._resolve_active_business_rule(tenant_id=tenant_id, source_field_id=source_field_id)
-            if source_field_id is not None
-            else None
-        )
-        if business_rule is None or source_object_id is None:
-            dimension_results.append(DimensionResult("REASONABLENESS", "NOT_EVALUABLE"))
-        else:
-            reasonableness_repo = OqiBusinessRuleEvaluationRepositoryImpl(self.session)
-            reasonableness_service = OqiBusinessRuleEvaluationService(
-                evaluation_repository=reasonableness_repo,
-                evidence_value_reader=OqiBusinessRuleEvidenceValueReader(self.session),
-                clock=self._clock,
+        # --- 5. REASONABLENESS (OQI3) --- own transaction (CDD-056 SS22).
+        try:
+            business_rule = (
+                self._resolve_active_business_rule(
+                    tenant_id=tenant_id, source_field_id=source_field_id
+                )
+                if source_field_id is not None
+                else None
             )
-            single_subject = SingleRecordSubject(
-                tenant_id=tenant_id,
-                source_object_id=source_object_id,
-                source_record_reference=source_record_reference,
-            )
-            business_rule_evaluation = reasonableness_service.evaluate_current_state(
-                rule=business_rule, subject=single_subject
-            )
-            if business_rule_evaluation is None:
+            if business_rule is None or source_object_id is None:
                 dimension_results.append(DimensionResult("REASONABLENESS", "NOT_EVALUABLE"))
             else:
-                dimension_results.append(
-                    DimensionResult(
-                        "REASONABLENESS",
-                        "EVALUATED",
-                        business_rule_evaluation.evaluation_id,
-                        business_rule_evaluation.outcome.value,
-                    )
+                reasonableness_repo = OqiBusinessRuleEvaluationRepositoryImpl(self.session)
+                reasonableness_service = OqiBusinessRuleEvaluationService(
+                    evaluation_repository=reasonableness_repo,
+                    evidence_value_reader=OqiBusinessRuleEvidenceValueReader(self.session),
+                    clock=self._clock,
                 )
-                reasonableness_finding_id = derive_business_rule_finding_id(
+                single_subject = SingleRecordSubject(
                     tenant_id=tenant_id,
-                    business_condition_id=business_rule_evaluation.business_condition_id,
-                    subject_type=business_rule_evaluation.subject_type,
-                    subject_identity=business_rule_evaluation.subject_identity,
+                    source_object_id=source_object_id,
+                    source_record_reference=source_record_reference,
                 )
-                if reasonableness_repo.get_finding(reasonableness_finding_id) is not None:
-                    finding_refs.append((FindingFamily.OQI3, reasonableness_finding_id))
+                business_rule_evaluation = reasonableness_service.evaluate_current_state(
+                    rule=business_rule, subject=single_subject
+                )
+                if business_rule_evaluation is None:
+                    dimension_results.append(DimensionResult("REASONABLENESS", "NOT_EVALUABLE"))
+                else:
+                    reasonableness_finding_id = derive_business_rule_finding_id(
+                        tenant_id=tenant_id,
+                        business_condition_id=business_rule_evaluation.business_condition_id,
+                        subject_type=business_rule_evaluation.subject_type,
+                        subject_identity=business_rule_evaluation.subject_identity,
+                    )
+                    persisted_reasonableness_finding_id = (
+                        reasonableness_finding_id
+                        if reasonableness_repo.get_finding(reasonableness_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            "REASONABLENESS",
+                            "EVALUATED",
+                            persisted_reasonableness_finding_id,
+                            business_rule_evaluation.outcome.value,
+                        )
+                    )
+                    if persisted_reasonableness_finding_id is not None:
+                        finding_refs.append(
+                            (FindingFamily.OQI3, persisted_reasonableness_finding_id)
+                        )
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult("REASONABLENESS", "FAILED"))
 
-        # --- 6. CONFORMITY ---
-        conformity_rule = (
-            self._resolve_active_quality_rule(
-                information_element_requirement_id=information_element_requirement_id,
-                dimension=QualityDimension.CONFORMITY,
+        # --- 6. CONFORMITY --- own transaction (CDD-056 SS22).
+        try:
+            conformity_rule = (
+                self._resolve_active_quality_rule(
+                    information_element_requirement_id=information_element_requirement_id,
+                    dimension=QualityDimension.CONFORMITY,
+                )
+                if subject is not None
+                else None
             )
-            if subject is not None
-            else None
-        )
-        if conformity_rule is None or subject is None:
-            dimension_results.append(
-                DimensionResult(QualityDimension.CONFORMITY.value, "NOT_EVALUABLE")
-            )
-        else:
-            conformity_repo = OqiConformityEvaluationRepositoryImpl(self.session)
-            conformity_service = OqiConformityEvaluationService(
-                evaluation_repository=conformity_repo,
-                canonical_standard_lookup=OqiCanonicalStandardRepositoryImpl(self.session),
-                clock=self._clock,
-            )
-            conformity_evaluation = conformity_service.evaluate_current_state(
-                rule=conformity_rule, subject=subject
-            )
-            if conformity_evaluation is None:
+            if conformity_rule is None or subject is None:
                 dimension_results.append(
                     DimensionResult(QualityDimension.CONFORMITY.value, "NOT_EVALUABLE")
                 )
             else:
-                dimension_results.append(
-                    DimensionResult(
-                        QualityDimension.CONFORMITY.value,
-                        "EVALUATED",
-                        conformity_evaluation.evaluation_id,
-                        conformity_evaluation.outcome.value,
+                conformity_repo = OqiConformityEvaluationRepositoryImpl(self.session)
+                conformity_service = OqiConformityEvaluationService(
+                    evaluation_repository=conformity_repo,
+                    canonical_standard_lookup=OqiCanonicalStandardRepositoryImpl(self.session),
+                    clock=self._clock,
+                )
+                conformity_evaluation = conformity_service.evaluate_current_state(
+                    rule=conformity_rule, subject=subject
+                )
+                if conformity_evaluation is None:
+                    dimension_results.append(
+                        DimensionResult(QualityDimension.CONFORMITY.value, "NOT_EVALUABLE")
                     )
-                )
-                conformity_finding_id = derive_quality_finding_id(
-                    tenant_id=tenant_id,
-                    quality_condition_id=conformity_evaluation.quality_condition_id,
-                    subject_type=subject.subject_type,
-                    subject_identity=canonical_subject_identity(subject),
-                )
-                if conformity_repo.get_finding(conformity_finding_id) is not None:
-                    finding_refs.append((FindingFamily.OQI1, conformity_finding_id))
+                else:
+                    conformity_finding_id = derive_quality_finding_id(
+                        tenant_id=tenant_id,
+                        quality_condition_id=conformity_evaluation.quality_condition_id,
+                        subject_type=subject.subject_type,
+                        subject_identity=canonical_subject_identity(subject),
+                    )
+                    persisted_conformity_finding_id = (
+                        conformity_finding_id
+                        if conformity_repo.get_finding(conformity_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            QualityDimension.CONFORMITY.value,
+                            "EVALUATED",
+                            persisted_conformity_finding_id,
+                            conformity_evaluation.outcome.value,
+                        )
+                    )
+                    if persisted_conformity_finding_id is not None:
+                        finding_refs.append((FindingFamily.OQI1, persisted_conformity_finding_id))
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult(QualityDimension.CONFORMITY.value, "FAILED"))
 
-        # --- 4. CONSISTENCY (OQI2) --- comparison_subject_id resolved by
-        # this orchestrator's own documented convention: the same UUID
-        # value as information_element_requirement_id, reused as the
-        # correspondence's comparison_subject_id. No governed data links
-        # these two identifier spaces automatically (confirmed during
-        # implementation); absence of a correspondence configured under
-        # this convention is a legitimate NOT_EVALUABLE, per CDD-056 SS12.
-        consistency_rule = self._resolve_active_quality_rule(
-            information_element_requirement_id=information_element_requirement_id,
-            dimension=QualityDimension.CONSISTENCY,
-        )
-        correspondence = OqiCrossSourceCorrespondenceRepositoryImpl(self.session).get_active(
-            tenant_id=tenant_id, comparison_subject_id=information_element_requirement_id
-        )
-        if consistency_rule is None or correspondence is None:
-            dimension_results.append(
-                DimensionResult(QualityDimension.CONSISTENCY.value, "NOT_EVALUABLE")
+        # --- 4. CONSISTENCY (OQI2) --- own transaction (CDD-056 SS22).
+        # comparison_subject_id resolved by this orchestrator's own
+        # documented convention: the same UUID value as
+        # information_element_requirement_id, reused as the correspondence's
+        # comparison_subject_id. No governed data links these two
+        # identifier spaces automatically (confirmed during implementation);
+        # absence of a correspondence configured under this convention is a
+        # legitimate NOT_EVALUABLE, per CDD-056 SS12.
+        try:
+            consistency_rule = self._resolve_active_quality_rule(
+                information_element_requirement_id=information_element_requirement_id,
+                dimension=QualityDimension.CONSISTENCY,
             )
-        else:
-            consistency_repo = OqiCrossSourceEvaluationRepositoryImpl(self.session)
-            cross_source_service = OqiCrossSourceEvaluationService(
-                evaluation_repository=consistency_repo,
-                clock=self._clock,
+            correspondence = OqiCrossSourceCorrespondenceRepositoryImpl(self.session).get_active(
+                tenant_id=tenant_id, comparison_subject_id=information_element_requirement_id
             )
-            consistency_evaluation = cross_source_service.evaluate_current_state(
-                rule=consistency_rule, correspondence=correspondence
-            )
-            if consistency_evaluation is None:
+            if consistency_rule is None or correspondence is None:
                 dimension_results.append(
                     DimensionResult(QualityDimension.CONSISTENCY.value, "NOT_EVALUABLE")
                 )
             else:
-                dimension_results.append(
-                    DimensionResult(
-                        QualityDimension.CONSISTENCY.value,
-                        "EVALUATED",
-                        consistency_evaluation.evaluation_id,
-                        consistency_evaluation.outcome.value,
+                consistency_repo = OqiCrossSourceEvaluationRepositoryImpl(self.session)
+                cross_source_service = OqiCrossSourceEvaluationService(
+                    evaluation_repository=consistency_repo,
+                    clock=self._clock,
+                )
+                consistency_evaluation = cross_source_service.evaluate_current_state(
+                    rule=consistency_rule, correspondence=correspondence
+                )
+                if consistency_evaluation is None:
+                    dimension_results.append(
+                        DimensionResult(QualityDimension.CONSISTENCY.value, "NOT_EVALUABLE")
                     )
-                )
-                consistency_finding_id = derive_comparison_finding_id(
-                    tenant_id=tenant_id,
-                    quality_condition_id=consistency_evaluation.quality_condition_id,
-                    comparison_subject_id=consistency_evaluation.comparison_subject_id,
-                )
-                if consistency_repo.get_finding(consistency_finding_id) is not None:
-                    finding_refs.append((FindingFamily.OQI2, consistency_finding_id))
+                else:
+                    consistency_finding_id = derive_comparison_finding_id(
+                        tenant_id=tenant_id,
+                        quality_condition_id=consistency_evaluation.quality_condition_id,
+                        comparison_subject_id=consistency_evaluation.comparison_subject_id,
+                    )
+                    persisted_consistency_finding_id = (
+                        consistency_finding_id
+                        if consistency_repo.get_finding(consistency_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            QualityDimension.CONSISTENCY.value,
+                            "EVALUATED",
+                            persisted_consistency_finding_id,
+                            consistency_evaluation.outcome.value,
+                        )
+                    )
+                    if persisted_consistency_finding_id is not None:
+                        finding_refs.append((FindingFamily.OQI2, persisted_consistency_finding_id))
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult(QualityDimension.CONSISTENCY.value, "FAILED"))
 
-        # --- 7/8. INTEGRITY STRUCTURAL / REFERENCE (never OQI4 inputs --
-        # FindingFamily is closed to OQI1/OQI2/OQI3, CDD-042 SS10) ---
+        # --- 7/8. INTEGRITY STRUCTURAL / REFERENCE -- never OQI4 inputs
+        # (FindingFamily is closed to OQI1/OQI2/OQI3, CDD-042 SS10); each
+        # carries its own separate Finding storage family, read via that
+        # family's own `get_finding`/`derive_*_finding_id`, own transaction
+        # per dimension (CDD-056 SS22). ---
         relationship_requirement_id = self._resolve_relationship_requirement_id(
             information_element_requirement_id=information_element_requirement_id
         )
@@ -539,85 +619,143 @@ class OqiEvaluationOrchestrationService:
             if source_object_id is not None
             else None
         )
-        if relationship_requirement_id is None or enterprise_entity_id is None:
-            dimension_results.append(DimensionResult("INTEGRITY_STRUCTURAL", "NOT_EVALUABLE"))
-        else:
-            structural_service = OqiIntegrityStructuralEvaluationService(
-                evaluation_repository=OqiIntegrityStructuralEvaluationRepositoryImpl(self.session),
-                cardinality_lookup=OqiIntegrityRequirementRepositoryImpl(self.session),
-                clock=self._clock,
-            )
-            structural_evaluation = structural_service.evaluate_current_state(
-                tenant_id=tenant_id,
-                enterprise_entity_id=enterprise_entity_id,
-                relationship_requirement_id=relationship_requirement_id,
-            )
-            if structural_evaluation is None:
+
+        try:
+            if relationship_requirement_id is None or enterprise_entity_id is None:
                 dimension_results.append(DimensionResult("INTEGRITY_STRUCTURAL", "NOT_EVALUABLE"))
             else:
-                dimension_results.append(
-                    DimensionResult(
-                        "INTEGRITY_STRUCTURAL",
-                        "EVALUATED",
-                        structural_evaluation.evaluation_id,
-                        structural_evaluation.outcome.value,
-                    )
+                structural_repo = OqiIntegrityStructuralEvaluationRepositoryImpl(self.session)
+                structural_service = OqiIntegrityStructuralEvaluationService(
+                    evaluation_repository=structural_repo,
+                    cardinality_lookup=OqiIntegrityRequirementRepositoryImpl(self.session),
+                    clock=self._clock,
                 )
+                structural_evaluation = structural_service.evaluate_current_state(
+                    tenant_id=tenant_id,
+                    enterprise_entity_id=enterprise_entity_id,
+                    relationship_requirement_id=relationship_requirement_id,
+                )
+                if structural_evaluation is None:
+                    dimension_results.append(
+                        DimensionResult("INTEGRITY_STRUCTURAL", "NOT_EVALUABLE")
+                    )
+                else:
+                    structural_finding_id = derive_structural_finding_id(
+                        tenant_id=tenant_id,
+                        relationship_requirement_id=relationship_requirement_id,
+                        enterprise_entity_id=enterprise_entity_id,
+                    )
+                    persisted_structural_finding_id = (
+                        structural_finding_id
+                        if structural_repo.get_finding(structural_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            "INTEGRITY_STRUCTURAL",
+                            "EVALUATED",
+                            persisted_structural_finding_id,
+                            structural_evaluation.outcome.value,
+                        )
+                    )
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult("INTEGRITY_STRUCTURAL", "FAILED"))
 
-        if relationship_requirement_id is None or source_object_id is None:
-            dimension_results.append(DimensionResult("INTEGRITY_REFERENCE", "NOT_EVALUABLE"))
-        else:
-            reference_service = OqiIntegrityReferenceEvaluationService(
-                evaluation_repository=OqiIntegrityReferenceEvaluationRepositoryImpl(self.session),
-                clock=self._clock,
-            )
-            reference_evaluation = reference_service.evaluate_current_state(
-                tenant_id=tenant_id,
-                source_object_id=source_object_id,
-                relationship_requirement_id=relationship_requirement_id,
-            )
-            if reference_evaluation is None:
+        try:
+            if relationship_requirement_id is None or source_object_id is None:
                 dimension_results.append(DimensionResult("INTEGRITY_REFERENCE", "NOT_EVALUABLE"))
             else:
-                dimension_results.append(
-                    DimensionResult(
-                        "INTEGRITY_REFERENCE",
-                        "EVALUATED",
-                        reference_evaluation.evaluation_id,
-                        reference_evaluation.outcome.value,
-                    )
+                reference_repo = OqiIntegrityReferenceEvaluationRepositoryImpl(self.session)
+                reference_service = OqiIntegrityReferenceEvaluationService(
+                    evaluation_repository=reference_repo,
+                    clock=self._clock,
                 )
-
-        # --- 9. TIMELINESS (never an OQI4 input, same closed-family reason) ---
-        timeliness_repo = OqiTimelinessEvaluationRepositoryImpl(self.session)
-        timeliness_service = OqiTimelinessEvaluationService(
-            evaluation_repository=timeliness_repo,
-            evidence_lookup=timeliness_repo,
-            policy_lookup=OqiTimelinessPolicyRepositoryImpl(self.session),
-            semantic_mapping_lookup=SemanticMappingRepositoryImpl(self.session),
-            clock=self._clock,
-        )
-        timeliness_results = timeliness_service.evaluate_current_state(
-            tenant_id=tenant_id,
-            information_element_requirement_id=information_element_requirement_id,
-            business_process_id=business_process_id,
-            business_process_version=business_process_version,
-            evaluation_horizon=horizon,
-        )
-        if not timeliness_results:
-            dimension_results.append(DimensionResult("TIMELINESS", "NOT_EVALUABLE"))
-        else:
-            for timeliness_evaluation in timeliness_results:
-                dimension_results.append(
-                    DimensionResult(
-                        "TIMELINESS",
-                        "EVALUATED",
-                        timeliness_evaluation.evaluation_id,
-                        timeliness_evaluation.outcome.value,
-                    )
+                reference_evaluation = reference_service.evaluate_current_state(
+                    tenant_id=tenant_id,
+                    source_object_id=source_object_id,
+                    relationship_requirement_id=relationship_requirement_id,
                 )
+                if reference_evaluation is None:
+                    dimension_results.append(
+                        DimensionResult("INTEGRITY_REFERENCE", "NOT_EVALUABLE")
+                    )
+                else:
+                    reference_finding_id = derive_reference_finding_id(
+                        tenant_id=tenant_id,
+                        relationship_requirement_id=relationship_requirement_id,
+                        source_object_id=source_object_id,
+                    )
+                    persisted_reference_finding_id = (
+                        reference_finding_id
+                        if reference_repo.get_finding(reference_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            "INTEGRITY_REFERENCE",
+                            "EVALUATED",
+                            persisted_reference_finding_id,
+                            reference_evaluation.outcome.value,
+                        )
+                    )
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult("INTEGRITY_REFERENCE", "FAILED"))
 
-        # --- OQI4 Ontology Impact: one evaluation per collected finding ref ---
+        # --- 9. TIMELINESS -- never an OQI4 input, same closed-family
+        # reason; own separate Finding storage family; own transaction
+        # (CDD-056 SS22). ---
+        try:
+            timeliness_repo = OqiTimelinessEvaluationRepositoryImpl(self.session)
+            timeliness_service = OqiTimelinessEvaluationService(
+                evaluation_repository=timeliness_repo,
+                evidence_lookup=timeliness_repo,
+                policy_lookup=OqiTimelinessPolicyRepositoryImpl(self.session),
+                semantic_mapping_lookup=SemanticMappingRepositoryImpl(self.session),
+                clock=self._clock,
+            )
+            timeliness_results = timeliness_service.evaluate_current_state(
+                tenant_id=tenant_id,
+                information_element_requirement_id=information_element_requirement_id,
+                business_process_id=business_process_id,
+                business_process_version=business_process_version,
+                evaluation_horizon=horizon,
+            )
+            if not timeliness_results:
+                dimension_results.append(DimensionResult("TIMELINESS", "NOT_EVALUABLE"))
+            else:
+                for timeliness_evaluation in timeliness_results:
+                    timeliness_finding_id = derive_timeliness_finding_id(
+                        tenant_id=tenant_id,
+                        policy_id=timeliness_evaluation.policy_id,
+                        finding_type=timeliness_evaluation.finding_type,
+                        source_object_id=timeliness_evaluation.source_object_id,
+                    )
+                    persisted_timeliness_finding_id = (
+                        timeliness_finding_id
+                        if timeliness_repo.get_finding(timeliness_finding_id) is not None
+                        else None
+                    )
+                    dimension_results.append(
+                        DimensionResult(
+                            "TIMELINESS",
+                            "EVALUATED",
+                            persisted_timeliness_finding_id,
+                            timeliness_evaluation.outcome.value,
+                        )
+                    )
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult("TIMELINESS", "FAILED"))
+
+        # --- OQI4 Ontology Impact: a new, separate transaction per
+        # (finding_family, finding_id) pair (CDD-056 SS22) -- a failure on
+        # one pair rolls back only that pair's own attempt and never
+        # discards an already-committed DQ Finding computed earlier. ---
         ontology_impact_service = OqiOntologyImpactEvaluationService(
             OqiOntologyImpactEvaluationRepositoryImpl(self.session), clock=self._clock
         )
@@ -627,7 +765,9 @@ class OqiEvaluationOrchestrationService:
                 impact_evaluation = ontology_impact_service.evaluate_current_state(
                     tenant_id=tenant_id, finding_family=finding_family, finding_id=finding_id
                 )
+                self.session.commit()
             except Exception:  # noqa: BLE001 -- reported as FAILED, never NOT_EVALUABLE
+                self.session.rollback()
                 ontology_impact = OntologyImpactResult(status="FAILED")
                 continue
             if impact_evaluation is not None:
@@ -635,48 +775,51 @@ class OqiEvaluationOrchestrationService:
                     status="EVALUATED", outcome=impact_evaluation.outcome.value
                 )
 
-        # --- OQI6 Business Impact + Reliance ---
+        # --- OQI6 Business Impact + Reliance: the single existing shared
+        # transaction already designed into `OqiBusinessImpactService`
+        # (CDD-056 SS22, unchanged) -- committed once as one block. A
+        # failure anywhere inside rolls the whole block back once (nothing
+        # in it was ever partially persisted) and is reported honestly as
+        # `FAILED`, never as a fabricated partial success. ---
         business_impact_results: list[BusinessImpactResult] = []
         reliance_result = RelianceResult(status="NOT_ATTEMPTED")
         if enterprise_entity_id is not None:
-            business_impact_repo = OqiBusinessImpactRepositoryImpl(self.session)
-            business_impact_service = OqiBusinessImpactService(self.session)
-            dependencies = business_impact_repo.list_active_dependencies_for_subject(
-                tenant_id=tenant_id,
-                ontology_element_type=OntologyElementType.ENTITY,
-                ontology_element_id=enterprise_entity_id,
-            )
-            for dependency in dependencies:
-                try:
+            try:
+                business_impact_repo = OqiBusinessImpactRepositoryImpl(self.session)
+                business_impact_service = OqiBusinessImpactService(self.session)
+                dependencies = business_impact_repo.list_active_dependencies_for_subject(
+                    tenant_id=tenant_id,
+                    ontology_element_type=OntologyElementType.ENTITY,
+                    ontology_element_id=enterprise_entity_id,
+                )
+                computed_business_impact: list[BusinessImpactResult] = []
+                for dependency in dependencies:
                     impact = business_impact_service.evaluate_business_impact_for_dependency(
                         tenant_id=tenant_id,
                         dependency_id=dependency.dependency_id,
                         evaluated_at=horizon,
                     )
-                    business_impact_results.append(
+                    computed_business_impact.append(
                         BusinessImpactResult(
                             dependency_id=dependency.dependency_id,
                             status="EVALUATED",
                             outcome=impact.outcome.value,
                         )
                     )
-                except Exception:  # noqa: BLE001 -- reported honestly, never NOT_EVALUABLE
-                    business_impact_results.append(
-                        BusinessImpactResult(
-                            dependency_id=dependency.dependency_id, status="FAILED"
-                        )
-                    )
-            try:
                 reliance_evaluation = business_impact_service.evaluate_reliance_for_subject(
                     tenant_id=tenant_id,
                     ontology_element_type=OntologyElementType.ENTITY,
                     ontology_element_id=enterprise_entity_id,
                     evaluated_at=horizon,
                 )
+                self.session.commit()
+                business_impact_results = computed_business_impact
                 reliance_result = RelianceResult(
                     status="EVALUATED", state=reliance_evaluation.state.value
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 -- reported honestly, never NOT_EVALUABLE
+                self.session.rollback()
+                business_impact_results = []
                 reliance_result = RelianceResult(status="FAILED")
 
         return OrchestrationResult(
