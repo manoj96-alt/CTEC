@@ -1,4 +1,4 @@
-# CDD-060 — PostgreSQL Enterprise Data Model & Schema Certification Architecture
+# CDD-061 — PostgreSQL Enterprise Data Model & Schema Certification Architecture
 
 Version: 1.0
 Status: APPROVED / PUBLISHED / FROZEN (Discovery + Governance only — no implementation performed by this
@@ -29,13 +29,17 @@ Equal, matches the expected post-REAL-ENTERPRISE-INGESTION baseline. No drift. B
 content nor cherry-picked — confirmed absent from this branch before this document was authored). The
 paused Step-14 branch was not modified.
 
-**CDD numbering collision, disclosed**: the highest CDD number on `main` is `CDD-059`, making `CDD-060` the
-next valid number here. The paused Step-14 branch *also* authored its own, different `CDD-060` document
-(`Product-Wide-Docker-Closure-Architecture-and-Verification-Contract.md`) against the same baseline. Since
-Step 13 is expected to merge to `main` first, this document's `CDD-060` becomes authoritative; Step 14 must
-renumber its own document (to `CDD-061` or whatever `main` shows as next-valid) when it resumes and
-revalidates against the new `main` — exactly as Step 14's own document already anticipated
-("later return to Step 14 → revalidate CDD-060 against new main").
+**CDD numbering collision, disclosed and resolved (POSTGRES-DATA-MODEL-CLOSURE-G-R1)**: this document was
+originally authored as `CDD-060` (the highest number on `main` at authoring time was `CDD-059`). The paused
+Step-14 branch (`product-wide-docker-closure/step-13`) had already, chronologically first (commit
+`a46096b`, 2026-09-05 10:44:21-07:00, versus this document's original commit `d729e29` at
+2026-09-05 11:14:33-07:00), authored its own, different `CDD-060` document
+(`CDD-060-Product-Wide-Docker-Closure-Architecture-and-Verification-Contract.md`) against the same
+baseline. A dedicated governance-correction phase (POSTGRES-DATA-MODEL-CLOSURE-G-R1) independently verified
+this collision, confirmed Step-14's `CDD-060` has chronological precedence and is preserved unchanged, and
+renumbered this document to `CDD-061` — the next valid, unused identifier, independently confirmed absent
+from `main`, from every remote branch, and from this document's own prior text. No substantive content
+changed as part of this renumbering; only this document's own self-referential identifier and path.
 
 ## 3. Methodology
 
