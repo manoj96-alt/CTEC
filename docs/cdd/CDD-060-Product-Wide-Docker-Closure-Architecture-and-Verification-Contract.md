@@ -476,13 +476,21 @@ Restart after successful initialization (stop/start, not down -v)
 ```
 P0 = 0
 P1 = 0
-P2 = 2
+P2 = 3
     - DOCKER_SMOKE_TEST.md is stale (wrong migration head/table count; outdated remediation-trigger
       disclosure; silent on ~15 capabilities merged since PR #180). Undermines the "reproducibly real,
       no developer-laptop-history dependency" standard this phase exists to enforce.
     - No product-wide fresh-Docker verification has been performed since PR #180 despite the OQI hardening
       program, production/remediation orchestration, and REAL-ENTERPRISE-INGESTION all merging since. Not
       itself a code defect -- the reason this phase (and the following VM) exists.
+    - **PRODUCT-WIDE-DOCKER-CLOSURE-G-R3 finding**: `backend` cannot establish a trusted TLS connection to
+      `connector-fixture` over the real Compose network -- confirmed empirically
+      (`SSLCertVerificationError: self-signed certificate`) -- because the fixture's self-signed certificate
+      is generated inside its own container at a randomized temp path with no volume or environment wiring
+      to make it reachable/trusted by `backend`. This is the specific root cause of the item above for the
+      REAL-ENTERPRISE-INGESTION portion of the flagship scenario specifically; not itself an exploitable
+      security defect (verification correctly fails closed), but it blocks this phase's own required
+      full-stack proof of CDD-059's guarantees. See §29 for root cause, architecture, and frozen correction.
 P3 = 3
     - No frontend UI action for the `remediation/prepare` trigger (already correctly out of CDD-058's own
       scope; disclosed here for completeness, not remediated).
@@ -683,8 +691,221 @@ the merge's first parent; new main, `d3683fdf4933dfed608001d38cbb6689580815ca`, 
 parent. This reconciliation commit (documenting the CDD-060 text amendments above) is a separate, later
 commit on top of that merge -- its own authored diff is `docs/cdd/CDD-060-...md` only.
 
-## 29. Exact next phase
+## 29. PRODUCT-WIDE-DOCKER-CLOSURE-G-R3 — connector-fixture TLS trust architecture
+
+`PRODUCT-WIDE-DOCKER-CLOSURE-I` correctly STOPPED after discovering that the real, full-stack path CDD-060
+§15 step 3 and §10/§17 assumed (a real HTTP call from `backend` to `https://connector-fixture:8443/` over
+the Compose network) cannot execute: it fails TLS certificate verification. This is a genuine, previously
+undiscovered gap -- CDD-059's own VM-R2/VM-R3 evidence (§10, §17) proved the connector's security
+guarantees exclusively via **in-process** test harnesses, never via the standalone `connector-fixture`
+Compose service reached over the real network; that path had apparently never been exercised end-to-end
+before this phase. Separately, a Keycloak scope gap (`oqi-remediation:prepare`, never wired into
+`keycloak/ctec-realm.json`) was found and fixed in commit `afe76b1597ab4b87c2ed319894f2dd185766f7fa` --
+unrelated to this finding, preserved, not reopened here.
+
+### Independent reproduction
 
 ```
-PRODUCT-WIDE-DOCKER-CLOSURE-I
+$ docker compose -p gr3repro up -d postgres backend --build
+$ docker compose -p gr3repro --profile ingestion-test up -d connector-fixture
+$ docker exec gr3repro-backend-1 python3 -c "
+import ssl, socket
+ctx = ssl.create_default_context()
+with socket.create_connection(('connector-fixture', 8443), timeout=5) as sock:
+    with ctx.wrap_socket(sock, server_hostname='connector-fixture') as ssock:
+        print('CONNECTED OK', ssock.version())
+"
+FAILED: SSLCertVerificationError [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1010)
 ```
+
+### Certificate/trust analysis (§7, §26 of the governing G-R3 charter)
+
+```
+$ docker exec gr3repro-backend-1 sh -c "echo | openssl s_client -connect connector-fixture:8443 -servername connector-fixture" | openssl x509 -noout -text
+    Issuer: CN=ctec-connector-fixture.test        (self-signed: issuer == subject)
+    Subject: CN=ctec-connector-fixture.test
+    X509v3 Subject Alternative Name:
+        DNS:localhost, IP Address:127.0.0.1, DNS:connector-fixture
+```
+
+Failure classification: **pure trust-chain failure** (`verify error:num=18:self-signed certificate`), not a
+hostname problem -- the SAN already correctly includes `connector-fixture`, the exact name `backend`
+resolves and connects to. Single self-signed leaf certificate, no separate CA cert (the fixture's own
+`ca_bundle_path` property returns the leaf cert itself -- it is used, correctly, as its own trust anchor).
+Confirmed via full-container recreation (`docker compose up -d --force-recreate connector-fixture`) that a
+genuinely fresh cert (new serial, new random temp-directory path) is generated on every fresh process start
+of that container -- any correction must tolerate this rotation without requiring a `backend` restart.
+Confirmed no healthcheck currently exists on `connector-fixture` (`docker inspect` → `State.Health: null`).
+
+### RestConnector trust mechanism (§9 of the charter)
+
+`backend/app/infrastructure/connectors/rest_connector.py:415`: `ssl.create_default_context(cafile=test_ca_bundle)`
+when `CTEC_CONNECTOR_TEST_CA_BUNDLE` is set, else the ordinary system-default context. Per Python's own `ssl`
+module semantics, supplying `cafile` **replaces** the default trust store rather than extending it -- a real
+consequence, pre-existing in the already-merged CDD-059 code (not introduced or changed by this phase):
+leaving this variable set while configuring a genuine, non-fixture, publicly-CA-signed connector would cause
+that real connection to fail closed (safe, not a vulnerability, but a real operational caveat to disclose).
+Confirmed via `app/application/connector_ingestion_service.py:286` that `RestConnector` is constructed fresh
+(via `connector_factory(...)`) on every `POST .../run` call, never cached long-lived -- meaning the CA bundle
+file's content is read fresh at every connector run, not once at backend startup. This is the load-bearing
+fact resolving the startup/readiness-race and cert-rotation questions below: no race exists at backend
+*startup* (nothing there reads the CA), and rotation is self-healing (each run reads current file content).
+
+### CDD-059 invariant preservation
+
+Nothing in the selected design touches `RestConnector`'s SSRF validation, DNS-pinning/address-pinning,
+hostname-authoritative SNI/HTTP Host, or ambient-proxy neutrality -- all of that logic is untouched;
+`ssl.create_default_context()`'s own hostname verification (`check_hostname`) remains on throughout. The
+design changes only *which* file supplies the trust anchor, under a boundary that defaults to fully inert.
+
+### Candidate architectures considered
+
+- **A -- shared named volume** (selected, refined below): `connector-fixture` writes its certificate (only)
+  to a fixed path inside a Compose-managed named volume also mounted read-only into `backend`. Ephemeral,
+  destroyed by `down -v`, self-healing across restarts since the CA is read fresh per connector run.
+- **B -- checked-in static test certificate material**: rejected. Tracking a private key (even a test-only
+  one) in the repository is unnecessary given (A) achieves the same goal with zero tracked key material,
+  and introduces its own hygiene/expiration/rotation governance burden for no benefit.
+- **C -- configurable fixture output directory**: adopted as the mechanism *within* A, not as an alternative
+  to it -- the fixture's `__main__` entry gains an optional, additive-only environment variable
+  (`CTEC_FIXTURE_CERT_DIR`) that, when set, copies the *already-generated* certificate (not the private key)
+  to a fixed filename in that directory. The existing `DeterministicHttpFixtureServer` class, its
+  constructor, and every in-process test that instantiates it directly are completely untouched -- the
+  change is confined to the `if __name__ == "__main__":` guard, the one code path only Compose ever
+  executes.
+
+### Selected architecture
+
+```
+connector-fixture (profile: ingestion-test)
+    │  generates its own ephemeral keypair + self-signed cert in its own
+    │  private tempdir (UNCHANGED existing behavior)
+    │
+    │  ADDITIVE: if CTEC_FIXTURE_CERT_DIR is set, copies ONLY the certificate
+    │  (never the private key) to <dir>/ca.pem
+    ▼
+named Compose volume `connector_fixture_ca` (ephemeral; destroyed by `down -v`)
+    │  connector-fixture: mounted read-write
+    │  backend:           mounted READ-ONLY, same path
+    ▼
+backend
+    CTEC_CONNECTOR_TEST_CA_BUNDLE: ${CTEC_CONNECTOR_TEST_CA_BUNDLE:-}
+    (defaults to EMPTY in the compose file itself -- inert for every ordinary
+    `docker compose up`; the operator explicitly exports this variable, set to
+    the exact shared-volume path, only when deliberately exercising the
+    ingestion-test flow -- mirroring this repository's own existing
+    `CTEC_RUNTIME_HANDOFF_KEY`-style required-secret opt-in convention, never
+    auto-enabled)
+```
+
+### Private-key isolation (§15 of the charter)
+
+The private key never leaves `connector-fixture`'s own container filesystem and is never placed in the
+shared volume -- only `ca.pem` (the public certificate) is copied there. `backend` never needs, and never
+receives, read access to any private key.
+
+### Mount semantics
+
+`connector_fixture_ca` (named, Compose-managed, ephemeral -- no host bind mount): read-write on
+`connector-fixture`, read-only on `backend`. Removed by `docker compose down -v`, consistent with every
+other ephemeral volume in this stack.
+
+### Startup / readiness
+
+No race requiring a new `depends_on` or healthcheck: the CA file is read by `backend` only at the moment an
+operator calls `POST .../connectors/{id}/run` (proven above -- request-time, not startup-time), and CDD-060
+§15's own flagship scenario already sequences "bring up `connector-fixture`" as an explicit, earlier,
+numbered step before any connector configure/run call. **Explicit decision: no `connector-fixture`
+healthcheck is added** -- the existing sequencing already resolves the practical race, and adding one is not
+required by any correctness gap found. If VM independently discovers a real timing race, that finding would
+warrant its own governance amendment.
+
+### Restart / rotation / clean-stack behavior
+
+Every fresh process start of `connector-fixture` (full recreate, or a plain container restart/`stop`+`start`)
+generates a genuinely new self-signed certificate (independently confirmed: new serial, new temp path) and
+would overwrite `ca.pem` at the same fixed shared-volume path. Since `backend` reads that file's content
+fresh on every connector run rather than caching it, this is fully self-healing -- no `backend` restart is
+ever required after a `connector-fixture` restart or recreation. `docker compose down -v --remove-orphans`
+destroys the named volume along with everything else, so a clean rebuild reproduces the whole chain from
+empty state exactly as the reproducibility contract (§16) already requires.
+
+### Test/production boundary and residual risk (§11, §26)
+
+The trust path is inert by construction (`backend`'s own compose-file default for the new variable is
+empty) unless an operator explicitly exports `CTEC_CONNECTOR_TEST_CA_BUNDLE` pointed at the shared path --
+identical in spirit to how `CTEC_RUNTIME_HANDOFF_KEY` is never baked in either. One residual, pre-existing
+(not introduced by this design) operational caveat is disclosed rather than fixed: because `cafile=`
+replaces rather than extends the system trust store, an operator who leaves this variable set while also
+configuring a real, non-fixture, publicly-CA-signed connector would see that real connection fail closed
+(safe, not silently insecure) -- `PRODUCT-WIDE-DOCKER-CLOSURE-I-R3`'s runbook text must instruct unsetting
+this variable before/after the ingestion-test walkthrough for exactly this reason.
+
+### Test-requirement decision
+
+**No new automated regression test is authorized.** Existing connector tests
+(`test_oqi_connector_ingestion_postgres.py`) all construct the fixture in-process and wire
+`CTEC_CONNECTOR_TEST_CA_BUNDLE` directly in the test process -- they exercise `RestConnector`'s own trust
+logic already and are unaffected by (and cannot regression-protect) this specific Compose-YAML/volume-wiring
+class of defect, which has no analogue anywhere else in this repository's pytest-only test architecture. The
+durable protection against recurrence is structural, not a new test: CI's existing `containers` job already
+builds and boots this exact Compose topology (a malformed volume/service definition fails there loudly), and
+`PRODUCT-WIDE-DOCKER-CLOSURE-VM` is itself explicitly required (§27, unchanged) to independently prove the
+real full-stack connector path on every future Docker closure -- that is this program's own established
+regression mechanism for Compose-level behavior, not a new pytest file.
+
+### Frozen I-R3 authorization
+
+```
+CREATE = 0
+MODIFY = 2
+DELETE = 0
+TOTAL  = 2
+```
+
+**Sole authorized paths**:
+1. `docker-compose.yml` -- add the `connector_fixture_ca` named volume; mount it read-write into
+   `connector-fixture` with `CTEC_FIXTURE_CERT_DIR` set to its fixed path; mount it read-only into `backend`
+   at the same path, with `CTEC_CONNECTOR_TEST_CA_BUNDLE: ${CTEC_CONNECTOR_TEST_CA_BUNDLE:-}` (default empty).
+2. `backend/app/tests/fixtures/deterministic_http_fixture_server.py` -- additive-only change confined to the
+   `if __name__ == "__main__":` guard: when `CTEC_FIXTURE_CERT_DIR` is set, copy the already-generated
+   certificate (via the existing `ca_bundle_path` property; never the private key) to a fixed filename in
+   that directory after the server starts. Zero change to the `DeterministicHttpFixtureServer` class or any
+   code path used by existing in-process tests.
+
+**Prohibited**: any change to `DOCKER_SMOKE_TEST.md` (that remains `PRODUCT-WIDE-DOCKER-CLOSURE-I`'s own,
+still-pending, authorization), any backend/frontend application code, any migration, any test file, the
+Keycloak realm (already separately corrected), `.env.example` (documentation-only; not required for the fix
+to function -- the runbook itself, when `I` resumes, is where the operator-facing `export
+CTEC_CONNECTOR_TEST_CA_BUNDLE=...` instruction belongs), or any other CDD.
+
+### I-R3 verification contract
+
+```
+TLS           backend trusts connector-fixture's certificate via the explicit shared-volume CA bundle;
+              `openssl s_client`/equivalent shows a successful handshake, not a self-signed-certificate error.
+HOSTNAME      connector-fixture's identity still verifies normally (SAN already correct; untouched).
+FULL PATH     a real POST .../connectors (configure) + POST .../connectors/{id}/run, issued with a real
+              Keycloak-obtained token, succeeds end-to-end against https://connector-fixture:8443/ -- no
+              in-process substitute, no direct DB insertion, no verification bypass.
+EVIDENCE      the resulting connector run produces real, queryable FieldValueEvidence rows.
+SECURITY      existing SSRF/DNS-pinning/TLS connector test suite remains fully green (unchanged).
+NEGATIVE      with CTEC_CONNECTOR_TEST_CA_BUNDLE unset/empty (the compose-file default), the same call fails
+CONTROL       exactly as it does today (self-signed certificate error) -- proving the fix is additive, not a
+              global verification weakening.
+RESTART       after `docker compose restart connector-fixture` (or stop/start), the same full path succeeds
+              again without any backend restart, using the newly-rotated certificate.
+CLEAN STACK   `docker compose down -v --remove-orphans` followed by a fresh build/up reproduces the same
+              working chain from empty state.
+```
+
+## 30. Exact next phase
+
+```
+PRODUCT-WIDE-DOCKER-CLOSURE-I-R3
+```
+
+Implements exactly the §29 frozen correction (`docker-compose.yml` + the fixture script's `__main__` guard,
+nothing else). After I-R3 passes its own verification contract (§29), resume the original
+`PRODUCT-WIDE-DOCKER-CLOSURE-I` to write `DOCKER_SMOKE_TEST.md` -- still entirely unauthorized to touch
+either of I-R3's two files, preserving defect attribution and phase clarity.
