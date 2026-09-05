@@ -53,7 +53,16 @@ def _generate_self_signed_cert(tmp_dir: str) -> tuple[str, str]:
         .not_valid_after(now + timedelta(days=1))
         .add_extension(
             x509.SubjectAlternativeName(
-                [x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+                [
+                    x509.DNSName("localhost"),
+                    x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+                    # Additive only -- Docker-Compose reaches this fixture
+                    # by its own service name (Artifact Authorization §8),
+                    # never by "localhost"/127.0.0.1 from another
+                    # container; the host/in-process crowns above remain
+                    # unaffected since those SAN entries are untouched.
+                    x509.DNSName("connector-fixture"),
+                ]
             ),
             critical=False,
         )
@@ -206,11 +215,14 @@ class DeterministicHttpFixtureServer:
         handler.wfile.write(body)
 
 
-def build_default_fixture(*, port: int = 0) -> DeterministicHttpFixtureServer:
+def build_default_fixture(
+    *, port: int = 0, host: str = "127.0.0.1"
+) -> DeterministicHttpFixtureServer:
     """Factory used by both host tests and the standalone `__main__` entry
     below, so both paths construct an identically-shaped deterministic
     dataset."""
     return DeterministicHttpFixtureServer(
+        host=host,
         port=port,
         records=[{"id": "REC-1", "lead_time_days": 10}, {"id": "REC-2", "lead_time_days": 20}],
     )
@@ -221,7 +233,11 @@ if __name__ == "__main__":
     import time
 
     _port = int(os.environ.get("CTEC_FIXTURE_PORT", "8443"))
-    _server = build_default_fixture(port=_port)
+    # Reachable by Compose service name (Artifact Authorization §8) -- the
+    # class default of 127.0.0.1 (used by every host/in-process test above)
+    # would otherwise bind only inside this container's own loopback
+    # namespace, unreachable from any other Compose service.
+    _server = build_default_fixture(port=_port, host="0.0.0.0")
     _server.start()
     print(f"[deterministic_http_fixture_server] listening on {_server.base_url}", flush=True)
     try:
