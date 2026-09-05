@@ -8044,17 +8044,19 @@ Noetva's ontology *type system* (entity_types, relationship_types, ontology_rela
 
 ## 11. OQI ER Model
 
+**POSTGRES-DATA-MODEL-CLOSURE-G-R5 correction**: five edges in this section (Evaluation/Detection/Reliance below) were previously mislabeled `DERIVED RELATIONSHIP — NO DIRECT FK` despite each having a real, direct physical foreign key already correctly documented in section 5 (Relationship Catalog) and each table's own section 4 entry — the identical defect class section 8 corrected in POSTGRES-DATA-MODEL-CLOSURE-G-R4, independently found to recur here. Corrected from the same live PostgreSQL 0046 catalog evidence. Every other relationship in this section, including `quality_evaluations -> quality_findings` (now labeled NATURAL-KEY CORRELATED, since it has no FK and no pointer column of any kind) and the section's own already-correct `--(cardinality, classification)-->` entries, was independently re-audited against that same evidence and confirmed accurate — none of those were altered.
+
 ### Evaluation
 
-- `field_value_evidence` -> `quality_evaluation_evidence`: DERIVED RELATIONSHIP — NO DIRECT FK
+- `field_value_evidence` -> `quality_evaluation_evidence`: DIRECT PHYSICAL FK — `fk_quality_evaluation_evidence_field_value_evidence_id`, `field_value_evidence_id` -> `field_value_evidence_id`, GLOBAL_PARENT, 1:N
 - `quality_evaluation_evidence` --(1:N, CHILD_NOT_TENANT_OWNED)--> `quality_evaluations`
 - `quality_evaluations` --(1:N, GLOBAL_PARENT)--> `quality_rules`
 
 ### Detection
 
-- `quality_evaluations` -> `quality_findings`: DERIVED RELATIONSHIP — NO DIRECT FK
-- `business_rule_evaluations` -> `business_rule_findings`: DERIVED RELATIONSHIP — NO DIRECT FK
-- `quality_comparison_evaluations` -> `quality_comparison_findings`: DERIVED RELATIONSHIP — NO DIRECT FK
+- `quality_evaluations` -> `quality_findings`: NATURAL-KEY CORRELATED — no FK, no pointer column; correlated only via shared `(tenant_id, quality_condition_id, subject_type, source_object_id, source_record_reference, source_field_id)` columns
+- `business_rule_evaluations` -> `business_rule_findings`: DIRECT PHYSICAL FK — `fk_business_rule_findings_latest_evaluation_id`, `latest_evaluation_id` -> `evaluation_id`, APPLICATION_GUARDED (P2-1, not tenant-qualified), 1:N
+- `quality_comparison_evaluations` -> `quality_comparison_findings`: DIRECT PHYSICAL FK — `fk_quality_comparison_findings_latest_evaluation_id`, `latest_evaluation_id` -> `evaluation_id`, APPLICATION_GUARDED (P2-1, not tenant-qualified), 1:N
 
 ### Impact
 
@@ -8063,8 +8065,8 @@ Noetva's ontology *type system* (entity_types, relationship_types, ontology_rela
 
 ### Reliance
 
-- `oqi_reliance_evaluations` -> `current_reliance`: DERIVED RELATIONSHIP — NO DIRECT FK
-- `oqi_business_impact_evaluations` -> `current_business_impacts`: DERIVED RELATIONSHIP — NO DIRECT FK
+- `oqi_reliance_evaluations` -> `current_reliance`: DIRECT PHYSICAL FK — `fk_current_reliance_tenant_evaluation`, `(tenant_id,evaluation_id)` -> `(tenant_id,latest_evaluation_id)`, STRUCTURALLY_SAFE, 1:N
+- `oqi_business_impact_evaluations` -> `current_business_impacts`: DIRECT PHYSICAL FK — `fk_current_business_impacts_tenant_evaluation`, `(tenant_id,evaluation_id)` -> `(tenant_id,latest_evaluation_id)`, STRUCTURALLY_SAFE, 1:N
 
 ### Intelligence
 
