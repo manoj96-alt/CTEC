@@ -51,7 +51,10 @@
         "oqi-remediation:report-execution",
         "oqi-reference-evidence:configure",
         "oqi-reference-evidence:verify",
-        "oqi-canonical-standard:configure"
+        "oqi-canonical-standard:configure",
+        "oqi-connector:read",
+        "oqi-connector:configure",
+        "oqi-connector:run"
       ]
     }
   ],
@@ -359,6 +362,33 @@
       "name": "oqi-canonical-standard:configure",
       "protocol": "openid-connect",
       "description": "CDD-049 canonical scope -- OQI-H3 governed CanonicalStandard configuration authority (create/version/retire canonical values/aliases). Never substitutable by remediation or reference-evidence scopes; not granted to the primary demo persona by default.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-connector:read",
+      "protocol": "openid-connect",
+      "description": "CDD-059 canonical scope -- Enterprise REST connector configuration/mapping/run read authority (not granted to the primary demo persona by default).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-connector:configure",
+      "protocol": "openid-connect",
+      "description": "CDD-059 canonical scope -- Enterprise REST connector configuration/field-mapping authority, mirroring oqi-remediation:authorize's not-default-granted pattern (not granted to the primary demo persona by default).",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-connector:run",
+      "protocol": "openid-connect",
+      "description": "CDD-059 canonical scope -- Enterprise REST connector run-trigger authority. Never substitutable by oqi-connector:configure; not granted to the primary demo persona by default.",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
