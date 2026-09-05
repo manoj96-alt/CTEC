@@ -12,9 +12,12 @@ observations."""
 from __future__ import annotations
 
 import os
+import socket
+import ssl
 import threading
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -44,6 +47,8 @@ from app.infrastructure.connectors.rest_connector import (
     ProductionEndpointSecurityPolicy,
     RestConnector,
     SSRFRejected,
+    ValidatedEndpoint,
+    _PinnedHTTPSConnection,
     _resolve_and_validate,
 )
 from app.infrastructure.persistence.field_value_evidence_repository import (
@@ -125,8 +130,8 @@ class FixtureEndpointSecurityPolicy:
     def __init__(self, *, allowed_addresses: frozenset[str]) -> None:
         self._allowed_addresses = allowed_addresses
 
-    def validate(self, url: str) -> None:
-        _resolve_and_validate(url, allowed_addresses=self._allowed_addresses)
+    def validate(self, url: str) -> ValidatedEndpoint:
+        return _resolve_and_validate(url, allowed_addresses=self._allowed_addresses)
 
 
 def _fixture_service(
@@ -347,8 +352,356 @@ def test_crown_h_production_construction_cannot_activate_fixture_policy() -> Non
 
 
 # =====================================================================
-# Configuration + mapping tenant-authority proofs (CDD-059 SS39, P1).
+# I-R2 DNS-Rebinding / Validate-to-Connect IP-Pinning Correction Amendment
+# -- mandatory test matrix (amendment SS27). Proves the actual production
+# `_PinnedHTTPSConnection`/`ValidatedEndpoint` code path, never a
+# reimplementation, and never mock-only for the TLS-bearing crowns (a
+# real local HTTPS server, real socket, real certificate verification).
 # =====================================================================
+
+
+_AddrInfoEntry = tuple[int, int, int, str, tuple[object, ...]]
+
+
+def _install_rebinding_resolver(
+    monkeypatch: pytest.MonkeyPatch, *, first: str, rest: str
+) -> list[str]:
+    """Test-only instrumentation seam (never production code): the first
+    `socket.getaddrinfo` call for ANY hostname returns `first`; every
+    subsequent call returns `rest`. Mirrors the exact controlled-resolver
+    technique the I-R2 governing amendment's own SS4 reproduction used.
+    Returns the call log (hostnames requested, in order) for assertions."""
+    call_log: list[str] = []
+    real_getaddrinfo = socket.getaddrinfo
+
+    def fake(
+        host: str, port: int, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0
+    ) -> list[Any]:
+        call_log.append(host)
+        target = first if len(call_log) == 1 else rest
+        return real_getaddrinfo(target, port, family, type, proto, flags)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    return call_log
+
+
+def test_r2_rebinding_reproduction_no_longer_pivots_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Item 1/2 of the amendment's SS27 matrix: the exact VM-R1/G-R2
+    reproduction (resolver call #1 -> public-looking address, every
+    subsequent call -> a private address) must no longer let the private
+    answer participate in connection selection. The connector must
+    either genuinely succeed against the public address it validated, or
+    fail for a reason OTHER than ever having attempted the private one --
+    proven here by asserting `_PinnedHTTPSConnection.connect()` itself
+    triggers zero further `socket.getaddrinfo` calls."""
+    call_log = _install_rebinding_resolver(monkeypatch, first="93.184.216.34", rest="127.0.0.1")
+
+    connect_call_counts: list[int] = []
+    real_connect = _PinnedHTTPSConnection.connect
+
+    def wrapped_connect(self: _PinnedHTTPSConnection) -> None:
+        before = len(call_log)
+        try:
+            real_connect(self)
+        finally:
+            connect_call_counts.append(len(call_log) - before)
+
+    monkeypatch.setattr(_PinnedHTTPSConnection, "connect", wrapped_connect)
+
+    connector = RestConnector(
+        endpoint_url="https://rebinding-attacker.example/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="UNUSED_R2_TOKEN",
+        request_timeout_seconds=2,
+    )
+    connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert connect_call_counts, "connect() was never invoked -- test did not exercise the transport"
+    assert all(
+        count == 0 for count in connect_call_counts
+    ), f"connect() itself performed DNS resolution: {connect_call_counts}"
+
+
+def test_r2_reverse_rebinding_rejected_no_recovery_via_reresolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Item 3: resolver call #1 (validation) returns a private address ->
+    rejected immediately. The transport must never "recover" by
+    re-resolving in hopes of finding a safe address."""
+    call_log = _install_rebinding_resolver(monkeypatch, first="127.0.0.1", rest="93.184.216.34")
+    connector = RestConnector(
+        endpoint_url="https://reverse-rebinding.example/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="UNUSED_R2_TOKEN",
+        request_timeout_seconds=2,
+    )
+    result = connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert isinstance(result, ConnectorFetchFailure)
+    assert result.kind == "CONNECTOR_UNAVAILABLE"
+    assert not result.retryable
+    assert len(call_log) == 1, "transport re-resolved after the first (rejected) validation"
+
+
+def test_r2_private_sibling_resolution_set_rejected_in_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Item 4: a resolution set of {public, private} must reject the
+    whole URL before any connection -- never silently pick the safe
+    sibling (CDD-059 SS32, unchanged, restated I-R2 amendment SS8)."""
+
+    def fake(
+        host: str, port: int, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0
+    ) -> list[_AddrInfoEntry]:
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", port)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    with pytest.raises(SSRFRejected):
+        ProductionEndpointSecurityPolicy().validate("https://mixed-sibling.example/")
+
+
+def test_r2_metadata_sibling_resolution_set_rejected_in_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Item 5: a resolution set of {public, metadata} must reject the
+    whole URL before any connection. Never contacts the metadata
+    address -- this is a pure policy-decision test."""
+
+    def fake(
+        host: str, port: int, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0
+    ) -> list[_AddrInfoEntry]:
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", port)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    with pytest.raises(SSRFRejected):
+        ProductionEndpointSecurityPolicy().validate("https://metadata-sibling.example/")
+
+
+def test_r2_multi_address_fallback_stays_within_validated_set(
+    monkeypatch: pytest.MonkeyPatch, fixture_server: DeterministicHttpFixtureServer
+) -> None:
+    """Item 6: resolver returns two DIFFERENT addresses that both pass
+    policy -- `127.0.0.2` (loopback, but the fixture is not listening
+    there: an unreachable decoy) first, then `127.0.0.1` (where the
+    fixture genuinely listens) -- both exempted via the already-
+    established `FixtureEndpointSecurityPolicy` allowlist. This exercises
+    genuine fallback-within-the-validated-set, never a second resolution:
+    proven by asserting zero further `getaddrinfo` calls occur inside
+    `connect()` even though the first candidate genuinely fails to
+    connect and a second is tried, and the real fixture request still
+    succeeds."""
+    fixture_server.set_records([{"id": "REC-1", "value": "a"}])
+    os.environ["R2_MULTI_TOKEN"] = "canary-r2-multi"
+    _, real_port_str = fixture_server.base_url.rsplit(":", 1)
+    real_port = int(real_port_str)
+    call_log: list[str] = []
+
+    def fake(
+        host: str, port: int, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0
+    ) -> list[Any]:
+        call_log.append(host)
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.2", real_port)),  # decoy
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", real_port)),  # real
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    connect_call_counts: list[int] = []
+    real_connect = _PinnedHTTPSConnection.connect
+
+    def wrapped_connect(self: _PinnedHTTPSConnection) -> None:
+        before = len(call_log)
+        try:
+            real_connect(self)
+        finally:
+            connect_call_counts.append(len(call_log) - before)
+
+    monkeypatch.setattr(_PinnedHTTPSConnection, "connect", wrapped_connect)
+    connector = RestConnector(
+        endpoint_url=fixture_server.base_url + "/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="R2_MULTI_TOKEN",
+        request_timeout_seconds=2,
+        endpoint_security_policy=FixtureEndpointSecurityPolicy(
+            allowed_addresses=frozenset({"127.0.0.1", "127.0.0.2"})
+        ),
+    )
+    result = connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert not isinstance(result, ConnectorFetchFailure), result
+    assert connect_call_counts and all(count == 0 for count in connect_call_counts)
+
+
+def test_r2_ambient_proxy_environment_has_zero_effect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Item 15: `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` must have zero
+    influence on connector transport -- structurally proven by the
+    module's own absence of any `urllib.request`/`ProxyHandler`
+    reference (Crown-equivalent to amendment SS25), and behaviorally
+    confirmed here: setting a bogus, unreachable proxy must not change
+    the SSRF policy decision (which never depends on proxy state) and
+    must not prevent the exact same rejection as with no proxy set."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:9")
+
+    import ast
+    import inspect
+
+    from app.infrastructure.connectors import rest_connector as rc_module
+
+    tree = ast.parse(inspect.getsource(rc_module))
+    imported_modules = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+    assert "urllib.request" not in imported_modules
+    assert "http.client" in imported_modules
+
+    def fake(
+        host: str, port: int, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0
+    ) -> list[_AddrInfoEntry]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    with pytest.raises(SSRFRejected):
+        ProductionEndpointSecurityPolicy().validate("https://proxy-check.example/")
+
+
+def test_r2_retry_rebinding_fresh_validation_fails_closed_on_new_attempt(
+    monkeypatch: pytest.MonkeyPatch, fixture_server: DeterministicHttpFixtureServer
+) -> None:
+    """Item 14: attempt 1 genuinely succeeds at the transport level
+    against the real, validated fixture address but receives a genuine
+    retryable HTTP failure (scripted 500); before attempt 2, "DNS
+    changes" to a prohibited address. Attempt 2 must independently
+    resolve, validate, and fail closed -- never reuse attempt 1's
+    now-stale validated address, and never let the attacker's changed
+    answer reach a connection attempt."""
+    fixture_server.set_records([{"id": "REC-1", "value": "a"}])
+    fixture_server.queue_failure("http_500")
+    os.environ["R2_RETRY_TOKEN"] = "canary-r2-retry"
+    _, real_port_str = fixture_server.base_url.rsplit(":", 1)
+    real_port = int(real_port_str)
+    call_log: list[str] = []
+
+    def fake(
+        host: str, port: int, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0
+    ) -> list[_AddrInfoEntry]:
+        call_log.append(host)
+        if len(call_log) == 1:
+            # Attempt 1: the real fixture's own validated loopback
+            # address -- a genuine HTTPS round trip, scripted to return
+            # a retryable HTTP 500.
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", real_port))]
+        # Attempt 2 ("DNS changed"): a prohibited private address.
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    connector = RestConnector(
+        endpoint_url=fixture_server.base_url + "/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="R2_RETRY_TOKEN",
+        request_timeout_seconds=5,
+        endpoint_security_policy=FixtureEndpointSecurityPolicy(
+            allowed_addresses=frozenset({"127.0.0.1"})
+        ),
+    )
+    result = connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert isinstance(result, ConnectorFetchFailure)
+    assert result.kind == "CONNECTOR_UNAVAILABLE"
+    assert not result.retryable
+    assert "prohibited" in result.detail
+    assert len(call_log) == 2, "expected exactly one retry, each with its own fresh resolution"
+
+
+def test_r2_tls_sni_positive_pinned_connection_real_certificate(
+    fixture_server: DeterministicHttpFixtureServer,
+) -> None:
+    """Item 10: real socket, real TLS, real certificate verification --
+    connect to the fixture's own validated loopback address while SNI
+    and certificate-hostname verification target the fixture's governed
+    hostname. Reuses the already-authorized, unmodified
+    `DeterministicHttpFixtureServer` fixture; no new fixture
+    infrastructure."""
+    fixture_server.set_records([{"id": "REC-1", "value": "a"}])
+    os.environ["R2_SNI_TOKEN"] = "canary-r2-sni"
+    connector = RestConnector(
+        endpoint_url=fixture_server.base_url + "/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="R2_SNI_TOKEN",
+        endpoint_security_policy=FixtureEndpointSecurityPolicy(
+            allowed_addresses=frozenset({"127.0.0.1"})
+        ),
+    )
+    result = connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert not isinstance(result, ConnectorFetchFailure), result
+    assert len(result.records) == 1
+
+
+def test_r2_tls_hostname_negative_wrong_hostname_fails_even_when_pinned(
+    fixture_server: DeterministicHttpFixtureServer,
+) -> None:
+    """Item 11: pinned TCP destination correct, trusted CA correct, but
+    the URL's own hostname is one the certificate's SAN does not cover.
+    Must fail TLS hostname verification -- proves IP-pinning did not
+    collapse hostname identity into IP-only trust (I-R2 amendment SS23).
+    Achieved by resolving a DIFFERENT hostname string to the fixture's
+    real address (a legitimate DNS scenario, not fixture tampering) and
+    allowlisting that resolved address -- the certificate itself
+    (issued only for "localhost"/127.0.0.1 by
+    `DeterministicHttpFixtureServer`) does not cover this hostname."""
+    fixture_server.set_records([{"id": "REC-1", "value": "a"}])
+    os.environ["R2_NEG_TOKEN"] = "canary-r2-neg"
+    _, fixture_port = fixture_server.base_url.rsplit(":", 1)
+    connector = RestConnector(
+        endpoint_url=f"https://wrong-hostname.invalid:{fixture_port}/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="R2_NEG_TOKEN",
+        endpoint_security_policy=FixtureEndpointSecurityPolicy(
+            allowed_addresses=frozenset({"127.0.0.1"})
+        ),
+    )
+    result = connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert isinstance(result, ConnectorFetchFailure)
+    assert "certificate" in result.detail.lower() or "hostname" in result.detail.lower()
+
+
+def test_r2_http_host_header_remains_original_hostname(
+    fixture_server: DeterministicHttpFixtureServer,
+) -> None:
+    """Item HTTP-Host (I-R2 amendment SS21): the outgoing request's
+    default `Host` header is derived from `self.host` inside
+    `_PinnedHTTPSConnection`, which is always the ORIGINAL URL hostname
+    (never the pinned IP) -- proven directly against the connection
+    object's own state rather than inferred."""
+    connection = _PinnedHTTPSConnection(
+        hostname="original-hostname.example",
+        port=443,
+        candidates=((socket.AF_INET, ("127.0.0.1", 443)),),
+        timeout=5,
+        context=ssl.create_default_context(),
+    )
+    assert connection.host == "original-hostname.example"
+    assert connection.host != "127.0.0.1"
 
 
 def test_configure_connector_rejects_cross_tenant_source_system(

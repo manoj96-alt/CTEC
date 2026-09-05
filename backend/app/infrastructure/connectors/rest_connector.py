@@ -1,32 +1,47 @@
 """`RestConnector` -- the one infrastructure adapter CDD-059 SS9/SS58
-authorizes: a generic, vendor-neutral, stdlib-only (`urllib.request`) HTTPS
-REST transport. No `if SAP`/`if Snowflake`/`if Databricks` branching of any
-kind belongs here or anywhere in this module (CDD-059 SS9). Mirrors
+authorizes: a generic, vendor-neutral, stdlib-only HTTPS REST transport.
+No `if SAP`/`if Snowflake`/`if Databricks` branching of any kind belongs
+here or anywhere in this module (CDD-059 SS9). Mirrors
 `AnthropicMessagesProvider`'s own established precedent exactly: stdlib
 HTTP only (no new production dependency), a closed failure-kind taxonomy,
 credentials read from `os.environ` only, never logged.
 
 Owns exactly: HTTPS transport, authentication header construction, the
 complete SSRF policy (CDD-059 SS32, applied identically to the initial
-endpoint and to every subsequent next-link), TLS verification, bounded
-reads, pagination, retry/backoff, response parsing, and `ConnectorRecord`
+endpoint and to every subsequent next-link, and now pinned to the actual
+TCP connection per the I-R2 DNS-Rebinding / Validate-to-Connect IP-
+Pinning Correction Amendment), TLS verification, bounded reads,
+pagination, retry/backoff, response parsing, and `ConnectorRecord`
 construction via the frozen dotted-path extraction contract (CDD-059
 SS36). Never writes evidence. Never performs DQ/OQI evaluation. Never
 establishes tenant authority -- the caller (`ConnectorIngestionService`)
 decides whether this adapter may run at all, before `fetch_page` is ever
-invoked."""
+invoked.
+
+I-R2: uses `http.client` directly (still stdlib-only, no new production
+dependency) instead of `urllib.request`'s opener/handler chain. This is
+the exact mechanism the frozen amendment requires to close the DNS-
+rebinding TOCTOU `urllib.request` structurally could not close: a
+connection class that connects only to an address this module's own
+`EndpointSecurityPolicy.validate()` already validated for THIS attempt --
+never re-resolving the hostname -- while the original hostname remains
+authoritative for TLS SNI, certificate-hostname verification, and the
+HTTP `Host` header. This also structurally neutralizes ambient
+`HTTP_PROXY`/`HTTPS_PROXY` inheritance (I-R2 amendment SS12/SS25):
+dropping `urllib.request` entirely removes its own default
+`ProxyHandler` from the picture -- `http.client` has no proxy awareness
+of its own to neutralize."""
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
 import socket
 import ssl
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -132,12 +147,33 @@ def _is_exemptible_range(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> b
     return ip.is_loopback or any(ip in net for net in _EXEMPTIBLE_NETWORKS)
 
 
-def _resolve_and_validate(url: str, *, allowed_addresses: frozenset[str]) -> None:
+@dataclass(frozen=True, slots=True)
+class ValidatedEndpoint:
+    """I-R2 DNS-Rebinding / Validate-to-Connect IP-Pinning Correction
+    Amendment SS6-SS11: the exact, already-validated result of one
+    resolve+validate cycle for one attempt. `hostname`/`port` are the
+    ORIGINAL URL's own authority -- never the pinned address -- and
+    remain authoritative for TLS SNI, certificate-hostname verification,
+    and the HTTP `Host` header (SS7/SS21/SS22). `candidates` is the
+    complete set of resolved addresses that passed policy, in the exact
+    order the resolver returned them (SS9); connection is permitted only
+    to one of these addresses, with fallback restricted to this same set
+    and never a fresh resolution (SS10)."""
+
+    hostname: str
+    port: int
+    candidates: tuple[tuple[socket.AddressFamily, tuple[object, ...]], ...]
+
+
+def _resolve_and_validate(url: str, *, allowed_addresses: frozenset[str]) -> ValidatedEndpoint:
     """CDD-059 SS32: scheme + fresh-DNS-resolution + full-resolved-
     address-set range check, evaluated fresh for THIS call -- never
     cached from a prior check, so DNS rebinding between two calls can
     never bypass this policy. Applied identically to the initial endpoint
-    and to every subsequent next-link (CDD-059 SS29/SS35).
+    and to every subsequent next-link and every retry (CDD-059 SS29/SS35;
+    I-R2 amendment SS12/SS13). Returns the exact validated address set
+    (I-R2 amendment SS9) so the caller can pin its connection to one of
+    them, never re-resolving the hostname.
 
     `allowed_addresses` is empty for `ProductionEndpointSecurityPolicy`
     (zero exceptions, ever -- production code never supplies a non-empty
@@ -160,20 +196,31 @@ def _resolve_and_validate(url: str, *, allowed_addresses: frozenset[str]) -> Non
         addrinfo = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:
         raise SSRFRejected(f"DNS resolution failed for {host!r}: {exc}") from exc
-    resolved = {str(info[4][0]) for info in addrinfo}
-    if not resolved:
+    if not addrinfo:
         raise SSRFRejected(f"DNS resolution for {host!r} returned no addresses")
-    for ip_str in resolved:
-        ip_str_clean = ip_str.split("%", 1)[0]  # strip IPv6 zone id before parsing
+
+    validated_candidates: list[tuple[socket.AddressFamily, tuple[object, ...]]] = []
+    seen_ip_strs: set[str] = set()
+    for family, _socktype, _proto, _canonname, sockaddr in addrinfo:
+        ip_str_clean = str(sockaddr[0]).split("%", 1)[0]  # strip IPv6 zone id
+        if ip_str_clean in seen_ip_strs:
+            continue  # duplicate resolver entry for an address already checked
+        seen_ip_strs.add(ip_str_clean)
         ip = ipaddress.ip_address(ip_str_clean)
         if (
             ip_str_clean in allowed_addresses
             and _is_exemptible_range(ip)
             and not _is_absolute_deny(ip)
         ):
+            validated_candidates.append((family, sockaddr))
             continue
         if _is_prohibited_address(ip):
             raise SSRFRejected(f"resolved address {ip_str_clean} for host {host!r} is prohibited")
+        validated_candidates.append((family, sockaddr))
+
+    if not validated_candidates:
+        raise SSRFRejected(f"DNS resolution for {host!r} returned no addresses")
+    return ValidatedEndpoint(hostname=host, port=port, candidates=tuple(validated_candidates))
 
 
 class EndpointSecurityPolicy(Protocol):
@@ -185,9 +232,11 @@ class EndpointSecurityPolicy(Protocol):
     `app/tests/test_oqi_connector_ingestion_postgres.py`, never in this
     module -- no production file may import or construct it."""
 
-    def validate(self, url: str) -> None:
+    def validate(self, url: str) -> ValidatedEndpoint:
         """Raises `SSRFRejected` if `url` fails policy. Evaluated fresh
-        for every call -- initial endpoint and every next-link alike."""
+        for every call -- initial endpoint, every next-link, and every
+        retry alike (I-R2 amendment SS12/SS13). Returns the validated
+        address set the caller must pin its connection to."""
         ...
 
 
@@ -198,21 +247,71 @@ class ProductionEndpointSecurityPolicy:
     process environment). Behaviorally identical to CDD-059 SS32 as
     originally frozen: zero exceptions."""
 
-    def validate(self, url: str) -> None:
-        _resolve_and_validate(url, allowed_addresses=frozenset())
+    def validate(self, url: str) -> ValidatedEndpoint:
+        return _resolve_and_validate(url, allowed_addresses=frozenset())
 
 
 _DEFAULT_ENDPOINT_SECURITY_POLICY = ProductionEndpointSecurityPolicy()
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """CDD-059 SS32 point 6: redirect-following is disabled. Returning
-    `None` here causes `HTTPRedirectHandler`'s own error handlers to hand
-    back the raw 3xx response instead of silently re-issuing the request
-    against an unvalidated destination."""
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """I-R2 DNS-Rebinding / Validate-to-Connect IP-Pinning Correction
+    Amendment SS6/SS7/SS11/SS24: connects ONLY to one of `candidates` --
+    the exact, already-validated `(family, sockaddr)` pairs this attempt's
+    own `EndpointSecurityPolicy.validate()` call produced -- and never
+    performs any DNS resolution of its own (contrast the stdlib default
+    `HTTPConnection.connect()`, which calls `socket.create_connection`
+    with the bare hostname, itself re-resolving via `socket.getaddrinfo`;
+    that second, uncontrolled resolution is the exact TOCTOU VM-R1
+    proved). `self.host` (passed to `HTTPConnection.__init__` below) is
+    the ORIGINAL URL hostname, never a pinned address -- it is used only
+    for the default HTTP `Host` header (stdlib's own `putrequest`
+    behavior, unmodified) and here explicitly as `server_hostname` for
+    TLS SNI and certificate-hostname verification, so pinning the TCP
+    destination never weakens the endpoint's real TLS identity. Fallback
+    across `candidates` (SS10) tries each address in the exact order
+    provided -- never triggering a fresh resolution."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
-        return None
+    def __init__(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        candidates: tuple[tuple[socket.AddressFamily, tuple[object, ...]], ...],
+        timeout: float,
+        context: ssl.SSLContext,
+    ) -> None:
+        super().__init__(hostname, port, timeout=timeout, context=context)
+        self._candidates = candidates
+
+    def connect(self) -> None:
+        last_exc: OSError | None = None
+        sock: socket.socket | None = None
+        for family, sockaddr in self._candidates:
+            candidate_sock = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+            candidate_sock.settimeout(self.timeout)
+            try:
+                candidate_sock.connect(sockaddr)
+            except OSError as exc:
+                candidate_sock.close()
+                last_exc = exc
+                continue
+            sock = candidate_sock
+            break
+        if sock is None:
+            assert last_exc is not None
+            raise last_exc
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+        self.sock = sock
+        if self._tunnel_host:  # type: ignore[attr-defined]
+            # never set -- this module never establishes a proxy tunnel
+            self._tunnel()  # type: ignore[attr-defined]
+        self.sock = self._context.wrap_socket(  # type: ignore[attr-defined]
+            self.sock, server_hostname=self.host
+        )
 
 
 def _read_bounded(response: object, max_bytes: int) -> bytes:
@@ -319,9 +418,6 @@ class RestConnector:
             if test_ca_bundle
             else ssl.create_default_context()
         )
-        self._opener = urllib.request.build_opener(
-            _NoRedirectHandler, urllib.request.HTTPSHandler(context=self._ssl_context)
-        )
 
     def _auth_headers(self) -> dict[str, str]:
         secret = os.environ.get(self._credential_env_var_name, "")
@@ -343,7 +439,13 @@ class RestConnector:
         initial endpoint (CDD-059 SS29/SS35) -- never trusted merely
         because a prior page from the same run already passed. Loop
         detection tracks every URL fetched across this adapter instance's
-        own lifetime (one instance per run, CDD-059 SS21)."""
+        own lifetime (one instance per run, CDD-059 SS21).
+
+        I-R2 amendment SS12/SS13: validation (and the pinned address set
+        it produces) is performed fresh for EVERY retry attempt within
+        this same call, never once before the loop -- an SSRF rejection
+        discovered on a later retry fails the whole call closed
+        immediately, exactly as a first-attempt rejection always has."""
         url = page_token if page_token is not None else self._endpoint_url
         extraction_plan = self._extraction_plan
         if url in self._seen_page_urls:
@@ -354,18 +456,20 @@ class RestConnector:
             )
         self._seen_page_urls.add(url)
 
-        try:
-            self._endpoint_security_policy.validate(url)
-        except SSRFRejected as exc:
-            return ConnectorFetchFailure(
-                kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
-                detail=f"rejected by SSRF policy: {exc.detail}",
-                retryable=False,
-            )
+        parsed = urllib.parse.urlsplit(url)
+        path_and_query = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
 
         last_failure: ConnectorFetchFailure | None = None
         for attempt in range(1, _MAX_RETRY_ATTEMPTS + 1):
-            outcome = self._attempt_fetch(url)
+            try:
+                validated = self._endpoint_security_policy.validate(url)
+            except SSRFRejected as exc:
+                return ConnectorFetchFailure(
+                    kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
+                    detail=f"rejected by SSRF policy: {exc.detail}",
+                    retryable=False,
+                )
+            outcome = self._attempt_fetch(validated, path_and_query)
             if not isinstance(outcome, ConnectorFetchFailure):
                 return self._parse_page(outcome, extraction_plan, fallback_observed_at)
             last_failure = outcome
@@ -375,14 +479,50 @@ class RestConnector:
         assert last_failure is not None
         return last_failure
 
-    def _attempt_fetch(self, url: str) -> bytes | ConnectorFetchFailure:
-        request = urllib.request.Request(
-            url,
-            method="GET",
-            headers={"Accept": "application/json", **self._auth_headers()},
+    def _attempt_fetch(
+        self, validated: ValidatedEndpoint, path_and_query: str
+    ) -> bytes | ConnectorFetchFailure:
+        """Connects ONLY within `validated.candidates` (I-R2 amendment
+        SS6/SS9-SS11) via `_PinnedHTTPSConnection` -- the connection
+        itself never re-resolves `validated.hostname`. TLS SNI,
+        certificate-hostname verification, and the default HTTP `Host`
+        header all remain `validated.hostname` (SS7/SS21/SS22), never a
+        pinned address."""
+        connection = _PinnedHTTPSConnection(
+            hostname=validated.hostname,
+            port=validated.port,
+            candidates=validated.candidates,
+            timeout=self._request_timeout_seconds,
+            context=self._ssl_context,
         )
         try:
-            with self._opener.open(request, timeout=self._request_timeout_seconds) as response:
+            try:
+                connection.request(
+                    "GET",
+                    path_and_query,
+                    headers={"Accept": "application/json", **self._auth_headers()},
+                )
+                response = connection.getresponse()
+            except TimeoutError:
+                return ConnectorFetchFailure(
+                    kind=ConnectorFailureKind.CONNECTOR_TIMEOUT,
+                    detail="request timed out",
+                    retryable=True,
+                )
+            except http.client.HTTPException as exc:
+                return ConnectorFetchFailure(
+                    kind=ConnectorFailureKind.CONNECTOR_RESPONSE_INVALID,
+                    detail=str(exc),
+                    retryable=False,
+                )
+            except OSError as exc:
+                return ConnectorFetchFailure(
+                    kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
+                    detail=str(exc),
+                    retryable=True,
+                )
+
+            try:
                 status = response.status
                 if 300 <= status < 400:
                     return ConnectorFetchFailure(
@@ -390,7 +530,37 @@ class RestConnector:
                         detail=f"redirect (HTTP {status}) is never followed (CDD-059 SS32)",
                         retryable=False,
                     )
-                content_length = response.headers.get("Content-Length")
+                if status in _NON_RETRYABLE_AUTH_STATUSES:
+                    return ConnectorFetchFailure(
+                        kind=ConnectorFailureKind.CONNECTOR_AUTHENTICATION_FAILED,
+                        detail=f"HTTP {status}",
+                        retryable=False,
+                    )
+                if status == 429:
+                    retry_after = response.getheader("Retry-After")
+                    if retry_after is not None:
+                        try:
+                            time.sleep(min(float(retry_after), 60.0))
+                        except ValueError:
+                            pass
+                    return ConnectorFetchFailure(
+                        kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
+                        detail=f"HTTP {status}",
+                        retryable=True,
+                    )
+                if status in _RETRYABLE_HTTP_STATUSES:
+                    return ConnectorFetchFailure(
+                        kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
+                        detail=f"HTTP {status}",
+                        retryable=True,
+                    )
+                if status >= 400:
+                    return ConnectorFetchFailure(
+                        kind=ConnectorFailureKind.CONNECTOR_RESPONSE_INVALID,
+                        detail=f"HTTP {status}",
+                        retryable=False,
+                    )
+                content_length = response.getheader("Content-Length")
                 if content_length is not None and int(content_length) > self._max_response_bytes:
                     return ConnectorFetchFailure(
                         kind=ConnectorFailureKind.CONNECTOR_RESPONSE_INVALID,
@@ -405,42 +575,16 @@ class RestConnector:
                         detail=str(exc),
                         retryable=False,
                     )
-        except urllib.error.HTTPError as exc:
-            if exc.code in _NON_RETRYABLE_AUTH_STATUSES:
-                return ConnectorFetchFailure(
-                    kind=ConnectorFailureKind.CONNECTOR_AUTHENTICATION_FAILED,
-                    detail=f"HTTP {exc.code}",
-                    retryable=False,
-                )
-            retryable = exc.code in _RETRYABLE_HTTP_STATUSES
-            if exc.code == 429:
-                retry_after = exc.headers.get("Retry-After") if exc.headers else None
-                if retry_after is not None:
-                    try:
-                        time.sleep(min(float(retry_after), 60.0))
-                    except ValueError:
-                        pass
-            return ConnectorFetchFailure(
-                kind=(
-                    ConnectorFailureKind.CONNECTOR_UNAVAILABLE
-                    if retryable
-                    else ConnectorFailureKind.CONNECTOR_RESPONSE_INVALID
-                ),
-                detail=f"HTTP {exc.code}",
-                retryable=retryable,
-            )
-        except TimeoutError:
-            return ConnectorFetchFailure(
-                kind=ConnectorFailureKind.CONNECTOR_TIMEOUT,
-                detail="request timed out",
-                retryable=True,
-            )
-        except urllib.error.URLError as exc:
-            return ConnectorFetchFailure(
-                kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
-                detail=str(exc.reason),
-                retryable=True,
-            )
+                except TimeoutError:
+                    return ConnectorFetchFailure(
+                        kind=ConnectorFailureKind.CONNECTOR_TIMEOUT,
+                        detail="request timed out",
+                        retryable=True,
+                    )
+            finally:
+                response.close()
+        finally:
+            connection.close()
 
     def _parse_page(
         self,
