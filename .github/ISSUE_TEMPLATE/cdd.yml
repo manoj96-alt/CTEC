@@ -1,0 +1,65 @@
+name: CDD implementation
+description: Propose and track one architectural implementation milestone.
+title: "[CDD-000] "
+labels: ["cdd", "architecture"]
+body:
+  - type: input
+    id: identifier
+    attributes:
+      label: CDD identifier and title
+      placeholder: CDD-002 — Persistence Layer
+    validations:
+      required: true
+  - type: input
+    id: specification
+    attributes:
+      label: Authoritative specification
+      description: Link or identify the approved CDD document.
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the single layer outcome this CDD must deliver.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope
+      description: List only behavior explicitly authorized by this CDD.
+    validations:
+      required: true
+  - type: textarea
+    id: stop_rule
+    attributes:
+      label: Stop rule and exclusions
+      description: Identify the next layer and all behavior that must not be implemented.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Required architecture references
+      description: List Constitution, RFC, logical model, physical model, TAS, EAD, and dataset versions.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include tests, quality gates, required documentation, and expected results.
+    validations:
+      required: true
+  - type: checkboxes
+    id: governance
+    attributes:
+      label: Governance acknowledgement
+      options:
+        - label: This CDD will be implemented in exactly one pull request.
+          required: true
+        - label: CR-001 Gates A, B, and C will be recorded before freeze.
+          required: true
+        - label: The architecture-drift and five-hat reviews are required before completion.
+          required: true
