@@ -7995,21 +7995,23 @@ Tenant
 
 The flagship Source -> Evidence -> Ontology -> OQI -> Agents -> Remediation -> Business Impact chain, using actual physical table names. Each arrow states whether a direct FK exists, its cardinality, and its tenant-integrity classification (see section 9/Defect Register for what these classifications mean).
 
-- `source_systems` -> `source_objects`: DERIVED RELATIONSHIP — NO DIRECT FK  _SourceSystem -> SourceObject_
-- `source_objects` -> `source_fields`: DERIVED RELATIONSHIP — NO DIRECT FK  _SourceObject -> SourceField_
-- `source_fields` -> `field_value_evidence`: DERIVED RELATIONSHIP — NO DIRECT FK  _SourceField -> FieldValueEvidence_
+- `source_systems` -> `source_objects`: DIRECT PHYSICAL FK — `fk_source_objects_tenant_source_system`, `(tenant_id,source_system_id)` -> `(tenant_id,source_system_id)`, STRUCTURALLY_SAFE, 1:N  _SourceSystem -> SourceObject_
+- `source_objects` -> `source_fields`: DIRECT PHYSICAL FK — `fk_source_fields_source_object_id`, `source_object_id` -> `source_object_id`, CHILD_NOT_TENANT_OWNED, 1:N  _SourceObject -> SourceField_
+- `source_fields` -> `field_value_evidence`: DIRECT PHYSICAL FK — `fk_field_value_evidence_source_field_id`, `source_field_id` -> `source_field_id`, GLOBAL_PARENT, 1:N  _SourceField -> FieldValueEvidence_
 - `field_value_evidence` -> `quality_evaluations`: DERIVED RELATIONSHIP — NO DIRECT FK  _Evidence -> OQI1 Evaluation (via quality_evaluation_evidence join)_
 - `quality_evaluations` -> `quality_findings`: DERIVED RELATIONSHIP — NO DIRECT FK  _OQI1 Evaluation -> Finding_
-- `business_rule_evaluations` -> `business_rule_findings`: DERIVED RELATIONSHIP — NO DIRECT FK  _OQI3 Evaluation -> Finding_
-- `quality_comparison_evaluations` -> `quality_comparison_findings`: DERIVED RELATIONSHIP — NO DIRECT FK  _OQI2 Evaluation -> Finding_
-- `ontology_impact_evaluations` -> `current_ontology_impacts`: DERIVED RELATIONSHIP — NO DIRECT FK  _OQI4 Evaluation -> current pointer_
-- `oqi_reliance_evaluations` -> `current_reliance`: DERIVED RELATIONSHIP — NO DIRECT FK  _OQI6 Reliance Evaluation -> current pointer_
-- `oqi_remediation_cases` -> `oqi_remediation_candidates`: DERIVED RELATIONSHIP — NO DIRECT FK  _Case -> Candidate_
-- `oqi_remediation_agent_runs` -> `oqi_remediation_agent_recommendations`: DERIVED RELATIONSHIP — NO DIRECT FK  _AgentRun -> AgentRecommendation_
-- `oqi_remediation_candidates` -> `oqi_remediation_instructions`: DERIVED RELATIONSHIP — NO DIRECT FK  _Candidate -> Instruction_
-- `oqi_remediation_instructions` -> `oqi_remediation_authorizations`: DERIVED RELATIONSHIP — NO DIRECT FK  _Instruction -> Authorization_
-- `oqi_business_dependencies` -> `oqi_business_impact_evaluations`: DERIVED RELATIONSHIP — NO DIRECT FK  _Business Dependency -> Business Impact Evaluation_
-- `oqi_business_impact_evaluations` -> `current_business_impacts`: DERIVED RELATIONSHIP — NO DIRECT FK  _Business Impact Evaluation -> current pointer_
+- `business_rule_evaluations` -> `business_rule_findings`: DIRECT PHYSICAL FK — `fk_business_rule_findings_latest_evaluation_id`, `latest_evaluation_id` -> `evaluation_id`, APPLICATION_GUARDED (P2-1, not tenant-qualified), 1:N  _OQI3 Evaluation -> Finding_
+- `quality_comparison_evaluations` -> `quality_comparison_findings`: DIRECT PHYSICAL FK — `fk_quality_comparison_findings_latest_evaluation_id`, `latest_evaluation_id` -> `evaluation_id`, APPLICATION_GUARDED (P2-1, not tenant-qualified), 1:N  _OQI2 Evaluation -> Finding_
+- `ontology_impact_evaluations` -> `current_ontology_impacts`: DIRECT PHYSICAL FK — `fk_current_ontology_impacts_tenant_evaluation`, `(tenant_id,evaluation_id)` -> `(tenant_id,latest_evaluation_id)`, STRUCTURALLY_SAFE, 1:N  _OQI4 Evaluation -> current pointer_
+- `oqi_reliance_evaluations` -> `current_reliance`: DIRECT PHYSICAL FK — `fk_current_reliance_tenant_evaluation`, `(tenant_id,evaluation_id)` -> `(tenant_id,latest_evaluation_id)`, STRUCTURALLY_SAFE, 1:N  _OQI6 Reliance Evaluation -> current pointer_
+- `oqi_remediation_cases` -> `oqi_remediation_candidates`: DIRECT PHYSICAL FK — `fk_oqi_remediation_candidates_case_id`, `case_id` -> `case_id`, CHILD_NOT_TENANT_OWNED, 1:N  _Case -> Candidate_
+- `oqi_remediation_agent_runs` -> `oqi_remediation_agent_recommendations`: DIRECT PHYSICAL FK — `fk_oqi_remediation_agent_recommendations_run_id`, `run_id` -> `run_id`, CHILD_NOT_TENANT_OWNED, 1:N  _AgentRun -> AgentRecommendation_
+- `oqi_remediation_candidates` -> `oqi_remediation_instructions`: DIRECT PHYSICAL FK — `fk_oqi_remediation_instructions_candidate_id`, `candidate_id` -> `candidate_id`, GLOBAL_PARENT, 1:N  _Candidate -> Instruction_
+- `oqi_remediation_instructions` -> `oqi_remediation_authorizations`: DIRECT PHYSICAL FK — `fk_oqi_remediation_authorizations_tenant_instruction`, `(tenant_id,instruction_id)` -> `(tenant_id,instruction_id)`, STRUCTURALLY_SAFE, 1:N  _Instruction -> Authorization_
+- `oqi_business_dependencies` -> `oqi_business_impact_evaluations`: DIRECT PHYSICAL FK — `fk_oqi_business_impact_evaluations_tenant_dependency`, `(tenant_id,dependency_id,version)` -> `(tenant_id,business_dependency_id,business_dependency_version)`, STRUCTURALLY_SAFE, 1:N  _Business Dependency -> Business Impact Evaluation_
+- `oqi_business_impact_evaluations` -> `current_business_impacts`: DIRECT PHYSICAL FK — `fk_current_business_impacts_tenant_evaluation`, `(tenant_id,evaluation_id)` -> `(tenant_id,latest_evaluation_id)`, STRUCTURALLY_SAFE, 1:N  _Business Impact Evaluation -> current pointer_
+
+**POSTGRES-DATA-MODEL-CLOSURE-G-R4 correction**: the thirteen edges above were previously mislabeled `DERIVED RELATIONSHIP — NO DIRECT FK` in this section despite each having a real, direct physical foreign key documented correctly all along in section 5 (Relationship Catalog) and each table's own section 4 entry — a systemic internal contradiction discovered independently in POSTGRES-DATA-MODEL-CLOSURE-VM-R2/G-R3 and corrected here from live PostgreSQL 0046 catalog evidence, re-verified fresh for this correction. The two `quality_evaluations`-adjacent edges directly above and the three "Explicitly DERIVED" links below were independently re-checked against the same evidence and remain correctly labeled: no stored FK, pointer column, or polymorphic reference connects either pair, and none was altered.
 
 **Explicitly DERIVED (no direct FK) crown links**, stated rather than fabricated:
 - Finding (any OQI1-3 finding table) -> Ontology Impact Evaluation: no direct FK; `ontology_impact_evaluations` carries `finding_family`/`finding_id` as plain columns (polymorphic reference), not a physical FK constraint — DERIVED RELATIONSHIP — NO DIRECT FK.
