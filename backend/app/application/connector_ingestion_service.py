@@ -23,10 +23,11 @@ from app.domain.integration.field_value_evidence import FieldValueEvidence
 from app.domain.shared.exceptions import ValidationException
 from app.domain.shared.value_objects import Identifier
 from app.infrastructure.connectors.rest_connector import (
+    EndpointSecurityPolicy,
     FieldExtractionPlan,
+    ProductionEndpointSecurityPolicy,
     RestConnector,
     SSRFRejected,
-    validate_endpoint_url,
 )
 from app.infrastructure.persistence.field_value_evidence_repository import (
     FieldValueEvidenceRepositoryImpl,
@@ -48,6 +49,8 @@ _REQUEST_TIMEOUT_SECONDS = 30
 _VALID_CONNECTOR_TYPES = frozenset({"GENERIC_REST"})
 _VALID_AUTH_MECHANISMS = frozenset({"API_KEY", "BEARER_TOKEN"})
 _VALID_PAGINATION_STYLES = frozenset({"NONE", "CURSOR"})
+
+_DEFAULT_ENDPOINT_SECURITY_POLICY = ProductionEndpointSecurityPolicy()
 
 
 class ConnectorIngestionServiceError(Exception):
@@ -82,10 +85,12 @@ class ConnectorIngestionService:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         connector_factory: Callable[..., EnterpriseConnector] = RestConnector,
+        endpoint_security_policy: EndpointSecurityPolicy = _DEFAULT_ENDPOINT_SECURITY_POLICY,
     ) -> None:
         self.session = session
         self._clock = clock
         self._connector_factory = connector_factory
+        self._endpoint_security_policy = endpoint_security_policy
 
     # ------------------------------------------------------------------
     # Configuration (CDD-059 SS12/SS32 config-time SSRF check)
@@ -121,7 +126,7 @@ class ConnectorIngestionService:
             raise ConnectorIngestionServiceError("CONNECTOR_SOURCE_SYSTEM_NOT_FOUND")
 
         try:
-            validate_endpoint_url(endpoint_url)
+            self._endpoint_security_policy.validate(endpoint_url)
         except SSRFRejected as exc:
             raise ConnectorIngestionServiceError("CONNECTOR_ENDPOINT_REJECTED") from exc
 
@@ -288,6 +293,7 @@ class ConnectorIngestionService:
             max_records_per_page=_MAX_RECORDS_PER_PAGE,
             max_fields_per_record=_MAX_FIELDS_PER_RECORD,
             request_timeout_seconds=_REQUEST_TIMEOUT_SECONDS,
+            endpoint_security_policy=self._endpoint_security_policy,
         )
 
         fetched = accepted = rejected = duplicate = written = 0

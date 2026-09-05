@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -32,6 +32,7 @@ from app.application.connector_ingestion_service import (
 from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
 from app.core.config import Settings
 from app.core.dependency_container import Container
+from app.domain.integration.enterprise_connector import ConnectorFetchFailure
 from app.domain.oqi.quality_rule import (
     QualityDimension,
     QualityFindingType,
@@ -39,8 +40,11 @@ from app.domain.oqi.quality_rule import (
     QualityRuleStatus,
 )
 from app.infrastructure.connectors.rest_connector import (
+    FieldExtractionPlan,
+    ProductionEndpointSecurityPolicy,
+    RestConnector,
     SSRFRejected,
-    validate_endpoint_url,
+    _resolve_and_validate,
 )
 from app.infrastructure.persistence.field_value_evidence_repository import (
     FieldValueEvidenceRepositoryImpl,
@@ -102,6 +106,46 @@ def _seed_source(
 
 def _service(session: Session) -> ConnectorIngestionService:
     return ConnectorIngestionService(session, clock=lambda: NOW)
+
+
+class FixtureEndpointSecurityPolicy:
+    """I-R1 SSRF Test-Boundary Correction Amendment SS6.2/SS6.4: the
+    test-only `EndpointSecurityPolicy` implementation. Defined here --
+    never in `rest_connector.py`, never in any production module -- and
+    constructed only by the helpers/tests in this file, each of which
+    already knows the exact loopback/fixture-container address it needs.
+    Delegates to the identical production range-check logic
+    (`_resolve_and_validate`) so this can never silently drift from what
+    `RestConnector` actually enforces; the only difference is the
+    non-empty `allowed_addresses` set, which `_resolve_and_validate`
+    itself still refuses to honor for any link-local/metadata/multicast/
+    reserved/unspecified address (SS6.5) -- proven directly by Crown B
+    below."""
+
+    def __init__(self, *, allowed_addresses: frozenset[str]) -> None:
+        self._allowed_addresses = allowed_addresses
+
+    def validate(self, url: str) -> None:
+        _resolve_and_validate(url, allowed_addresses=self._allowed_addresses)
+
+
+def _fixture_service(
+    session: Session,
+    *,
+    allowed_addresses: frozenset[str] = frozenset({"127.0.0.1"}),
+    clock: Callable[[], datetime] = lambda: NOW,
+) -> ConnectorIngestionService:
+    """Real-network crown helper: identical to `_service` except it
+    injects the test-only `FixtureEndpointSecurityPolicy` explicitly --
+    the ONLY way any code in this repository can ever reach the loopback
+    fixture, since `ProductionEndpointSecurityPolicy` (every production
+    construction site's own default, unconditionally) rejects it. Never
+    imported by, or reachable from, any production module (Crown H)."""
+    return ConnectorIngestionService(
+        session,
+        clock=clock,
+        endpoint_security_policy=FixtureEndpointSecurityPolicy(allowed_addresses=allowed_addresses),
+    )
 
 
 def _test_principal(
@@ -173,7 +217,7 @@ def test_connector_ingestion_introduces_exactly_three_new_tables(migrated_engine
 )
 def test_ssrf_policy_rejects_every_prohibited_destination(url: str) -> None:
     with pytest.raises(SSRFRejected):
-        validate_endpoint_url(url)
+        ProductionEndpointSecurityPolicy().validate(url)
 
 
 def test_ssrf_policy_accepts_a_real_public_https_url_shape() -> None:
@@ -181,7 +225,125 @@ def test_ssrf_policy_accepts_a_real_public_https_url_shape() -> None:
     # fixed endpoint -- a genuinely public, non-prohibited hostname, used
     # here purely to prove the policy does not reject legitimate public
     # HTTPS destinations. No request is actually sent.
-    validate_endpoint_url("https://api.anthropic.com/v1/messages")
+    ProductionEndpointSecurityPolicy().validate("https://api.anthropic.com/v1/messages")
+
+
+# =====================================================================
+# I-R1 SSRF Test-Boundary Correction Amendment -- mandatory Crowns A-H
+# (SS7). Crown C (exact fixture, valid cert) is satisfied by every real-
+# network crown below, all of which now construct their connector via
+# `_fixture_service`/`FixtureEndpointSecurityPolicy` instead of the
+# removed `CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES` environment variable.
+# Crown F (redirect pivot) is satisfied by
+# `test_redirect_is_never_followed` below, likewise updated to use the
+# fixture policy explicitly.
+# =====================================================================
+
+
+def test_crown_a_production_default_rejects_private_address() -> None:
+    """Crown A: no policy override of any kind -- the plain, default-
+    constructed `ProductionEndpointSecurityPolicy` rejects a private
+    address exactly as CDD-059 SS32 always required."""
+    with pytest.raises(SSRFRejected):
+        ProductionEndpointSecurityPolicy().validate("https://10.0.0.5/")
+
+
+def test_crown_b_metadata_absolute_deny_even_under_active_fixture_policy() -> None:
+    """Crown B: the single most important negative proof. An active
+    `FixtureEndpointSecurityPolicy` explicitly, deliberately allowlisting
+    the cloud metadata address itself must STILL reject it -- SS6.5's
+    absolute-deny classes have no exception mechanism, not even via this
+    test-only seam."""
+    policy = FixtureEndpointSecurityPolicy(allowed_addresses=frozenset({"169.254.169.254"}))
+    with pytest.raises(SSRFRejected):
+        policy.validate("https://169.254.169.254/")
+
+
+@pytest.mark.parametrize(
+    "denied_ip",
+    [
+        "fe80::1",  # IPv6 link-local -- same absolute-deny class as metadata
+        "224.0.0.1",  # multicast
+        "240.0.0.1",  # reserved
+        "0.0.0.0",  # unspecified
+    ],
+)
+def test_crown_b_every_absolute_deny_class_rejected_even_if_allowlisted(denied_ip: str) -> None:
+    """Crown B, extended: every SS6.5 absolute-deny class -- not just the
+    one canonical metadata IP -- remains denied even when a test
+    deliberately allowlists the exact address."""
+    host = f"[{denied_ip}]" if ":" in denied_ip else denied_ip
+    policy = FixtureEndpointSecurityPolicy(allowed_addresses=frozenset({denied_ip}))
+    with pytest.raises(SSRFRejected):
+        policy.validate(f"https://{host}/")
+
+
+def test_crown_d_neighboring_private_address_not_allowlisted_is_rejected() -> None:
+    """Crown D: an active fixture policy allowlisting one exact private
+    address must not implicitly widen to a neighboring one."""
+    policy = FixtureEndpointSecurityPolicy(allowed_addresses=frozenset({"10.0.0.5"}))
+    policy.validate("https://10.0.0.5/")  # the allowlisted address itself: permitted
+    with pytest.raises(SSRFRejected):
+        policy.validate("https://10.0.0.6/")  # its neighbor: still rejected
+
+
+@pytest.mark.parametrize(
+    "malformed_entry",
+    [
+        "10.0.0.0/8",  # CIDR
+        "*",  # wildcard
+        "fixture.internal",  # hostname
+        "not-an-ip",  # garbage
+    ],
+)
+def test_crown_e_non_exact_match_semantics_never_authorize(malformed_entry: str) -> None:
+    """Crown E: only exact resolved-IP-string equality may ever exempt an
+    address. CIDR, wildcard, hostname, and garbage entries must all fail
+    closed -- never crash, never silently widen to match."""
+    policy = FixtureEndpointSecurityPolicy(allowed_addresses=frozenset({malformed_entry}))
+    with pytest.raises(SSRFRejected):
+        policy.validate("https://10.0.0.5/")
+
+
+def test_crown_h_production_construction_cannot_activate_fixture_policy() -> None:
+    """Crown H -- the single most important proof in this amendment
+    (SS6.3/SS7). Mirrors `test_domain_foundation.py`'s own AST-based
+    technique: (1) `FixtureEndpointSecurityPolicy` (defined only in this
+    test module) is never referenced anywhere under `backend/app/api/**`
+    or in `backend/app/core/dependency_container.py`; (2) the actual
+    production `connector_ingestion_service` dependency provider
+    constructs `ConnectorIngestionService` with no
+    `endpoint_security_policy` argument at all -- so a real request can
+    never reach anything but that parameter's own hard-coded default,
+    `ProductionEndpointSecurityPolicy`."""
+    import ast
+    import inspect
+    from pathlib import Path
+
+    import app.api as api_package
+    from app.api.oqi_connector import router as connector_router
+    from app.core import dependency_container
+
+    (api_root_str,) = api_package.__path__
+    api_root = Path(api_root_str)
+    for path in api_root.rglob("*.py"):
+        assert "FixtureEndpointSecurityPolicy" not in path.read_text(), path
+    assert "FixtureEndpointSecurityPolicy" not in Path(dependency_container.__file__).read_text()
+
+    source = inspect.getsource(connector_router.connector_ingestion_service)
+    tree = ast.parse(source)
+    call_nodes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "ConnectorIngestionService"
+    ]
+    assert len(call_nodes) == 1, "expected exactly one production construction site"
+    (call,) = call_nodes
+    supplied_kwargs = {kw.arg for kw in call.keywords}
+    assert "endpoint_security_policy" not in supplied_kwargs
+    assert len(call.args) <= 1  # only `session`, positionally -- no second argument at all
 
 
 # =====================================================================
@@ -605,12 +767,17 @@ def test_structural_fk_rejects_cross_tenant_connector_source_system(
 
 @pytest.fixture
 def fixture_server() -> Iterator[DeterministicHttpFixtureServer]:
+    """The test-only `FixtureEndpointSecurityPolicy` (constructed
+    explicitly by `_fixture_service`/`_configure_and_map`, never via an
+    environment variable -- I-R1 SSRF Test-Boundary Correction Amendment
+    SS6.4) supplies the address-authorization seam; this fixture retains
+    only the wholly separate TLS-trust concern (`CTEC_CONNECTOR_TEST_CA_
+    BUNDLE`, SS6.9), which never controlled network-destination
+    authority and is unchanged by this amendment."""
     server = DeterministicHttpFixtureServer(records=[])
     server.start()
     previous_ca = os.environ.get("CTEC_CONNECTOR_TEST_CA_BUNDLE")
-    previous_allowed = os.environ.get("CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES")
     os.environ["CTEC_CONNECTOR_TEST_CA_BUNDLE"] = server.ca_bundle_path
-    os.environ["CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES"] = "127.0.0.1"
     try:
         yield server
     finally:
@@ -619,10 +786,6 @@ def fixture_server() -> Iterator[DeterministicHttpFixtureServer]:
             os.environ.pop("CTEC_CONNECTOR_TEST_CA_BUNDLE", None)
         else:
             os.environ["CTEC_CONNECTOR_TEST_CA_BUNDLE"] = previous_ca
-        if previous_allowed is None:
-            os.environ.pop("CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES", None)
-        else:
-            os.environ["CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES"] = previous_allowed
 
 
 def _completeness_rule(*, information_element_requirement_id: UUID) -> QualityRule:
@@ -650,7 +813,13 @@ def _configure_and_map(
     id_field_id: UUID,
     field_mappings: dict[str, UUID],
 ) -> UUID:
-    configuration = _service(session).configure_connector(
+    # `_fixture_service` (never `_service`): `configure_connector`'s own
+    # config-time SSRF check (CDD-059 SS32 point 5) rejects a loopback
+    # `endpoint_url` under the default `ProductionEndpointSecurityPolicy`
+    # -- every caller of this helper points at a real, genuinely separate
+    # `DeterministicHttpFixtureServer` instance, so the explicit test-only
+    # fixture policy is required here, not merely at run time.
+    configuration = _fixture_service(session).configure_connector(
         tenant_id=tenant_id,
         source_system_id=source_system_id,
         display_name="Crown connector",
@@ -662,7 +831,7 @@ def _configure_and_map(
         pagination_style="CURSOR",
         created_by="steward",
     )
-    _service(session).add_field_mapping(
+    _fixture_service(session).add_field_mapping(
         tenant_id=tenant_id,
         connector_id=configuration.connector_id,
         external_field_path="id",
@@ -671,7 +840,7 @@ def _configure_and_map(
         created_by="steward",
     )
     for path, field_id in field_mappings.items():
-        _service(session).add_field_mapping(
+        _fixture_service(session).add_field_mapping(
             tenant_id=tenant_id,
             connector_id=configuration.connector_id,
             external_field_path=path,
@@ -721,7 +890,7 @@ def test_positive_e2e_crown_real_network_to_real_finding(
     fixture_server.set_records([{"id": "REC-1", "name": "Acme Corp", "certification": None}])
 
     with factory() as session:
-        result = _service(session).run_connector(
+        result = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     assert result.status == "SUCCEEDED", result
@@ -778,7 +947,11 @@ def test_multi_source_crown_real_disagreement(factory: sessionmaker[Session]) ->
     server_b.start()
     try:
         os.environ["CTEC_CONNECTOR_TEST_CA_BUNDLE"] = server_a.ca_bundle_path
-        os.environ["CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES"] = "127.0.0.1"
+        # Address authorization comes from `_fixture_service`'s own
+        # default `FixtureEndpointSecurityPolicy(allowed_addresses={"127.0.0.1"})`
+        # (I-R1 SS6.2/SS6.4) -- both server_a and server_b bind to
+        # 127.0.0.1 on distinct ports, so one exact-address entry covers
+        # both; no environment variable is involved.
 
         tenant_id = _tenant()
         with factory() as session:
@@ -828,7 +1001,7 @@ def test_multi_source_crown_real_disagreement(factory: sessionmaker[Session]) ->
         os.environ["CTEC_CONNECTOR_TEST_CA_BUNDLE"] = server_a.ca_bundle_path
         os.environ["MULTI_SOURCE_A_TOKEN"] = "canary-source-a"
         with factory() as session:
-            result_a = _service(session).run_connector(
+            result_a = _fixture_service(session).run_connector(
                 tenant_id=tenant_id, connector_id=connector_a_id, triggered_by="steward"
             )
         assert result_a.status == "SUCCEEDED", result_a
@@ -848,7 +1021,7 @@ def test_multi_source_crown_real_disagreement(factory: sessionmaker[Session]) ->
         os.environ["CTEC_CONNECTOR_TEST_CA_BUNDLE"] = server_b.ca_bundle_path
         os.environ["MULTI_SOURCE_B_TOKEN"] = "canary-source-b"
         with factory() as session:
-            result_b = _service(session).run_connector(
+            result_b = _fixture_service(session).run_connector(
                 tenant_id=tenant_id, connector_id=connector_b_id, triggered_by="steward"
             )
         assert result_b.status == "SUCCEEDED", result_b
@@ -871,7 +1044,6 @@ def test_multi_source_crown_real_disagreement(factory: sessionmaker[Session]) ->
         server_b.stop()
         for key in (
             "CTEC_CONNECTOR_TEST_CA_BUNDLE",
-            "CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES",
             "MULTI_SOURCE_A_TOKEN",
             "MULTI_SOURCE_B_TOKEN",
         ):
@@ -905,7 +1077,7 @@ def test_update_crown_real_second_pull_changes_current_evidence(
     os.environ["UPDATE_CROWN_TOKEN"] = "canary-update-crown"
     fixture_server.set_records([{"id": "REC-1", "value": "21"}])
     with factory() as session:
-        first = ConnectorIngestionService(session, clock=lambda: NOW).run_connector(
+        first = _fixture_service(session, clock=lambda: NOW).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     assert first.evidence_written == 1
@@ -917,9 +1089,9 @@ def test_update_crown_real_second_pull_changes_current_evidence(
         # real observed_at difference between the two pulls to prove
         # which one is current; a shared fixed clock would make the two
         # rows genuinely tied and the "current" pick nondeterministic.
-        second = ConnectorIngestionService(
-            session, clock=lambda: NOW + timedelta(hours=1)
-        ).run_connector(tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward")
+        second = _fixture_service(session, clock=lambda: NOW + timedelta(hours=1)).run_connector(
+            tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
+        )
     assert second.evidence_written == 1  # genuinely new observation, distinct observed_at
 
     with factory() as session:
@@ -931,9 +1103,17 @@ def test_update_crown_real_second_pull_changes_current_evidence(
         assert latest.observed_representation == "10"  # the later pull is current
 
 
-def test_replay_crown_identical_response_twice_converges(
+def test_replay_crown_scenario_a_genuine_source_timestamp_converges(
     factory: sessionmaker[Session], fixture_server: DeterministicHttpFixtureServer
 ) -> None:
+    """I-R1 R1-D Scenario 1 (amendment SS10): genuine cross-run replay
+    idempotence. The external record carries a real, source-supplied
+    `__observed_at__` -- CDD-059 SS9's identity 4-tuple therefore
+    reproduces byte-identically across two genuinely separate connector
+    runs, each with its own genuinely distinct clock value (never a
+    shared fixed constant), and converges to exactly one evidence row.
+    This is the actual replay-safety proof CDD-059 SS9 requires -- distinct
+    from Scenario B below, which is NOT a replay defect."""
     tenant_id = _tenant()
     with factory() as session:
         from app.tests.test_oqi_quality_postgres import _seed_field as _seed_oqi1_field
@@ -949,41 +1129,100 @@ def test_replay_crown_identical_response_twice_converges(
             tenant_id=tenant_id,
             source_system_id=source_system_id,
             endpoint_url=fixture_server.base_url + "/",
-            credential_env_var_name="REPLAY_CROWN_TOKEN",
+            credential_env_var_name="REPLAY_CROWN_A_TOKEN",
             id_field_id=source_field_id,
             field_mappings={"value": source_field_id},
         )
         session.commit()
 
-    os.environ["REPLAY_CROWN_TOKEN"] = "canary-replay-crown"
-    fixture_server.set_records([{"id": "REC-1", "value": "same-value"}])
+    os.environ["REPLAY_CROWN_A_TOKEN"] = "canary-replay-crown-a"
+    fixture_server.set_records(
+        [{"id": "REC-1", "value": "same-value", "__observed_at__": "2020-06-01T00:00:00+00:00"}]
+    )
 
-    # Both runs use the SAME frozen fallback observed_at semantics -- but
-    # since neither record supplies its own timestamp, each run's own
-    # distinct run_started_at makes them genuinely distinct observations
-    # UNLESS we freeze the clock so both runs share an identical
-    # fallback -- proving the true "identical response, truly identical
-    # observed_at" replay case requires a fixed clock.
+    # Two genuinely distinct run clocks -- the source's own timestamp is
+    # what makes replay converge here, never test-clock artifice.
     with factory() as session:
-        first = _service(session).run_connector(
+        first = _fixture_service(session, clock=lambda: NOW).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     with factory() as session:
-        second = _service(session).run_connector(
+        second = _fixture_service(session, clock=lambda: NOW + timedelta(hours=1)).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     assert first.status == second.status == "SUCCEEDED"
     assert first.evidence_written == 1
+    assert first.duplicate_records == 0
+    assert second.evidence_written == 0
     assert (
         second.duplicate_records == 1
-    )  # identical (source_field_id, ref, value, observed_at) -> no-op
-    assert second.evidence_written == 0
+    )  # identical (source_field_id, ref, value, SOURCE observed_at) -> no-op
 
     with factory() as session:
         evidence = FieldValueEvidenceRepositoryImpl(session).get_by_source_field(
             tenant_id=tenant_id, source_field_id=source_field_id
         )
-        assert len(evidence) == 1  # no duplicate logical evidence
+        assert len(evidence) == 1  # genuine cross-run idempotence
+
+
+def test_replay_crown_scenario_b_no_source_timestamp_is_not_a_replay_defect(
+    factory: sessionmaker[Session], fixture_server: DeterministicHttpFixtureServer
+) -> None:
+    """I-R1 R1-D Scenario 2 (amendment SS10): CDD-059 SS10's own disclosed,
+    accepted consequence of a source with no real event-time concept --
+    NEVER framed as, or confused with, a replay-safety failure. The
+    external record supplies no `__observed_at__`, so each of two
+    genuinely separate connector runs (each with its own genuinely
+    distinct clock value) falls back to that run's own `run_started_at`;
+    two genuinely different observed_at values necessarily produce two
+    genuinely distinct, immutable evidence rows -- this is correct,
+    governed behavior, not a defect in either the production code or this
+    test."""
+    tenant_id = _tenant()
+    with factory() as session:
+        from app.tests.test_oqi_quality_postgres import _seed_field as _seed_oqi1_field
+
+        source_object_id, source_field_id = _seed_oqi1_field(session, tenant_id=tenant_id)
+        source_system_id = session.execute(
+            select(SourceObjectORM.source_system_id).where(
+                SourceObjectORM.source_object_id == source_object_id
+            )
+        ).scalar_one()
+        connector_id = _configure_and_map(
+            session,
+            tenant_id=tenant_id,
+            source_system_id=source_system_id,
+            endpoint_url=fixture_server.base_url + "/",
+            credential_env_var_name="REPLAY_CROWN_B_TOKEN",
+            id_field_id=source_field_id,
+            field_mappings={"value": source_field_id},
+        )
+        session.commit()
+
+    os.environ["REPLAY_CROWN_B_TOKEN"] = "canary-replay-crown-b"
+    fixture_server.set_records([{"id": "REC-1", "value": "same-value"}])  # no __observed_at__
+
+    with factory() as session:
+        first = _fixture_service(session, clock=lambda: NOW).run_connector(
+            tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
+        )
+    with factory() as session:
+        second = _fixture_service(session, clock=lambda: NOW + timedelta(hours=1)).run_connector(
+            tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
+        )
+    assert first.status == second.status == "SUCCEEDED"
+    assert first.evidence_written == 1
+    # NOT a duplicate -- run_started_at genuinely differs between the two
+    # runs, so this is a genuinely new observation, exactly as CDD-059
+    # SS10 discloses.
+    assert second.evidence_written == 1
+    assert second.duplicate_records == 0
+
+    with factory() as session:
+        evidence = FieldValueEvidenceRepositoryImpl(session).get_by_source_field(
+            tenant_id=tenant_id, source_field_id=source_field_id
+        )
+        assert len(evidence) == 2  # two genuinely distinct, immutable observations
 
 
 def test_malformed_record_crown_partial_page_acceptance(
@@ -1023,7 +1262,7 @@ def test_malformed_record_crown_partial_page_acceptance(
     fixture_server.queue_failure("malformed_record")
 
     with factory() as session:
-        result = _service(session).run_connector(
+        result = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     assert result.status == "SUCCEEDED"
@@ -1062,7 +1301,7 @@ def test_network_failure_crown_honest_partial_and_retry_convergence(
     fixture_server.set_records([{"id": "REC-1", "value": "a"}, {"id": "REC-2", "value": "b"}])
 
     with factory() as session:
-        result = _service(session).run_connector(
+        result = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     # No scripted failure queued yet -- both pages succeed; this proves the
@@ -1092,7 +1331,7 @@ def test_network_failure_crown_honest_partial_and_retry_convergence(
     fixture_server.set_records([{"id": "REC-3", "value": "c"}])
     fixture_server.queue_failure("malformed_json")
     with factory() as session:
-        failed = _service(session).run_connector(
+        failed = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id2, triggered_by="steward"
         )
     assert failed.status == "FAILED", failed
@@ -1101,7 +1340,7 @@ def test_network_failure_crown_honest_partial_and_retry_convergence(
 
     # Retry (a fresh run) after removing the scripted failure converges.
     with factory() as session:
-        retried = _service(session).run_connector(
+        retried = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id2, triggered_by="steward"
         )
     assert retried.status == "SUCCEEDED"
@@ -1111,6 +1350,10 @@ def test_network_failure_crown_honest_partial_and_retry_convergence(
 def test_redirect_is_never_followed(
     factory: sessionmaker[Session], fixture_server: DeterministicHttpFixtureServer
 ) -> None:
+    """Satisfies I-R1 Crown F (amendment SS7): an active
+    `FixtureEndpointSecurityPolicy` (via `_fixture_service`) does not
+    weaken redirect-following, which remains unconditionally disabled
+    regardless of any active policy."""
     tenant_id = _tenant()
     with factory() as session:
         from app.tests.test_oqi_quality_postgres import _seed_field as _seed_oqi1_field
@@ -1137,12 +1380,50 @@ def test_redirect_is_never_followed(
     fixture_server.queue_failure("redirect")
 
     with factory() as session:
-        result = _service(session).run_connector(
+        result = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     assert result.status == "FAILED"
     assert result.failure_kind == "CONNECTOR_RESPONSE_INVALID"
     assert result.evidence_written == 0
+
+
+def test_crown_g_next_link_pivot_fails_closed(
+    fixture_server: DeterministicHttpFixtureServer,
+) -> None:
+    """Crown G (amendment SS7): the exact same `EndpointSecurityPolicy`
+    instance validates every next-link, not merely the initial endpoint.
+    Builds the real production `RestConnector` directly, with an active
+    `FixtureEndpointSecurityPolicy` authorizing only the real fixture's
+    own address; a genuine first-page fetch against that fixture
+    succeeds, but a `page_token` naming a DIFFERENT, unauthorized private
+    address (exactly the shape a malicious or compromised source's own
+    `next` field could supply) fails closed -- proving an authorized
+    fixture is never a pivot to any other destination."""
+    fixture_server.set_records([{"id": "REC-1", "value": "a"}])
+    os.environ["CRT_TOKEN"] = "canary-crown-g"
+    connector = RestConnector(
+        endpoint_url=fixture_server.base_url + "/",
+        extraction_plan=FieldExtractionPlan(external_record_id_path="id", field_paths={}),
+        auth_mechanism="BEARER_TOKEN",
+        auth_header_name=None,
+        credential_env_var_name="CRT_TOKEN",
+        endpoint_security_policy=FixtureEndpointSecurityPolicy(
+            allowed_addresses=frozenset({"127.0.0.1"})
+        ),
+    )
+    first_page = connector.fetch_page(page_token=None, fallback_observed_at=NOW)
+    assert not isinstance(first_page, ConnectorFetchFailure), first_page
+
+    pivot = connector.fetch_page(page_token="https://10.0.0.5/", fallback_observed_at=NOW)
+    assert isinstance(pivot, ConnectorFetchFailure)
+    assert pivot.kind == "CONNECTOR_UNAVAILABLE"
+    assert not pivot.retryable
+
+    metadata_pivot = connector.fetch_page(
+        page_token="https://169.254.169.254/", fallback_observed_at=NOW
+    )
+    assert isinstance(metadata_pivot, ConnectorFetchFailure)
 
 
 def test_scale_crown_multi_page_bounded(
@@ -1174,7 +1455,7 @@ def test_scale_crown_multi_page_bounded(
     fixture_server.set_records([{"id": f"REC-{i}", "value": str(i)} for i in range(600)])
 
     with factory() as session:
-        result = _service(session).run_connector(
+        result = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
         )
     assert result.status == "SUCCEEDED"
@@ -1218,7 +1499,7 @@ def test_credential_leak_crown(
     os.environ["CREDENTIAL_LEAK_CROWN_TOKEN"] = canary
     fixture_server.set_records([{"id": "REC-1", "value": "a"}])
     with factory() as session:
-        result = _service(session).run_connector(
+        result = _fixture_service(session).run_connector(
             tenant_id=tenant_id, connector_id=configuration_id, triggered_by="steward"
         )
     assert result.status == "SUCCEEDED"
@@ -1277,7 +1558,7 @@ def test_concurrent_runs_same_connector_converge(
         try:
             with factory() as session:
                 results.append(
-                    _service(session).run_connector(
+                    _fixture_service(session).run_connector(
                         tenant_id=tenant_id, connector_id=connector_id, triggered_by="steward"
                     )
                 )

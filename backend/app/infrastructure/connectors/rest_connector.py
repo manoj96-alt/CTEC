@@ -30,6 +30,7 @@ import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 from app.domain.integration.enterprise_connector import (
     ConnectorFailureKind,
@@ -89,47 +90,65 @@ def _is_prohibited_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) ->
     )
 
 
-_TEST_ALLOWED_ADDRESSES_ENV_VAR = "CTEC_CONNECTOR_TEST_ALLOWED_ADDRESSES"
+_ABSOLUTE_DENY_NETWORKS = (
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("fe80::/10"),
+)
+
+_EXEMPTIBLE_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+)
 
 
-def _test_allowed_addresses() -> frozenset[str]:
-    """DISCLOSED GAP (found during I, not anticipated by CDD-059 SS32 as
-    frozen): the Docker-Compose fixture service CDD-059 SS45/AA row 14
-    mandates is, by construction, only ever reachable at a loopback or
-    Docker-bridge (RFC1918) address -- every Docker bridge network uses
-    private-range addresses, and the host-side deterministic fixture
-    (Artifact Authorization row 12) binds to loopback. The frozen SS32
-    policy therefore rejects the one destination CDD-059 itself requires
-    the connector to genuinely reach in every mandated crown. This is an
-    internal inconsistency in the frozen governance, not something this
-    implementation may silently paper over.
-
-    Resolved the narrowest possible way, directly mirroring the ALREADY-
-    authorized `CTEC_CONNECTOR_TEST_CA_BUNDLE` escape hatch (Artifact
-    Authorization SS8): an exact-IP-string allowlist, settable only via
-    this environment variable, read fresh on every call (never cached,
-    never a database/configuration field, never settable by a tenant or
-    through any API). Every other element of SS32 -- scheme, TLS
-    verification, redirect-following, response bounds -- remains fully
-    enforced even for an allowlisted address. This exists purely so the
-    mandated real-network crowns can run against the mandated deterministic
-    fixture; it changes nothing about the policy actually enforced against
-    a tenant-configured production endpoint, which never has this
-    environment variable set. Flagged prominently for VM's own independent
-    re-verification and for a future narrow CDD-059 amendment to formally
-    ratify this test-only exception."""
-    raw = os.environ.get(_TEST_ALLOWED_ADDRESSES_ENV_VAR, "")
-    return frozenset(item.strip() for item in raw.split(",") if item.strip())
+def _is_absolute_deny(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """I-R1 SSRF Test-Boundary Correction Amendment SS6.5: link-local
+    (169.254.0.0/16 / fe80::/10 -- subsumes every cloud metadata address
+    of every vendor), multicast, reserved, and unspecified remain
+    unconditionally prohibited. No exception mechanism of any kind --
+    including an active `FixtureEndpointSecurityPolicy` -- may ever
+    override this, regardless of any allowlisted-address content."""
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (
+        any(ip in net for net in _ABSOLUTE_DENY_NETWORKS)
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
 
 
-def validate_endpoint_url(url: str) -> None:
-    """CDD-059 SS32: scheme + fresh-DNS-resolution + full-resolved-address-
-    set range check, evaluated fresh for THIS call -- never cached from a
-    prior check, so DNS rebinding between two calls can never bypass this
-    policy. Applied identically to the initial endpoint and to every
-    subsequent next-link (CDD-059 SS29/SS35) -- callers must never skip
-    this for a next-link merely because the initial endpoint already
-    passed."""
+def _is_exemptible_range(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """I-R1 amendment SS6.5: only loopback and RFC1918-private(IPv4)/
+    IPv6-unique-local may ever be exempted by an active
+    `FixtureEndpointSecurityPolicy` -- these are the only ranges the
+    mandated Docker-bridge and host-loopback fixture topologies actually
+    use (Artifact Authorization SS8). Never link-local, multicast,
+    reserved, or unspecified (`_is_absolute_deny` above)."""
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback or any(ip in net for net in _EXEMPTIBLE_NETWORKS)
+
+
+def _resolve_and_validate(url: str, *, allowed_addresses: frozenset[str]) -> None:
+    """CDD-059 SS32: scheme + fresh-DNS-resolution + full-resolved-
+    address-set range check, evaluated fresh for THIS call -- never
+    cached from a prior check, so DNS rebinding between two calls can
+    never bypass this policy. Applied identically to the initial endpoint
+    and to every subsequent next-link (CDD-059 SS29/SS35).
+
+    `allowed_addresses` is empty for `ProductionEndpointSecurityPolicy`
+    (zero exceptions, ever -- production code never supplies a non-empty
+    set here; see that class below). A non-empty set, constructible only
+    by `FixtureEndpointSecurityPolicy` (test-only), exempts an exact
+    resolved-address match ONLY when that same address is also within
+    `_is_exemptible_range` -- never for an address `_is_absolute_deny`
+    names, regardless of `allowed_addresses` content (I-R1 amendment
+    SS6.5). Matching is exact resolved-IP-string equality only: no CIDR,
+    no hostname, no wildcard; a malformed entry in `allowed_addresses`
+    simply never matches anything (fails closed)."""
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https":
         raise SSRFRejected(f"scheme {parsed.scheme!r} is not https")
@@ -144,14 +163,46 @@ def validate_endpoint_url(url: str) -> None:
     resolved = {str(info[4][0]) for info in addrinfo}
     if not resolved:
         raise SSRFRejected(f"DNS resolution for {host!r} returned no addresses")
-    allowed = _test_allowed_addresses()
     for ip_str in resolved:
         ip_str_clean = ip_str.split("%", 1)[0]  # strip IPv6 zone id before parsing
-        if ip_str_clean in allowed:
-            continue
         ip = ipaddress.ip_address(ip_str_clean)
+        if (
+            ip_str_clean in allowed_addresses
+            and _is_exemptible_range(ip)
+            and not _is_absolute_deny(ip)
+        ):
+            continue
         if _is_prohibited_address(ip):
             raise SSRFRejected(f"resolved address {ip_str_clean} for host {host!r} is prohibited")
+
+
+class EndpointSecurityPolicy(Protocol):
+    """CDD-059 SS32 boundary, structurally separated from any single
+    implementation (I-R1 SSRF Test-Boundary Correction Amendment SS6.2).
+    Production code may only ever default-construct
+    `ProductionEndpointSecurityPolicy`. `FixtureEndpointSecurityPolicy` is
+    test-only and is defined in
+    `app/tests/test_oqi_connector_ingestion_postgres.py`, never in this
+    module -- no production file may import or construct it."""
+
+    def validate(self, url: str) -> None:
+        """Raises `SSRFRejected` if `url` fails policy. Evaluated fresh
+        for every call -- initial endpoint and every next-link alike."""
+        ...
+
+
+class ProductionEndpointSecurityPolicy:
+    """The ONLY policy any production code path may construct. Reads no
+    environment variable, accepts no allowlist of any kind, from any
+    source (request body, query, header, connector configuration row, or
+    process environment). Behaviorally identical to CDD-059 SS32 as
+    originally frozen: zero exceptions."""
+
+    def validate(self, url: str) -> None:
+        _resolve_and_validate(url, allowed_addresses=frozenset())
+
+
+_DEFAULT_ENDPOINT_SECURITY_POLICY = ProductionEndpointSecurityPolicy()
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -249,6 +300,7 @@ class RestConnector:
         max_records_per_page: int = 500,
         max_fields_per_record: int = 200,
         request_timeout_seconds: int = 30,
+        endpoint_security_policy: EndpointSecurityPolicy = _DEFAULT_ENDPOINT_SECURITY_POLICY,
     ) -> None:
         self._endpoint_url = endpoint_url
         self._extraction_plan = extraction_plan
@@ -259,6 +311,7 @@ class RestConnector:
         self._max_records_per_page = max_records_per_page
         self._max_fields_per_record = max_fields_per_record
         self._request_timeout_seconds = request_timeout_seconds
+        self._endpoint_security_policy = endpoint_security_policy
         self._seen_page_urls: set[str] = set()
         test_ca_bundle = os.environ.get(_TEST_CA_BUNDLE_ENV_VAR)
         self._ssl_context = (
@@ -302,7 +355,7 @@ class RestConnector:
         self._seen_page_urls.add(url)
 
         try:
-            validate_endpoint_url(url)
+            self._endpoint_security_policy.validate(url)
         except SSRFRejected as exc:
             return ConnectorFetchFailure(
                 kind=ConnectorFailureKind.CONNECTOR_UNAVAILABLE,
