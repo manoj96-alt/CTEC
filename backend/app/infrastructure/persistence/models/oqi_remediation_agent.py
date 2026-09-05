@@ -7,7 +7,17 @@ No existing OQI1/2/3/4, OQI5-I1, Gate S, or Gate V table is altered."""
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.persistence.base import BaseEntity
@@ -39,15 +49,16 @@ class AgentRunORM(BaseEntity):
     __table_args__ = (
         Index("idx_oqi_remediation_agent_runs_tenant_id", "tenant_id"),
         Index("idx_oqi_remediation_agent_runs_case_id", "case_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "case_id"],
+            ["oqi_remediation_cases.tenant_id", "oqi_remediation_cases.case_id"],
+            name="fk_oqi_remediation_agent_runs_tenant_case",
+        ),
     )
 
     run_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False, primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    case_id: Mapped[UUID] = mapped_column(
-        Uuid(),
-        ForeignKey("oqi_remediation_cases.case_id", name="fk_oqi_remediation_agent_runs_case_id"),
-        nullable=False,
-    )
+    case_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     role_id: Mapped[str] = mapped_column(String(64), nullable=False)
     role_version: Mapped[int] = mapped_column(Integer(), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
