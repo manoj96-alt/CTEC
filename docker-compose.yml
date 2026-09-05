@@ -99,6 +99,22 @@ services:
       retries: 5
       start_period: 20s
 
+  # CDD-059 Artifact Authorization §8 -- deterministic HTTPS enterprise-source
+  # fixture for the REAL-ENTERPRISE-INGESTION-VM in-Docker crown only. Reuses
+  # the existing backend image (no new base image, no new Dockerfile),
+  # overriding its entrypoint to run the fixture server's own `__main__`
+  # guard instead of the production `docker-entrypoint.sh`. Reachable only
+  # by its own Compose service name on the internal network (no published
+  # host port); never depended upon by `backend`/`frontend`; started only
+  # under the `ingestion-test` profile (`docker compose --profile
+  # ingestion-test up`), never by a bare `docker compose up`.
+  connector-fixture:
+    build: ./backend
+    profiles: ["ingestion-test"]
+    entrypoint: ["python", "-m", "app.tests.fixtures.deterministic_http_fixture_server"]
+    environment:
+      CTEC_FIXTURE_PORT: "8443"
+
   frontend:
     build:
       context: ./frontend

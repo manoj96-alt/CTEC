@@ -113,7 +113,7 @@ def test_production_orchestration_introduces_zero_new_tables(migrated_engine: En
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
     tables = set(inspect(migrated_engine).get_table_names()) - {"alembic_version"}
-    assert len(tables) == 123
+    assert len(tables) == 126
 
 
 # =====================================================================

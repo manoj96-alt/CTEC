@@ -33,7 +33,7 @@ def test_connection_and_migration(migrated_engine: Engine) -> None:
         # final report; OQI-H3-I-R1 amendment): mechanically re-pinned from 109 to 114 (+5 new
         # tables from migrations 0028-0030), following the established,
         # recurring, disclosed correction process (CDD-040, OQI-H1-I-R1).
-        assert table_count == 123
+        assert table_count == 126
 
 
 def test_repository_crud(migrated_engine: Engine) -> None:

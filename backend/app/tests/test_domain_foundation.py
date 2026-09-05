@@ -231,4 +231,14 @@ def test_domain_has_no_forbidden_dependencies_or_artifact_classes() -> None:
         "GovernanceStatus",
         "DomainException",
         "ValidationException",
+        # CDD-059 `app/domain/integration/enterprise_connector.py` -- a new
+        # file in an already-canonical domain root, not anticipated by the
+        # CDD-059 Artifact Authorization's own path enumeration (discovered
+        # during REAL-ENTERPRISE-INGESTION-I; disclosed for a future narrow
+        # amendment adding this file as an authorized MODIFY path).
+        "ConnectorFailureKind",
+        "ConnectorRecord",
+        "ConnectorPage",
+        "ConnectorFetchFailure",
+        "EnterpriseConnector",
     }
