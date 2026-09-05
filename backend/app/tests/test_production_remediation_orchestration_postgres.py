@@ -29,7 +29,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import Engine, inspect, select
+from sqlalchemy import Engine, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.oqi_business_impact_service import OqiBusinessImpactService
@@ -913,3 +914,335 @@ def test_reevaluate_genuine_connection_failure_never_falsely_resolves(
             select(OqiRemediationCaseORM).where(OqiRemediationCaseORM.finding_id == finding_id)
         ).scalar_one()
         assert case.status != RemediationCaseStatus.RESOLVED.value
+
+
+# =====================================================================
+# POSTGRES-DATA-MODEL-CLOSURE-I -- CDD-061 SS9.1/SS38: one real-PostgreSQL
+# adversarial test proving the remediation authority chain (Case ->
+# Instruction -> Authorization, and Case -> Agent Run) is now structurally
+# tenant-consistent. Before migration 0046, a single logical chain could
+# carry three mutually inconsistent tenant labels with zero PostgreSQL
+# rejection (adversarially proven, POSTGRES-DATA-MODEL-CLOSURE-DG SS9.1).
+# This is a real, unmocked PostgreSQL constraint proof throughout -- no
+# service-layer validation, no Python assertion standing in for a
+# database check, no HTTP layer, no mock; every rejection below is a
+# genuine `IntegrityError` raised by PostgreSQL's own composite
+# foreign-key constraints (`fk_oqi_remediation_instructions_tenant_case`,
+# `fk_oqi_remediation_authorizations_tenant_instruction`,
+# `fk_oqi_remediation_agent_runs_tenant_case`).
+# =====================================================================
+
+
+def test_remediation_chain_tenant_integrity_enforced_by_real_postgresql(
+    factory: sessionmaker[Session],
+) -> None:
+    # --- Part 1: a genuine, unmocked same-tenant chain persists cleanly. ---
+    tenant_id = f"tenant-legit-{uuid4()}"
+    legit_case_id = uuid4()
+    legit_candidate_id = uuid4()
+    legit_instruction_id = uuid4()
+    legit_authorization_id = uuid4()
+    legit_run_id = uuid4()
+
+    with factory() as session:
+        session.add(
+            OqiRemediationCaseORM(
+                case_id=legit_case_id,
+                tenant_id=tenant_id,
+                finding_family="BUSINESS_RULE",
+                finding_id=uuid4(),
+                status=RemediationCaseStatus.CANDIDATE_READY.value,
+                created_on=NOW,
+                updated_on=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            OqiRemediationCandidateORM(
+                candidate_id=legit_candidate_id,
+                case_id=legit_case_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                proposed_value="X",
+                basis="CROSS_SOURCE_MAJORITY",
+                extracted_at=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            OqiRemediationInstructionORM(
+                instruction_id=legit_instruction_id,
+                tenant_id=tenant_id,
+                finding_id=uuid4(),
+                finding_state_revision=1,
+                case_id=legit_case_id,
+                candidate_id=legit_candidate_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                action_type="FIELD_VALUE_UPDATE",
+                payload_digest="digest-legit",
+                created_by="test",
+                created_on=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            OqiRemediationAuthorizationORM(
+                authorization_id=legit_authorization_id,
+                tenant_id=tenant_id,
+                instruction_id=legit_instruction_id,
+                payload_digest="digest-legit",
+                requested_by="test",
+                requested_on=NOW,
+                status=RemediationAuthorizationStatus.PENDING.value,
+            )
+        )
+        # Raw SQL, not the OqiRemediationAgentRepository -- this proves the
+        # PostgreSQL constraint itself, per CDD-043's single-construction-site
+        # firewall for AgentRunORM (test_runtime_architecture.py).
+        session.execute(
+            text(
+                "INSERT INTO oqi_remediation_agent_runs "
+                "(run_id, tenant_id, case_id, role_id, role_version, provider, model, "
+                "evidence_packet_digest, result_state, created_on) "
+                "VALUES (:run_id, :tenant_id, :case_id, :role_id, :role_version, :provider, "
+                ":model, :digest, :result_state, :created_on)"
+            ),
+            {
+                "run_id": legit_run_id,
+                "tenant_id": tenant_id,
+                "case_id": legit_case_id,
+                "role_id": "role1",
+                "role_version": 1,
+                "provider": "none",
+                "model": "none",
+                "digest": "digest-legit",
+                "result_state": "SUCCEEDED",
+                "created_on": NOW,
+            },
+        )
+        session.commit()
+
+    with factory() as session:
+        assert session.get(OqiRemediationInstructionORM, legit_instruction_id) is not None
+        assert session.get(OqiRemediationAuthorizationORM, legit_authorization_id) is not None
+        assert session.get(AgentRunORM, legit_run_id) is not None
+
+    # --- Part 2: cross-tenant Case -> Instruction is rejected. ---
+    owner_tenant = f"tenant-owner-{uuid4()}"
+    attacker_tenant = f"tenant-attacker-{uuid4()}"
+    case_id = uuid4()
+    candidate_id = uuid4()
+
+    with factory() as session:
+        session.add(
+            OqiRemediationCaseORM(
+                case_id=case_id,
+                tenant_id=owner_tenant,
+                finding_family="BUSINESS_RULE",
+                finding_id=uuid4(),
+                status=RemediationCaseStatus.CANDIDATE_READY.value,
+                created_on=NOW,
+                updated_on=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            OqiRemediationCandidateORM(
+                candidate_id=candidate_id,
+                case_id=case_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                proposed_value="X",
+                basis="CROSS_SOURCE_MAJORITY",
+                extracted_at=NOW,
+            )
+        )
+        session.flush()
+        session.commit()
+
+    with factory() as session:
+        # ADVERSARIAL: this instruction claims attacker_tenant but points its
+        # case_id at owner_tenant's own case -- the exact shape the original
+        # DG adversarial sequence proved PostgreSQL previously accepted.
+        session.add(
+            OqiRemediationInstructionORM(
+                instruction_id=uuid4(),
+                tenant_id=attacker_tenant,
+                finding_id=uuid4(),
+                finding_state_revision=1,
+                case_id=case_id,
+                candidate_id=candidate_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                action_type="FIELD_VALUE_UPDATE",
+                payload_digest="digest-attack",
+                created_by="adversary",
+                created_on=NOW,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+    with factory() as session:
+        remaining_instructions = (
+            session.execute(
+                select(OqiRemediationInstructionORM).where(
+                    OqiRemediationInstructionORM.case_id == case_id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert remaining_instructions == []
+
+    # --- Part 3: cross-tenant Instruction -> Authorization is rejected. ---
+    owner_instruction_id = uuid4()
+    with factory() as session:
+        session.add(
+            OqiRemediationInstructionORM(
+                instruction_id=owner_instruction_id,
+                tenant_id=owner_tenant,
+                finding_id=uuid4(),
+                finding_state_revision=1,
+                case_id=case_id,
+                candidate_id=candidate_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                action_type="FIELD_VALUE_UPDATE",
+                payload_digest="digest-owner",
+                created_by="test",
+                created_on=NOW,
+            )
+        )
+        session.flush()
+        session.commit()
+
+    with factory() as session:
+        # ADVERSARIAL: this authorization claims attacker_tenant but points
+        # its instruction_id at owner_tenant's own instruction.
+        session.add(
+            OqiRemediationAuthorizationORM(
+                authorization_id=uuid4(),
+                tenant_id=attacker_tenant,
+                instruction_id=owner_instruction_id,
+                payload_digest="digest-attack",
+                requested_by="adversary",
+                requested_on=NOW,
+                status=RemediationAuthorizationStatus.PENDING.value,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+    with factory() as session:
+        remaining_authorizations = (
+            session.execute(
+                select(OqiRemediationAuthorizationORM).where(
+                    OqiRemediationAuthorizationORM.instruction_id == owner_instruction_id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert remaining_authorizations == []
+
+    # --- Part 4: cross-tenant Case -> Agent Run is rejected. ---
+    with factory() as session:
+        # ADVERSARIAL: this agent run claims attacker_tenant but points its
+        # case_id at owner_tenant's own case. Raw SQL, not the
+        # OqiRemediationAgentRepository or AgentRunORM's constructor -- this
+        # proves the PostgreSQL constraint itself, per CDD-043's
+        # single-construction-site firewall for AgentRunORM
+        # (test_runtime_architecture.py).
+        with pytest.raises(IntegrityError):
+            session.execute(
+                text(
+                    "INSERT INTO oqi_remediation_agent_runs "
+                    "(run_id, tenant_id, case_id, role_id, role_version, provider, model, "
+                    "evidence_packet_digest, result_state, created_on) "
+                    "VALUES (:run_id, :tenant_id, :case_id, :role_id, :role_version, :provider, "
+                    ":model, :digest, :result_state, :created_on)"
+                ),
+                {
+                    "run_id": uuid4(),
+                    "tenant_id": attacker_tenant,
+                    "case_id": case_id,
+                    "role_id": "role1",
+                    "role_version": 1,
+                    "provider": "none",
+                    "model": "none",
+                    "digest": "digest-attack",
+                    "result_state": "SUCCEEDED",
+                    "created_on": NOW,
+                },
+            )
+        session.rollback()
+
+    with factory() as session:
+        remaining = (
+            session.execute(select(AgentRunORM).where(AgentRunORM.case_id == case_id))
+            .scalars()
+            .all()
+        )
+        assert remaining == []
+
+    # --- Part 5: the original three-tenant attack chain (Case=tenant-A,
+    # Instruction claims tenant-B, Authorization would have claimed
+    # tenant-C) can no longer be persisted -- it is rejected at the very
+    # first cross-tenant hop, exactly reproducing
+    # POSTGRES-DATA-MODEL-CLOSURE-DG's own live adversarial sequence. ---
+    tenant_a = f"tenant-a-{uuid4()}"
+    tenant_b = f"tenant-b-{uuid4()}"
+    three_tenant_case_id = uuid4()
+    three_tenant_candidate_id = uuid4()
+
+    with factory() as session:
+        session.add(
+            OqiRemediationCaseORM(
+                case_id=three_tenant_case_id,
+                tenant_id=tenant_a,
+                finding_family="BUSINESS_RULE",
+                finding_id=uuid4(),
+                status=RemediationCaseStatus.CANDIDATE_READY.value,
+                created_on=NOW,
+                updated_on=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            OqiRemediationCandidateORM(
+                candidate_id=three_tenant_candidate_id,
+                case_id=three_tenant_case_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                proposed_value="X",
+                basis="CROSS_SOURCE_MAJORITY",
+                extracted_at=NOW,
+            )
+        )
+        session.flush()
+        session.commit()
+
+    with factory() as session:
+        session.add(
+            OqiRemediationInstructionORM(
+                instruction_id=uuid4(),
+                tenant_id=tenant_b,
+                finding_id=uuid4(),
+                finding_state_revision=1,
+                case_id=three_tenant_case_id,
+                candidate_id=three_tenant_candidate_id,
+                target_source_object_id=uuid4(),
+                target_source_field_id=uuid4(),
+                action_type="FIELD_VALUE_UPDATE",
+                payload_digest="digest-attack-3tenant",
+                created_by="adversary",
+                created_on=NOW,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
