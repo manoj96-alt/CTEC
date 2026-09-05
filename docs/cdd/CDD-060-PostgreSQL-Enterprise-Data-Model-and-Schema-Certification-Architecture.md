@@ -129,14 +129,12 @@ simple, non-tenant-qualified FKs despite every table in the chain independently 
 `tenant_id` column. This is a "persisted authorization/execution boundary violation" and a "real
 cross-tenant FK integrity hole in crown data" — the two named P1 examples in this phase's own charter.
 
-### 9.2 CONFIRMED P1 — FieldValueEvidence has no database-level uniqueness on its governed identity
+### 9.2 RECLASSIFIED — FieldValueEvidence's governed identity IS database-enforced, via a documented
+    domain-layer invariant, not a literal multi-column UNIQUE constraint
 
-CDD-022/CDD-059 govern a 4-tuple identity for `FieldValueEvidence`: `(source_field_id,
-source_record_reference, observed_representation, observed_at)`. The table's only unique constraint is
-`uq_field_value_evidence_id_source_field UNIQUE (field_value_evidence_id, source_field_id)` — trivially
-satisfied by every row since `field_value_evidence_id` is already the PK; it exists only to let other
-tables' composite FKs reference `(field_value_evidence_id, source_field_id)` together, not to protect
-business identity. Real PostgreSQL, adversarially:
+An earlier draft of this document (produced within this same DG phase, corrected before final publication
+per this phase's own "trust but verify subagent work" discipline) classified this as a CONFIRMED P1 using
+exactly the adversarial sequence below:
 
 ```sql
 INSERT INTO field_value_evidence (field_value_evidence_id, source_field_id, source_record_reference,
@@ -148,10 +146,38 @@ INSERT INTO field_value_evidence (field_value_evidence_id, source_field_id, sour
 -- SELECT count(*) WHERE the exact 4-tuple matches: 2
 ```
 
-Both inserts succeeded. Two rows now exist for the identical governed identity. This is "core
-evidence... structurally unsafe" per this phase's own P1 example — foundational, since every OQI dimension
-evaluates against this table, and concurrent duplicate-4-tuple inserts (e.g., two overlapping connector
-runs observing the same source value at the same instant) can silently double-count evidence.
+Both raw-SQL inserts do succeed. But independently reading
+`backend/app/domain/integration/field_value_evidence.py` in full shows this test does not reach the real
+enforcement mechanism: `derive_field_value_evidence_id()` deterministically derives
+`field_value_evidence_id` as a `uuid5` hash over exactly the four governed identity inputs
+(`source_field_id`, `source_record_reference`, `observed_representation`, `observed_at`, each
+length-prefix-canonicalized), and `FieldValueEvidence.__post_init__` — invoked on **every** construction
+path, both `.new()` and direct rehydration — raises `ValidationException` if the supplied ID does not match
+that derivation. `FieldValueEvidenceRepositoryImpl.create_or_get_existing` (the sole write path) never
+persists a caller-supplied ID; it only ever persists `evidence.field_value_evidence_id.value` taken from an
+already-validated domain object. **No real application code path can ever produce two `FieldValueEvidence`
+facts sharing the identical governed 4-tuple with two different `field_value_evidence_id` values** — the
+adversarial test above only "succeeded" by inserting via raw SQL with independently-chosen
+`gen_random_uuid()` values, bypassing the exact mechanism (`__post_init__`'s validation) that is the real
+enforcement point. Two facts sharing the true governed identity, constructed through any real code path,
+necessarily collide on the **PK itself** (`field_value_evidence_pkey`, which PostgreSQL absolutely does
+enforce) — this is precisely the mechanism `create_or_get_existing`'s own docstring describes ("an identity
+collision under normal operation can only mean identical replay") and exactly what CDD-059's own
+same-connector concurrency crown already exercised and passed during REAL-ENTERPRISE-INGESTION's own
+closure.
+
+This is the "explicitly documented as an intentional higher-layer invariant with sufficient justification
+and adversarial verification" case this phase's own §4 anticipates, not a gap: the invariant is documented
+in exhaustive detail in the module's own docstring, and is adversarially sound against every reachable
+application code path. **Reclassified from P1 to a certified-clean finding**, with one disclosed, optional,
+non-blocking hardening opportunity carried to §32 as P3-4: a literal
+`UNIQUE (source_field_id, source_record_reference, observed_representation, observed_at)` constraint would
+be strictly redundant under every conforming row today (it could never reject a row the domain layer would
+have accepted) but would add a second, independent line of defense against any *future* code path that
+constructed a `FieldValueEvidenceORM` row directly, bypassing the domain object entirely. Not authorized for
+`POSTGRES-DATA-MODEL-CLOSURE-I` — it maps to no discovered defect, only to a defense-in-depth opportunity,
+and this phase's own instruction is to map every authorized change to a discovered defect, not to add
+speculative hardening.
 
 ### 9.3 P2 — the exact same "current pointer" gap already fixed four times elsewhere was missed twice
 
@@ -175,8 +201,8 @@ pattern, not a gap. Negative finding: `field_value_evidence`'s own governed iden
 ## 11. Cardinality audit — summary
 
 271 FKs: 265 classified `1:N`, 6 classified `1:0..1`/`1:1` (child FK columns themselves unique/PK). No
-material cardinality mismatch found beyond the two P1s already covered (which are tenant-consistency
-defects, not cardinality defects per se).
+material cardinality mismatch found beyond the one P1 already covered (a tenant-consistency defect, not a
+cardinality defect per se).
 
 ## 12. Index audit — summary
 
@@ -280,12 +306,15 @@ closure-critical provenance break found beyond the already-listed defects.
 ## 24. ORM ↔ PostgreSQL parity
 
 Spot-checked (not exhaustively re-verified against every one of 126 tables in this pass, given the ER
-document's own catalog is already the authoritative physical-schema source): the two tables central to the
-confirmed P1s (`field_value_evidence`, `oqi_remediation_instructions`/`oqi_remediation_authorizations`) have
-their ORM declarations in `backend/app/infrastructure/persistence/models/field_value_evidence.py` and
-`oqi_remediation.py`/`oqi_remediation_agent.py` respectively — none of these currently declare the missing
-constraints (consistent with the DB catalog; no ORM/DB drift found, the ORM correctly reflects what the DB
-actually enforces today, which is the gap itself, not a parity mismatch).
+document's own catalog is already the authoritative physical-schema source): the tables central to the
+confirmed P1 (`oqi_remediation_instructions`/`oqi_remediation_authorizations`/`oqi_remediation_agent_runs`)
+have their ORM declarations in `oqi_remediation.py`/`oqi_remediation_agent.py` — neither currently declares
+the missing tenant-qualified constraints (consistent with the DB catalog; no ORM/DB drift found, the ORM
+correctly reflects what the DB actually enforces today, which is the gap itself, not a parity mismatch).
+`field_value_evidence.py` was also independently read in full for §9.2's reclassification: its ORM
+declaration correctly reflects the DB's actual constraint set, and (unlike the DB catalog alone) the
+adjacent domain module `app/domain/integration/field_value_evidence.py` is where the real enforcement
+mechanism lives — no ORM/domain drift found there either.
 
 ## 25. Migration integrity
 
@@ -309,11 +338,16 @@ authorized or needed.
 
 ## 27. Concurrency integrity
 
-The two confirmed P1s are both, at root, concurrency-relevant: §9.2 (duplicate evidence) is exactly the
+The confirmed P1 (§9.1) does not depend on concurrency — it is deterministically insertable by a single
+well-formed (but tenant-mismatched) request; no race condition is required to reach it. Separately, the
 "SELECT-then-INSERT without a DB uniqueness constraint" race pattern this phase's own charter names
-explicitly, and is genuinely reachable by two overlapping connector runs or retried ingestion attempts (not
-merely a single-threaded oversight). §9.1 does not depend on concurrency — it is deterministically
-insertable by a single well-formed (but tenant-mismatched) request.
+explicitly was independently checked against `field_value_evidence` (§9.2) and found **not** to apply here:
+the governed 4-tuple's actual identity is the deterministically-derived `field_value_evidence_id` itself,
+so two concurrent writers observing "the same" governed fact necessarily attempt to insert the identical
+PK value, and PostgreSQL's own PK uniqueness constraint — not an application-level check — is the thing that
+resolves the race (raising a real `IntegrityError` the caller must catch, exactly as
+`connector_ingestion_service.py`'s existing `SAVEPOINT` handling already does). No other concurrency-race
+finding was identified in this pass.
 
 ## 28. Data-type / JSON posture
 
@@ -332,16 +366,18 @@ this same role; **no Row-Level Security anywhere** (`pg_tables.rowsecurity`: 0 o
 therefore entirely dependent on the application layer plus whatever FK/constraint layer PostgreSQL itself
 enforces — there is no second line of defense. This is disclosed, not automatically classified a defect (a
 service that mediates 100% of DB access through its own application layer, never exposing arbitrary
-user-supplied SQL, is a legitimate architecture for this product's current maturity) — but it means the two
-confirmed P1 constraint gaps (§9.1/9.2) currently have **no independent backstop**, which raises their
-practical severity above what they would carry in an RLS-protected system.
+user-supplied SQL, is a legitimate architecture for this product's current maturity) — but it means the
+confirmed P1 constraint gap (§9.1) currently has **no independent backstop**, which raises its practical
+severity above what it would carry in an RLS-protected system.
 
 ## 30. Adversarial PostgreSQL results — summary
 
 Two live, transactional (rolled back) adversarial INSERT sequences executed against a real, freshly
-migrated PostgreSQL 17 instance: (1) three-tenant remediation-chain mismatch, accepted in full (§9.1); (2)
-duplicate governed-evidence-identity insert, accepted in full (§9.2). Both are reproducible facts about the
-current schema, not intermittent or environment-dependent.
+migrated PostgreSQL 17 instance: (1) three-tenant remediation-chain mismatch, accepted in full — a real,
+reachable defect (§9.1); (2) duplicate governed-evidence-identity insert via raw SQL bypassing the domain
+layer's own deterministic-ID construction path, also accepted in full, but confirmed **not reachable**
+through any real application code path (§9.2) — both results are reproducible facts about the current
+schema, not intermittent or environment-dependent, but only (1) represents an application-reachable defect.
 
 ## 31. Complete schema certification matrix
 
@@ -355,13 +391,10 @@ Tenant Model table in §7 of that same document. All 126 tables accounted for; 0
 ```
 P0 = 0
 
-P1 = 2 (both adversarially proven against real PostgreSQL, this phase)
+P1 = 1 (adversarially proven against real PostgreSQL through a real, reachable application code path)
   P1-1  Remediation authority chain (oqi_remediation_instructions/authorizations/agent_runs/
         agent_recommendations) uses simple, non-tenant-qualified FKs despite every table independently
         carrying tenant_id -- proven exploitable (three-tenant chain accepted, zero rejection).
-  P1-2  field_value_evidence has no database-level uniqueness on its governed 4-tuple identity
-        (source_field_id, source_record_reference, observed_representation, observed_at) -- proven
-        exploitable (duplicate identical-identity row accepted, zero rejection).
 
 P2 = 4
   P2-1  business_rule_findings.latest_evaluation_id / quality_comparison_findings.latest_evaluation_id
@@ -375,13 +408,17 @@ P2 = 4
         oqi_quality_coverage_policies, oqi_reference_evidence_assertions, impact_propagation_policies)
         are not tenant-qualified.
 
-P3 = 3
+P3 = 4
   P3-1  92 of 271 FK child-columns lack a directly supporting index (mostly low-traffic audit columns;
         5 crown-path-relevant ones flagged for future priority, no query-log evidence of actual slowness).
   P3-2  ~13 created_by/modified_by audit-attribution FKs to enterprise_entities are not tenant-qualified
         (audit attribution only, not core business data -- lower priority than P2-4's lifecycle pointers).
   P3-3  No RLS / single superuser DB role (disclosed architecture choice, not corrected by this phase;
         raises the practical severity of any future constraint gap, noted for future consideration).
+  P3-4  field_value_evidence's governed 4-tuple identity is certified-enforced today via a documented
+        domain-layer deterministic-ID invariant (§9.2) rather than a literal multi-column UNIQUE
+        constraint; adding the literal constraint as redundant defense-in-depth is a disclosed, optional,
+        non-blocking hardening opportunity -- not a defect, not authorized for this phase's own I.
 ```
 
 ## 33. Performance/Operability register
@@ -431,7 +468,7 @@ BOUNDED CORRECTION REQUIRED
 The tenant model, evidence model, and migration architecture are **not** materially defective — the
 established pattern (composite `(tenant_id, id)` FKs backed by a `UNIQUE(tenant_id, id)` on the parent) is
 already used correctly in 24 places, including the entire REAL-ENTERPRISE-INGESTION connector chain. The
-two P1s are a narrow, mechanical **absence** of that same, already-proven pattern in specific places, not a
+one P1 is a narrow, mechanical **absence** of that same, already-proven pattern in one specific place, not a
 sign the pattern itself is wrong. No STOP condition is warranted; no redesign is required.
 
 ## 37. Implementation decision
@@ -440,27 +477,26 @@ sign the pattern itself is wrong. No STOP condition is warranted; no redesign is
 IMPLEMENTATION REQUIRED
 ```
 
-Scoped narrowly to the two confirmed P1s only. The four P2s and three P3s are explicitly **deferred** to a
+Scoped narrowly to the one confirmed P1 only. The four P2s and four P3s are explicitly **deferred** to a
 future, separately governed narrow correction phase (mirroring this program's own established R1-style
 pattern) — not silently dropped, not bundled into one large sweep. This keeps the authorized surface
-minimal and precisely mapped to adversarially-proven defects, per this phase's own "no wildcard
-authorization" instruction.
+minimal and precisely mapped to the single adversarially-proven, reachable defect, per this phase's own "no
+wildcard authorization" instruction.
 
 ## 38. Frozen artifact authorization — `POSTGRES-DATA-MODEL-CLOSURE-I`
 
 ```
 CREATE = 1
-MODIFY = 5
+MODIFY = 3
 DELETE = 0
-TOTAL  = 6
+TOTAL  = 4
 ```
 
 **CREATE (1)**:
 ```
-backend/app/infrastructure/persistence/migrations/versions/0046_oqi5_remediation_tenant_integrity_and_
-    evidence_identity.py
+backend/app/infrastructure/persistence/migrations/versions/0046_oqi5_remediation_tenant_integrity.py
 ```
-Purpose: close P1-1 and P1-2 only. Must, in order:
+Purpose: close P1-1 only. Must, in order:
 1. Add `UNIQUE (tenant_id, case_id)` to `oqi_remediation_cases`, `UNIQUE (tenant_id, instruction_id)` to
    `oqi_remediation_instructions`, `UNIQUE (tenant_id, run_id)` to `oqi_remediation_agent_runs` (prerequisite
    for composite FKs, mirroring the exact existing `uq_source_systems_tenant_pk`/
@@ -471,47 +507,44 @@ Purpose: close P1-1 and P1-2 only. Must, in order:
    FK; replace `fk_oqi_remediation_agent_runs_case_id` with a composite `(tenant_id, case_id) →
    oqi_remediation_cases(tenant_id, case_id)` FK; replace `fk_oqi_remediation_agent_recommendations_case_id`
    and `..._run_id` with their own composite tenant-qualified equivalents.
-3. Add a genuine `UNIQUE (source_field_id, source_record_reference, observed_representation, observed_at)`
-   constraint to `field_value_evidence`. **Upgrade safety**: this environment carries only demo/test data
-   (confirmed via this phase's own fresh-empty-DB replay methodology — no production tenant data exists
-   anywhere this migration will run against yet); the migration must nonetheless include a pre-flight
-   duplicate check (`SELECT ... GROUP BY ... HAVING count(*) > 1`) that raises a clear, actionable error
-   rather than a bare constraint-violation traceback if any environment it is ever run against already
-   contains a duplicate.
-4. **Downgrade**: drop the four new composite FKs and the three new `UNIQUE(tenant_id, id)` constraints in
-   reverse order, drop the evidence-identity `UNIQUE`, restore the four original simple FKs. No data is
-   destroyed by either direction.
+3. **Downgrade**: drop the four new composite FKs and the three new `UNIQUE(tenant_id, id)` constraints in
+   reverse order, restore the four original simple FKs. No data is destroyed by either direction. **Upgrade
+   safety**: this environment carries only demo/test data (confirmed via this phase's own fresh-empty-DB
+   replay methodology — no production tenant data exists anywhere this migration will run against yet), so
+   "zero data rewrite, zero backfill" (this program's own established precedent for CDD-052/053/054/055/H4-R1)
+   applies unchanged.
 
-**MODIFY (5)**:
+**MODIFY (3)**:
 ```
 backend/app/infrastructure/persistence/models/oqi_remediation.py
 backend/app/infrastructure/persistence/models/oqi_remediation_agent.py
-backend/app/infrastructure/persistence/models/field_value_evidence.py
 backend/app/tests/test_production_remediation_orchestration_postgres.py
-backend/app/tests/test_persistence_integration.py
 ```
-Semantic authorization for each: the three model files gain exactly the `UniqueConstraint`/
+Semantic authorization for each: the two model files gain exactly the `UniqueConstraint`/
 `ForeignKeyConstraint`/relationship declarations mirroring the migration above (ORM parity, §24) — no other
-column, relationship, or behavior changes. The two test files each gain exactly one new adversarial
-Postgres test: `test_production_remediation_orchestration_postgres.py` must reproduce the §9.1 three-tenant
-chain and assert it now raises `IntegrityError`; `test_persistence_integration.py` must reproduce the §9.2
-duplicate-4-tuple insert and assert it now raises `IntegrityError`. No existing test assertion may be
-weakened or removed.
+column, relationship, or behavior changes. The test file gains exactly one new adversarial Postgres test
+reproducing the §9.1 three-tenant chain and asserting it now raises `IntegrityError`. No existing test
+assertion may be weakened or removed.
 
-**Prohibited**: any other path; any change to `connector_ingestion_service.py`, any API route, any
-migration other than the one new file, any Docker/CI configuration, any OQI evaluator/service logic beyond
-what the new constraints require, implementation of the four deferred P2s, implementation of the OQI
-UNIQUENESS dimension, or any change to the paused `product-wide-docker-closure/step-13` branch.
+**Prohibited**: any other path; `field_value_evidence.py` and any evidence-identity constraint (§9.2 is
+certified-clean, not a defect — no change authorized); any change to `connector_ingestion_service.py`, any
+API route, any migration other than the one new file, any Docker/CI configuration, any OQI evaluator/
+service logic beyond what the new constraints require, implementation of the four deferred P2s or four
+deferred P3s, implementation of the OQI UNIQUENESS dimension, or any change to the paused
+`product-wide-docker-closure/step-13` branch.
 
 ## 39. Final VM contract — `POSTGRES-DATA-MODEL-CLOSURE-VM`
 
 Must independently re-derive the full 126/271/65/34-count catalog fresh (not trust this document's own
-counts); confirm the new migration applies cleanly from empty and reverses cleanly; re-run both adversarial
-sequences from §9.1/9.2 and confirm each now raises `IntegrityError`; confirm the two P2/P3 defect classes
+counts); confirm the new migration applies cleanly from empty and reverses cleanly; re-run the §9.1
+adversarial sequence and confirm it now raises `IntegrityError`; independently re-verify §9.2's own
+reclassification (re-read `field_value_evidence.py`'s domain-derivation logic, confirm `__post_init__`
+still validates it, confirm `create_or_get_existing` still only ever persists a validated domain object's
+own ID) rather than trusting this document's own conclusion; confirm the four P2 and four P3 defect classes
 remain exactly as disclosed here (not silently fixed, not silently worsened); confirm ORM parity for the
-three modified model files; re-run the full measured backend regression (2177+2 new tests) green in a
-clean checkout; verify the corrected schema against a fresh Docker PostgreSQL runtime (`docker compose up`
-+ `alembic upgrade head` inside the real `backend` image, not host Postgres only); confirm the Step-13 →
+two modified model files; re-run the full measured backend regression (2177+1 new test) green in a clean
+checkout; verify the corrected schema against a fresh Docker PostgreSQL runtime (`docker compose up` +
+`alembic upgrade head` inside the real `backend` image, not host Postgres only); confirm the Step-13 →
 Step-14 impact matrix (§35) still holds; merge via the repository's normal governed PR-based workflow only.
 
 ## 40. STOP conditions — assessment
@@ -519,8 +552,9 @@ Step-14 impact matrix (§35) still holds; merge via the repository's normal gove
 None of the 15 listed STOP conditions triggered: authoritative main was established cleanly; no unexplained
 tracked dirty state; no governance corruption; no destructive migration behavior found; the cross-tenant
 finding (§9.1), while real, is narrow and mechanically fixable with an already-proven pattern, not a "broad"
-compromise requiring redesign; evidence provenance is correctable via one additive constraint, not a
-structural rebuild; authorization/execution persistence is a *gap* to close with the existing pattern, not
+compromise requiring redesign; evidence provenance was independently re-verified as already structurally
+sound (§9.2), not merely assumed; authorization/execution persistence is a *gap* to close with the existing
+pattern, not
 a collapse requiring new architecture; migration history is consistent; no ORM/DB disagreement on crown
 data was found (the ORM correctly reflects the gap, it does not contradict it); the correction is fully
 bounded (§38); no rewriting of migration history is required (purely additive); the paused Step-14 branch
@@ -531,11 +565,12 @@ outside Step-13's own persistence scope was uncovered.
 
 **Will be claimable once VM certifies**: Noetva's PostgreSQL persistence model has been independently
 certified across its complete physical schema (126 tables, 271 FKs, 65+16 unique constraints, 34 checks,
-683 indexes) for identity, referential integrity, tenant relationships (with the two confirmed P1 gaps
-closed), logical uniqueness (including the evidence 4-tuple), cardinality, migration integrity, and ORM
-parity, subject to the explicitly disclosed and justified application-layer invariants (§9
-CHILD_NOT_TENANT_OWNED single-hop patterns, §26 no-cascade delete posture, §29 no-RLS single-role
-architecture) and the four deferred P2/three deferred P3 limitations named in §32.
+683 indexes) for identity, referential integrity, tenant relationships (with the one confirmed P1 gap
+closed), logical uniqueness (the evidence 4-tuple already certified today via its documented domain-layer
+deterministic-ID invariant, §9.2), cardinality, migration integrity, and ORM parity, subject to the
+explicitly disclosed and justified application-layer invariants (§9 CHILD_NOT_TENANT_OWNED single-hop
+patterns, §26 no-cascade delete posture, §29 no-RLS single-role architecture) and the four deferred P2/four
+deferred P3 limitations named in §32.
 
 **Not claimed**: perfect performance at arbitrary scale; formal mathematical proof of anything; the
 implemented OQI UNIQUENESS dimension (still absent, deliberately not built here); database-level
