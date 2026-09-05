@@ -4,7 +4,7 @@ Version: 1.0
 Status: **DISCOVERED / GOVERNED — PENDING VM CERTIFICATION**
 Phase: POSTGRES-DATA-MODEL-CLOSURE-DG
 Source of truth: PostgreSQL catalog, independently extracted from a database migrated from empty
-to Alembic head `0045_oqi_connector_ingestion` (single head, 126 application tables), reconciled
+to Alembic head `0046_oqi5_remediation_tenancy` (single head, 126 application tables), reconciled
 against Alembic migration file provenance. Not derived from ORM assumptions alone.
 
 ## 1. Purpose
@@ -5290,7 +5290,7 @@ _(no FK relationships either direction)_
 
 | FK | Child Column(s) | Parent Table | Parent Column(s) | ON DELETE | Tenant-aware | Relationship |
 |---|---|---|---|---|---|---|
-| `fk_oqi_remediation_agent_runs_case_id` | case_id | `oqi_remediation_cases` | case_id | NO ACTION | APPLICATION_GUARDED | oqi_remediation_agent_runs 1:N `oqi_remediation_cases` |
+| `fk_oqi_remediation_agent_runs_tenant_case` | tenant_id,case_id | `oqi_remediation_cases` | tenant_id,case_id | NO ACTION | STRUCTURALLY_SAFE | oqi_remediation_agent_runs 1:N `oqi_remediation_cases` |
 
 **Unique Constraints**
 
@@ -5307,7 +5307,7 @@ _(none)_
 
 **Relationships**
 
-- `oqi_remediation_agent_runs` 1:N `oqi_remediation_cases` (via case_id)
+- `oqi_remediation_agent_runs` 1:N `oqi_remediation_cases` (via tenant_id, case_id)
 - `oqi_remediation_agent_assessments` 1:1 `oqi_remediation_agent_runs` (via run_id)
 - `oqi_remediation_agent_recommendations` 1:N `oqi_remediation_agent_runs` (via run_id)
 
@@ -5346,7 +5346,7 @@ _(none)_
 
 | FK | Child Column(s) | Parent Table | Parent Column(s) | ON DELETE | Tenant-aware | Relationship |
 |---|---|---|---|---|---|---|
-| `fk_oqi_remediation_authorizations_instruction_id` | instruction_id | `oqi_remediation_instructions` | instruction_id | NO ACTION | APPLICATION_GUARDED | oqi_remediation_authorizations 1:N `oqi_remediation_instructions` |
+| `fk_oqi_remediation_authorizations_tenant_instruction` | tenant_id,instruction_id | `oqi_remediation_instructions` | tenant_id,instruction_id | NO ACTION | STRUCTURALLY_SAFE | oqi_remediation_authorizations 1:N `oqi_remediation_instructions` |
 
 **Unique Constraints**
 
@@ -5364,7 +5364,7 @@ _(none)_
 
 **Relationships**
 
-- `oqi_remediation_authorizations` 1:N `oqi_remediation_instructions` (via instruction_id)
+- `oqi_remediation_authorizations` 1:N `oqi_remediation_instructions` (via tenant_id, instruction_id)
 
 **Lifecycle**: has a `status` column.
 
@@ -5454,6 +5454,7 @@ _(none — this table has no outbound foreign keys)_
 **Unique Constraints**
 
 - `uq_oqi_remediation_cases_finding`: UNIQUE (tenant_id, finding_family, finding_id)
+- `uq_oqi_remediation_cases_tenant_pk`: UNIQUE (tenant_id, case_id)
 
 **Check Constraints**
 
@@ -5464,13 +5465,14 @@ _(none)_
 - `idx_oqi_remediation_cases_status`: `CREATE INDEX idx_oqi_remediation_cases_status ON public.oqi_remediation_cases USING btree (status)`
 - `idx_oqi_remediation_cases_tenant_id`: `CREATE INDEX idx_oqi_remediation_cases_tenant_id ON public.oqi_remediation_cases USING btree (tenant_id)`
 - `uq_oqi_remediation_cases_finding` (unique): `CREATE UNIQUE INDEX uq_oqi_remediation_cases_finding ON public.oqi_remediation_cases USING btree (tenant_id, finding_family, finding_id)`
+- `uq_oqi_remediation_cases_tenant_pk` (unique): `CREATE UNIQUE INDEX uq_oqi_remediation_cases_tenant_pk ON public.oqi_remediation_cases USING btree (tenant_id, case_id)`
 
 **Relationships**
 
 - `oqi_remediation_agent_recommendations` 1:N `oqi_remediation_cases` (via case_id)
-- `oqi_remediation_agent_runs` 1:N `oqi_remediation_cases` (via case_id)
+- `oqi_remediation_agent_runs` 1:N `oqi_remediation_cases` (via tenant_id, case_id)
 - `oqi_remediation_candidates` 1:N `oqi_remediation_cases` (via case_id)
-- `oqi_remediation_instructions` 1:N `oqi_remediation_cases` (via case_id)
+- `oqi_remediation_instructions` 1:N `oqi_remediation_cases` (via tenant_id, case_id)
 
 **Lifecycle**: has a `status` column.
 
@@ -5509,11 +5511,11 @@ _(none)_
 | FK | Child Column(s) | Parent Table | Parent Column(s) | ON DELETE | Tenant-aware | Relationship |
 |---|---|---|---|---|---|---|
 | `fk_oqi_remediation_instructions_candidate_id` | candidate_id | `oqi_remediation_candidates` | candidate_id | NO ACTION | GLOBAL_PARENT | oqi_remediation_instructions 1:N `oqi_remediation_candidates` |
-| `fk_oqi_remediation_instructions_case_id` | case_id | `oqi_remediation_cases` | case_id | NO ACTION | APPLICATION_GUARDED | oqi_remediation_instructions 1:N `oqi_remediation_cases` |
+| `fk_oqi_remediation_instructions_tenant_case` | tenant_id,case_id | `oqi_remediation_cases` | tenant_id,case_id | NO ACTION | STRUCTURALLY_SAFE | oqi_remediation_instructions 1:N `oqi_remediation_cases` |
 
 **Unique Constraints**
 
-_(none beyond the primary key)_
+- `uq_oqi_remediation_instructions_tenant_pk`: UNIQUE (tenant_id, instruction_id)
 
 **Check Constraints**
 
@@ -5522,12 +5524,13 @@ _(none)_
 **Indexes** (excluding the PK's own index)
 
 - `idx_oqi_remediation_instructions_case_id`: `CREATE INDEX idx_oqi_remediation_instructions_case_id ON public.oqi_remediation_instructions USING btree (case_id)`
+- `uq_oqi_remediation_instructions_tenant_pk` (unique): `CREATE UNIQUE INDEX uq_oqi_remediation_instructions_tenant_pk ON public.oqi_remediation_instructions USING btree (tenant_id, instruction_id)`
 
 **Relationships**
 
 - `oqi_remediation_instructions` 1:N `oqi_remediation_candidates` (via candidate_id)
-- `oqi_remediation_instructions` 1:N `oqi_remediation_cases` (via case_id)
-- `oqi_remediation_authorizations` 1:N `oqi_remediation_instructions` (via instruction_id)
+- `oqi_remediation_instructions` 1:N `oqi_remediation_cases` (via tenant_id, case_id)
+- `oqi_remediation_authorizations` 1:N `oqi_remediation_instructions` (via tenant_id, instruction_id)
 
 **Lifecycle**: N/A — no status/version column found.
 
@@ -7686,11 +7689,11 @@ All 271 foreign-key relationships in the physical schema.
 | 189 | `oqi_remediation_agent_runs` | `oqi_remediation_agent_assessments` | 1:1 | run_id | run_id | NO | CHILD_NOT_TENANT_OWNED | NO ACTION | `fk_oqi_remediation_agent_assessments_run_id` |
 | 190 | `oqi_remediation_cases` | `oqi_remediation_agent_recommendations` | 1:N | case_id | case_id | NO | CHILD_NOT_TENANT_OWNED | NO ACTION | `fk_oqi_remediation_agent_recommendations_case_id` |
 | 191 | `oqi_remediation_agent_runs` | `oqi_remediation_agent_recommendations` | 1:N | run_id | run_id | NO | CHILD_NOT_TENANT_OWNED | NO ACTION | `fk_oqi_remediation_agent_recommendations_run_id` |
-| 192 | `oqi_remediation_cases` | `oqi_remediation_agent_runs` | 1:N | case_id | case_id | NO | APPLICATION_GUARDED | NO ACTION | `fk_oqi_remediation_agent_runs_case_id` |
-| 193 | `oqi_remediation_instructions` | `oqi_remediation_authorizations` | 1:N | instruction_id | instruction_id | NO | APPLICATION_GUARDED | NO ACTION | `fk_oqi_remediation_authorizations_instruction_id` |
+| 192 | `oqi_remediation_cases` | `oqi_remediation_agent_runs` | 1:N | tenant_id,case_id | tenant_id,case_id | NO | STRUCTURALLY_SAFE | NO ACTION | `fk_oqi_remediation_agent_runs_tenant_case` |
+| 193 | `oqi_remediation_instructions` | `oqi_remediation_authorizations` | 1:N | tenant_id,instruction_id | tenant_id,instruction_id | NO | STRUCTURALLY_SAFE | NO ACTION | `fk_oqi_remediation_authorizations_tenant_instruction` |
 | 194 | `oqi_remediation_cases` | `oqi_remediation_candidates` | 1:N | case_id | case_id | NO | CHILD_NOT_TENANT_OWNED | NO ACTION | `fk_oqi_remediation_candidates_case_id` |
 | 195 | `oqi_remediation_candidates` | `oqi_remediation_instructions` | 1:N | candidate_id | candidate_id | NO | GLOBAL_PARENT | NO ACTION | `fk_oqi_remediation_instructions_candidate_id` |
-| 196 | `oqi_remediation_cases` | `oqi_remediation_instructions` | 1:N | case_id | case_id | NO | APPLICATION_GUARDED | NO ACTION | `fk_oqi_remediation_instructions_case_id` |
+| 196 | `oqi_remediation_cases` | `oqi_remediation_instructions` | 1:N | tenant_id,case_id | tenant_id,case_id | NO | STRUCTURALLY_SAFE | NO ACTION | `fk_oqi_remediation_instructions_tenant_case` |
 | 197 | `field_value_evidence` | `oqi_timeliness_evaluations` | 1:N | field_value_evidence_id | field_value_evidence_id | NO | GLOBAL_PARENT | NO ACTION | `fk_oqi_timeliness_evaluations_field_value_evidence_id` |
 | 198 | `oqi_timeliness_policies` | `oqi_timeliness_evaluations` | 1:N | tenant_id,policy_id,version | tenant_id,policy_id,policy_version | NO | STRUCTURALLY_SAFE | NO ACTION | `fk_oqi_timeliness_evaluations_tenant_policy` |
 | 199 | `source_objects` | `oqi_timeliness_evaluations` | 1:N | tenant_id,source_object_id | tenant_id,source_object_id | NO | STRUCTURALLY_SAFE | NO ACTION | `fk_oqi_timeliness_evaluations_tenant_source_object` |
@@ -7927,11 +7930,11 @@ All 271 foreign-key relationships in the physical schema.
 | `oqi_remediation_agent_assessments` | (none) | Inherited (indirect, via `oqi_remediation_agent_runs`) | `oqi_remediation_agent_runs` | N/A (no direct tenant_id) | application-only |
 | `oqi_remediation_agent_recommendations` | (none) | Inherited (indirect, via `oqi_remediation_cases`, `oqi_remediation_agent_runs`) | `oqi_remediation_cases`, `oqi_remediation_agent_runs` | N/A (no direct tenant_id) | application-only |
 | `oqi_remediation_agent_roles` | (none) | Inherited (indirect, via no FK) | - | N/A (no direct tenant_id) | application-only |
-| `oqi_remediation_agent_runs` | tenant_id | Direct | - | NO | `oqi_remediation_cases` |
-| `oqi_remediation_authorizations` | tenant_id | Direct | - | NO | `oqi_remediation_instructions` |
+| `oqi_remediation_agent_runs` | tenant_id | Direct | - | YES | `oqi_remediation_cases` |
+| `oqi_remediation_authorizations` | tenant_id | Direct | - | YES | `oqi_remediation_instructions` |
 | `oqi_remediation_candidates` | (none) | Inherited (indirect, via `oqi_remediation_cases`) | `oqi_remediation_cases` | N/A (no direct tenant_id) | application-only |
 | `oqi_remediation_cases` | tenant_id | Direct | - | NO | - |
-| `oqi_remediation_instructions` | tenant_id | Direct | - | NO | `oqi_remediation_cases` |
+| `oqi_remediation_instructions` | tenant_id | Direct | - | YES | `oqi_remediation_cases` |
 | `oqi_timeliness_evaluations` | tenant_id | Direct | - | `oqi_timeliness_policies`, `source_objects` | - |
 | `oqi_timeliness_findings` | tenant_id | Direct | - | `oqi_timeliness_policies`, `source_objects` | - |
 | `oqi_timeliness_policies` | tenant_id | Direct | - | `oqi_business_processes` | - |
@@ -7981,10 +7984,11 @@ Tenant
   |
   +-- oqi_remediation_cases (TENANT)
          +-- oqi_remediation_candidates (NOT tenant-owned directly -- inherits via case_id, simple FK)
-         +-- oqi_remediation_instructions (TENANT, own tenant_id -- FK to cases is a SIMPLE FK, NOT
-         |      composite-tenant-qualified -- see Integrity/Correctness defect register)
-         +-- oqi_remediation_authorizations (TENANT, own tenant_id -- FK to instructions is a SIMPLE
-                FK, NOT composite-tenant-qualified -- see Integrity/Correctness defect register)
+         +-- oqi_remediation_instructions (TENANT, own tenant_id -- FK to cases is now a composite
+         |      tenant-qualified FK, fk_oqi_remediation_instructions_tenant_case, migration 0046)
+         +-- oqi_remediation_authorizations (TENANT, own tenant_id -- FK to instructions is now a
+                composite tenant-qualified FK, fk_oqi_remediation_authorizations_tenant_instruction,
+                migration 0046)
 ```
 
 ## 8. Crown-Path ER Model
@@ -8068,12 +8072,12 @@ Noetva's ontology *type system* (entity_types, relationship_types, ontology_rela
 ### Governance
 
 - `oqi_remediation_instructions` --(1:N, GLOBAL_PARENT)--> `oqi_remediation_candidates`
-- `oqi_remediation_authorizations` --(1:N, APPLICATION_GUARDED)--> `oqi_remediation_instructions`
+- `oqi_remediation_authorizations` --(1:N, STRUCTURALLY_SAFE)--> `oqi_remediation_instructions`
 
 ### Remediation
 
 - `oqi_remediation_candidates` --(1:N, CHILD_NOT_TENANT_OWNED)--> `oqi_remediation_cases`
-- `oqi_remediation_instructions` --(1:N, APPLICATION_GUARDED)--> `oqi_remediation_cases`
+- `oqi_remediation_instructions` --(1:N, STRUCTURALLY_SAFE)--> `oqi_remediation_cases`
 
 ### Re-evaluation
 
@@ -8378,11 +8382,11 @@ source_fields,source_field_id,oqi_reference_evidence_conflicts,source_field_id,1
 oqi_remediation_agent_runs,run_id,oqi_remediation_agent_assessments,run_id,1:1,false,NO ACTION,false
 oqi_remediation_cases,case_id,oqi_remediation_agent_recommendations,case_id,1:N,false,NO ACTION,false
 oqi_remediation_agent_runs,run_id,oqi_remediation_agent_recommendations,run_id,1:N,false,NO ACTION,false
-oqi_remediation_cases,case_id,oqi_remediation_agent_runs,case_id,1:N,false,NO ACTION,false
-oqi_remediation_instructions,instruction_id,oqi_remediation_authorizations,instruction_id,1:N,false,NO ACTION,false
+oqi_remediation_cases,tenant_id|case_id,oqi_remediation_agent_runs,tenant_id|case_id,1:N,false,NO ACTION,true
+oqi_remediation_instructions,tenant_id|instruction_id,oqi_remediation_authorizations,tenant_id|instruction_id,1:N,false,NO ACTION,true
 oqi_remediation_cases,case_id,oqi_remediation_candidates,case_id,1:N,false,NO ACTION,false
 oqi_remediation_candidates,candidate_id,oqi_remediation_instructions,candidate_id,1:N,false,NO ACTION,false
-oqi_remediation_cases,case_id,oqi_remediation_instructions,case_id,1:N,false,NO ACTION,false
+oqi_remediation_cases,tenant_id|case_id,oqi_remediation_instructions,tenant_id|case_id,1:N,false,NO ACTION,true
 field_value_evidence,field_value_evidence_id,oqi_timeliness_evaluations,field_value_evidence_id,1:N,false,NO ACTION,false
 oqi_timeliness_policies,tenant_id|policy_id|version,oqi_timeliness_evaluations,tenant_id|policy_id|policy_version,1:N,false,NO ACTION,true
 source_objects,tenant_id|source_object_id,oqi_timeliness_evaluations,tenant_id|source_object_id,1:N,false,NO ACTION,true
@@ -8557,8 +8561,8 @@ source_systems,source_system_id,source_systems,previous_version_id,1:N,true,NO A
 | 89 | `oqi_remediation_agent_runs` | OQI5 Governed Agentic Remediation | TENANT | `run_id` | 1 | 0 | 3 | `oqi_remediation_cases` | `oqi_remediation_agent_assessments`, `oqi_remediation_agent_recommendations` |
 | 90 | `oqi_remediation_authorizations` | OQI5 Governed Agentic Remediation | TENANT | `authorization_id` | 1 | 0 | 4 | `oqi_remediation_instructions` | - |
 | 91 | `oqi_remediation_candidates` | OQI5 Governed Agentic Remediation | GLOBAL | `candidate_id` | 1 | 0 | 2 | `oqi_remediation_cases` | `oqi_remediation_instructions` |
-| 92 | `oqi_remediation_cases` | OQI5 Governed Agentic Remediation | TENANT | `case_id` | 0 | 1 | 4 | - | `oqi_remediation_agent_recommendations`, `oqi_remediation_agent_runs`, `oqi_remediation_candidates`, `oqi_remediation_instructions` |
-| 93 | `oqi_remediation_instructions` | OQI5 Governed Agentic Remediation | TENANT | `instruction_id` | 2 | 0 | 2 | `oqi_remediation_candidates`, `oqi_remediation_cases` | `oqi_remediation_authorizations` |
+| 92 | `oqi_remediation_cases` | OQI5 Governed Agentic Remediation | TENANT | `case_id` | 0 | 2 | 5 | - | `oqi_remediation_agent_recommendations`, `oqi_remediation_agent_runs`, `oqi_remediation_candidates`, `oqi_remediation_instructions` |
+| 93 | `oqi_remediation_instructions` | OQI5 Governed Agentic Remediation | TENANT | `instruction_id` | 2 | 1 | 3 | `oqi_remediation_candidates`, `oqi_remediation_cases` | `oqi_remediation_authorizations` |
 | 94 | `oqi_timeliness_evaluations` | OQI Hardening H5 (Timeliness) | TENANT | `evaluation_id` | 3 | 0 | 3 | `field_value_evidence`, `oqi_timeliness_policies`, `source_objects` | - |
 | 95 | `oqi_timeliness_findings` | OQI Hardening H5 (Timeliness) | TENANT | `finding_id` | 2 | 0 | 3 | `oqi_timeliness_policies`, `source_objects` | - |
 | 96 | `oqi_timeliness_policies` | OQI Hardening H5 (Timeliness) | TENANT | `policy_id,version` | 2 | 2 | 5 | `information_element_requirements`, `oqi_business_processes` | `oqi_timeliness_evaluations`, `oqi_timeliness_findings` |
@@ -8602,10 +8606,10 @@ Global/associative/inherited: 78
 
 Primary keys: 126
 Foreign keys: 271
-Unique constraints (excl. PK-backing, excl. pg_catalog): 65
+Unique constraints (excl. PK-backing, excl. pg_catalog): 67
 Partial/plain unique indexes (not backed by a constraint): 16
 Check constraints: 34
-Total indexes (incl. PK): 683
+Total indexes (incl. PK): 685
 
 Domains:
   Foundation / Enterprise Canonical Ontology Model (ECOM): 30
@@ -8641,11 +8645,11 @@ Total FK relationships: 271
 Tenant-integrity classification:
   GLOBAL_PARENT: 119
   CHILD_NOT_TENANT_OWNED: 96
-  APPLICATION_GUARDED: 32
-  STRUCTURALLY_SAFE: 24
+  APPLICATION_GUARDED: 29
+  STRUCTURALLY_SAFE: 27
 ```
 
-Tenant-aware composite FK count (both sides carry tenant_id, composite): **24**. This must equal the Step-13 Integrity Register's own STRUCTURALLY_SAFE count.
+Tenant-aware composite FK count (both sides carry tenant_id, composite): **27**. This must equal the Step-13 Integrity Register's own STRUCTURALLY_SAFE count.
 
 ## 18. ER Model Certification
 
@@ -8653,13 +8657,13 @@ Tenant-aware composite FK count (both sides carry tenant_id, composite): **24**.
 Physical tables documented:        126 / 126
 Primary keys documented:           126 / 126
 Foreign keys documented:           271 / 271
-Unique constraints documented:     81 / (same)
-Indexes documented:                683 / (same)
+Unique constraints documented:     83 / (same)
+Indexes documented:                685 / (same)
 Tenant-owned tables classified:    48 / 48
 Every FK has a cardinality:        YES (section 5, all 271 rows)
 Crown-path relationships represented: YES (section 8), including explicit DERIVED-RELATIONSHIP disclosures
 Every table maps to a domain:      YES (section 3, 21 domains, 0 UNCLASSIFIED)
-Matches PostgreSQL at migration head 0045_oqi_connector_ingestion: YES (extracted live from that exact head)
+Matches PostgreSQL at migration head 0046_oqi5_remediation_tenancy: YES (extracted live from that exact head, post POSTGRES-DATA-MODEL-CLOSURE-I / reconciled by POSTGRES-DATA-MODEL-CLOSURE-G-R2)
 ```
 
 **Status: DISCOVERED / GOVERNED — PENDING VM CERTIFICATION.** This document is not self-certifying;
