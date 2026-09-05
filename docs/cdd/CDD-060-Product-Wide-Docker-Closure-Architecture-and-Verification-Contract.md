@@ -35,6 +35,13 @@ dated before this capability's own work began) — confirmed absent from git his
 from every PR diff this session has produced. It does not affect closure and is disclosed, not remediated,
 here.
 
+**PRODUCT-WIDE-DOCKER-CLOSURE-G-R1 reconciliation**: this branch was intentionally paused at this baseline
+while Step 13 (POSTGRES-DATA-MODEL-CLOSURE) ran to completion on `main`. Step 13 merged via PR #194; new
+authoritative main is `d3683fdf4933dfed608001d38cbb6689580815ca`, independently re-verified fresh
+(local/remote/GitHub equal) at the start of G-R1. See §28 for the complete reconciliation and impact
+matrix. This section's own baseline snapshot above is left unchanged as the historical record of what was
+true when this document was originally frozen.
+
 ## 3. Governance-index precedent check
 
 This repository carries two parallel governance systems: the per-capability `docs/cdd/CDD-XXX` lineage
@@ -161,9 +168,15 @@ comments alone — no undocumented required variable was found.
 ## 7. Database / migration closure — independently verified (third independent confirmation this program)
 
 ```
-Alembic head:                 0045_oqi_connector_ingestion (single head, no branch point)
+Alembic head:                 0046_oqi5_remediation_tenancy (single head, no branch point)
 Fresh current-schema count:   126 (public schema, BASE TABLE, excludes alembic_version)
 ```
+
+**PRODUCT-WIDE-DOCKER-CLOSURE-G-R1 correction**: at original DG freeze this read `0045_oqi_connector_ingestion`
+(45 revisions). Step 13 added migration `0046_oqi5_remediation_tenancy` (46 revisions), independently
+re-verified empty-database-to-head in a fresh container during G-R1 (single head, 126 tables unchanged, 271
+FKs, all three of migration 0046's composite tenant-qualified FKs present). Table count is unchanged by
+Step 13.
 
 `backend/docker-entrypoint.sh` runs `python -m alembic upgrade head` — **dynamically resolved, not pinned
 to a literal revision** — so a freshly built container always converges on whatever the repository's true
@@ -212,7 +225,7 @@ connection pinned to an already-validated candidate (validated address == connec
 original hostname authoritative for TLS SNI / certificate verification / HTTP Host
 ambient-proxy neutrality (no urllib.request in the transport)
 evidence admission against pre-existing SourceSystem/SourceObject/SourceField configuration only
-migration head 0045_oqi_connector_ingestion / table count 126
+migration head 0046_oqi5_remediation_tenancy (G-R1: was 0045_oqi_connector_ingestion) / table count 126
 ```
 
 **Confirmed scope boundary, not a defect**: REAL-ENTERPRISE-INGESTION has **zero frontend UI**. The
@@ -355,8 +368,17 @@ REAL-ENTERPRISE-INGESTION security architecture (SSRF/DNS-pinning/TLS/proxy)
     once as part of the FULL integrated stack (§15 step 3), not re-derived from first principles.
 
 OQI6/OQI4 structural tenant-isolation hardening
-    PRESERVED -- unchanged since each correction merged; continuously re-proven by the measured 413
-    real-Postgres tests on every CI `backend` run.
+    PRESERVED -- unchanged since each correction merged; continuously re-proven by the measured 414
+    real-Postgres tests on every CI `backend` run (G-R1: was 413; see §28).
+
+OQI5 remediation authority chain tenant-isolation (migration 0046, added by Step 13)
+    NEW SINCE DG, RE-RUN REQUIRED -- Case->Instruction->Authorization and Case->AgentRun now carry
+    tenant-qualified composite FKs (previously a confirmed P1: zero DB-level tenant consistency).
+    Adversarially proven against real PostgreSQL and, separately, inside an isolated Docker
+    compose stack during Step 13's own VM-R5 -- both times the legitimate same-tenant chain
+    persisted cleanly and every cross-tenant variant was rejected with `IntegrityError`. Final
+    Docker VM must reconfirm this once more inside the FULL product-wide integrated stack (§27
+    SECURITY gate), not merely trust Step 13's own isolated verification.
 
 H1-H5 dimension implementations
     PRESERVED -- each closed its own independent VM; code unchanged since.
@@ -390,23 +412,34 @@ the `containers` job's own checks are a different, still-real form of evidence f
 
 ```
 Backend (pytest, backend/):
-  Total collected                          2177
-  *_postgres.py (real-Postgres integration) 413  (37 files; migrated_engine fixture, conftest.py:20)
-  test_oqi_*.py                             983  (41 files; overlaps with the above)
+  Total collected                          2178  (G-R1: was 2177; re-collected fresh on new main)
+  *_postgres.py (real-Postgres integration) 414  (37 files, unchanged; G-R1: was 413)
+  test_oqi_*.py                             983  (41 files, unchanged)
   Architecture/dependency-boundary (5 files) 29  (test_domain_foundation.py, test_runtime_architecture.py,
                                                     test_execution_persistence_architecture.py,
                                                     test_integration_architecture.py,
                                                     test_supplier_risk_api_architecture.py)
-  test_oqi_connector_ingestion_postgres.py   59  (CDD-059)
-  *remediation*.py (7 files)                110
-  *orchestration*.py (4 files)               60
-  Total test files                          186
-  Static checks (not test counts): black --check, isort --check-only, ruff check, mypy app
+  test_oqi_connector_ingestion_postgres.py   59  (CDD-059, unchanged)
+  *remediation*.py (7 files, unchanged)     111  (G-R1: was 110 -- Step 13 added one adversarial test,
+                                                    test_remediation_chain_tenant_integrity_enforced_by_
+                                                    real_postgresql, to the existing
+                                                    test_production_remediation_orchestration_postgres.py;
+                                                    no new file)
+  *orchestration*.py (4 files, unchanged)     61  (G-R1: was 60, same cause as above)
+  Total test files                          185  (G-R1: corrected measurement; re-counted fresh via
+                                                    `find app/tests -name "test_*.py"` -- Step 13 added no
+                                                    new test file, so this is a DG-time counting
+                                                    discrepancy, not a Step-13 effect)
+  Static checks (not test counts): black --check, isort --check-only, ruff check, mypy app -- all
+    independently re-confirmed clean on new main during Step 13's own VM-R5 (mypy 641/641 files)
 
 Frontend (vitest, npm test -- --run):
   Test Files  42 passed, 1 known-fragile-locally (43)
   Tests       337 passed, 1 known-fragile-locally (338)
   Route/page files (find app -iname page.tsx)  34
+  G-R1: Step 13 touched zero frontend files (confirmed: `git diff --stat` main..main is empty for
+    `frontend/`) -- these figures are carried forward unchanged, not re-run in G-R1 (full frontend
+    regression is reserved for the final VM's own REGRESSION gate, §27).
 
 CI jobs (.github/workflows/ci.yml): exactly 3 -- backend, frontend, containers
 ```
@@ -490,7 +523,11 @@ TOTAL  = 1
 
 **Exact authorized semantic change** (nothing else):
 1. Correct the migration-head expectation (§3 of that doc) from `0026_oqi6_reliance` to
-   `0045_oqi_connector_ingestion`.
+   `0046_oqi5_remediation_tenancy` (**PRODUCT-WIDE-DOCKER-CLOSURE-G-R1 correction**: originally authorized
+   as `0045_oqi_connector_ingestion` at DG time; Step 13 subsequently added migration 0046, so this is now
+   the correct target -- also correct the identical stale head reference in that doc's own §17 clean-reset
+   section, `0026_oqi6_reliance` -> `0046_oqi5_remediation_tenancy`, not called out separately at DG time
+   because it is the same literal fact repeated twice in that document).
 2. Correct the table-count expectation (§4 of that doc) from `100` to `126`, and its parenthetical note
    about `alembic_version` accordingly.
 3. Replace the current, now-inaccurate §11 disclosed-limitation text ("no live trigger... anywhere") with
@@ -546,23 +583,28 @@ git worktree at the exact `PRODUCT-WIDE-DOCKER-CLOSURE-I` head):
 BUILD        docker compose build (+ --profile ingestion-test build connector-fixture) -- no --no-cache
              required unless a prior layer is suspected stale; both images build with no host dependency.
 DATABASE     Fresh docker compose up -d postgres; confirm empty -> migrate (entrypoint) -> single head
-             0045_oqi_connector_ingestion, table count 126, via the same query CI's `containers` job uses.
+             0046_oqi5_remediation_tenancy (G-R1: was 0045_oqi_connector_ingestion), table count 126, via
+             the same query CI's `containers` job uses.
 STARTUP      docker compose up -d; postgres/keycloak/backend report healthy via `docker compose ps` within
              ~90s; keycloak-bootstrap exits 0; frontend verified reachable via curl from the host (not its
              own healthcheck, per the disclosed §4 quirk).
 SECURITY     Real Authorization Code + PKCE login; unauthenticated OQI request fails 401; a genuine
              cross-tenant read attempt fails; the REAL-ENTERPRISE-INGESTION SSRF/DNS-pinning/TLS crown
              (I-R2/VM-R2's own script, adapted to run against the FULL stack rather than an isolated
-             namespace) still passes with connect() re-resolution counts == [0].
+             namespace) still passes with connect() re-resolution counts == [0]. G-R1 addition: reconfirm
+             migration 0046's remediation authority tenant-chain integrity (§17) inside the FULL integrated
+             stack -- at least one cross-tenant Case->Instruction (or Instruction->Authorization, or
+             Case->AgentRun) attempt via a real HTTP call rejected, and the legitimate same-tenant chain
+             (prepare -> decide -> report-execution) still succeeds end-to-end.
 PRODUCT      Execute the full flagship scenario, §15 steps 1-12, exactly as frozen, with no step skipped
              and no outcome asserted without direct evidence (real HTTP response bodies, real Postgres
              rows, a real rendered frontend screen).
 PERSISTENCE  §16's stop/start cycle, verifying no state loss and no duplicate seeding.
 REPRODUCIBILITY  §16's down -v / up cycle, reproducing the same migrated/seeded/scenario outcome from
              empty state.
-REGRESSION   Full 2177 backend + 338 frontend suites green in a clean checkout (the known-fragile
-             gate-x-runtime-architecture.test.tsx test must be confirmed passing there, where no untracked
-             file exists) -- do not accept a stale count; re-collect fresh.
+REGRESSION   Full 2178 backend (G-R1: was 2177) + 338 frontend suites green in a clean checkout (the
+             known-fragile gate-x-runtime-architecture.test.tsx test must be confirmed passing there, where
+             no untracked file exists) -- do not accept a stale count; re-collect fresh.
 DOCUMENTATION  DOCKER_SMOKE_TEST.md (post PRODUCT-WIDE-DOCKER-CLOSURE-I) is itself executed command-by-command
              and confirmed to match observed reality exactly.
 ```
@@ -570,7 +612,78 @@ DOCUMENTATION  DOCKER_SMOKE_TEST.md (post PRODUCT-WIDE-DOCKER-CLOSURE-I) is itse
 VM may merge only if every category above is clean, following this repository's own established
 normal-merge-workflow discipline (no force push, no branch-protection bypass, no emergency bypass).
 
-## 28. Exact next phase
+## 28. PRODUCT-WIDE-DOCKER-CLOSURE-G-R1 reconciliation
+
+Step 14 was intentionally paused at this document's original freeze (`a46096b41227c22e52cffffbd837372bcc865e28`)
+while Step 13 (POSTGRES-DATA-MODEL-CLOSURE) ran to completion. Step 13 closed cleanly: merged via PR #194,
+new authoritative main `d3683fdf4933dfed608001d38cbb6689580815ca`, migration head `0045_oqi_connector_ingestion`
+-> `0046_oqi5_remediation_tenancy` (45 -> 46 revisions), 126 tables unchanged, 271 FKs certified, P0=0/P1=0
+(the one confirmed P1 -- the remediation authority chain's zero tenant consistency -- closed by migration
+0046), P2=4/P3=4 deferred by Step 13's own governance, zero remaining authoritative-ER factual blockers.
+CDD-061 (`af68f9c11a2588150791e6ef640f23b8d1829a128ae7ae77e706d9a2b2888244`) and the final ER artifact
+(`e92b93259331fa2e4f7d7afa83583ee2270b20164924db4c17be2a8f8034d66c`) are Step 13's own frozen evidence and
+are not modified here.
+
+**Primary G-R1 question**: does Step 13 materially invalidate the Docker architecture frozen above?
+**Answer: NO.** Independently confirmed by diffing old main (`0fd3886`) against new main (`d3683fdf`)
+restricted to every Docker-relevant path (`docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`,
+`backend/docker-entrypoint.sh`, all `.dockerignore` files, `.env.example`, `keycloak/`): **zero changes**.
+Step 13's entire 6-path diff is confined to one migration file, two ORM model files, one test file, and two
+documentation files -- none of which the Docker topology, build, or startup architecture depends on
+structurally. `OntologySeeder`/`BlueprintSeeder` (the entrypoint's automatic seed) and `demo_oqi_seeder`
+(the manual demo-showcase seed, whose own docstring already disclaims creating any `RemediationAuthorization`
+or remediation-domain row) touch none of the tables migration 0046 changed -- confirmed by re-reading
+`demo_oqi_seeder.py` and by an independent Docker-based verification below. No seed redesign is required.
+
+**Step-13 impact matrix** (every row independently verified during G-R1, not assumed from Step 13's own
+report):
+
+| Area               | Step-13 impact                                                          |
+|---------------------|--------------------------------------------------------------------------|
+| Authoritative main  | New baseline `d3683fdf4933dfed608001d38cbb6689580815ca`                 |
+| Migration head      | `0045_oqi_connector_ingestion` -> `0046_oqi5_remediation_tenancy`       |
+| Revision count      | 45 -> 46                                                                 |
+| Table count         | 126 -> 126, no change                                                    |
+| FK count            | 271, certified (re-verified live)                                       |
+| Docker topology     | No change (verified: zero diff on every Docker-relevant path)           |
+| Dockerfiles         | No change                                                                |
+| Compose             | No change                                                                |
+| Seed                | Revalidated -- entrypoint seed + demo_oqi_seeder both proven compatible with 0046 in a fresh isolated Docker stack during G-R1 |
+| Remediation         | Structurally stronger (migration 0046 closed the one confirmed P1); final VM must reconfirm this invariant inside the full integrated stack (§17, §27 SECURITY gate, amended above) |
+| Auth                | No change                                                                |
+| Connector           | No architecture change                                                  |
+| OQI                 | No functional dimension change -- still 8/9 (UNIQUENESS not implemented, unchanged) |
+| Persistence         | Revalidate (§16, unchanged contract)                                     |
+| Restart             | Revalidate (§16, unchanged contract)                                     |
+| Reproducibility     | Revalidate (§16, unchanged contract)                                     |
+| Docker runbook      | Must be updated -- `DOCKER_SMOKE_TEST.md`'s migration-head target changes from the originally-authorized `0045_oqi_connector_ingestion` to `0046_oqi5_remediation_tenancy` (§24, amended above); everything else in the original I-authorization is unchanged |
+
+**G-R1 Docker verification performed** (fresh, isolated, disjoint from Step 13's own Docker verification):
+a standalone `docker run postgres:17-alpine` container was migrated empty -> head, independently confirming
+single head `0046_oqi5_remediation_tenancy`, 126 tables, and all three of migration 0046's composite
+tenant-qualified FKs (`fk_oqi_remediation_instructions_tenant_case`,
+`fk_oqi_remediation_authorizations_tenant_instruction`, `fk_oqi_remediation_agent_runs_tenant_case`) present
+and structurally correct.
+
+**Implementation authorization revalidation**: re-examined `docker-compose.yml`, both Dockerfiles, both
+`.dockerignore` files, `.env.example`, `backend/docker-entrypoint.sh`, `keycloak/` -- all confirmed
+unchanged and still sufficient. `DOCKER_SMOKE_TEST.md` (re-read in full during G-R1) still contains exactly
+the staleness DG originally found (§21 P2), now with one additional fact to correct: its migration-head
+target must become `0046_oqi5_remediation_tenancy`, not `0045_oqi_connector_ingestion` (§24, amended above).
+No other implementation file requires correction. **The frozen one-file authorization
+(`CREATE=0/MODIFY=1/DELETE=0/TOTAL=1`, sole path `DOCKER_SMOKE_TEST.md`) remains sufficient and is
+reaffirmed below with its corrected target.**
+
+**Branch reconciliation**: this branch (`product-wide-docker-closure/step-13`, historically named but now
+carrying Step-14 governance) was merged with new authoritative main via a plain, conflict-free
+`git merge origin/main` (Step 13's 6-path diff and this branch's own CDD-060 commit touch entirely disjoint
+files) -- no rebase, no force push, no history rewrite. The original freeze commit,
+`a46096b41227c22e52cffffbd837372bcc865e28`, remains reachable and unmodified in this branch's history as
+the merge's first parent; new main, `d3683fdf4933dfed608001d38cbb6689580815ca`, is the merge's second
+parent. This reconciliation commit (documenting the CDD-060 text amendments above) is a separate, later
+commit on top of that merge -- its own authored diff is `docs/cdd/CDD-060-...md` only.
+
+## 29. Exact next phase
 
 ```
 PRODUCT-WIDE-DOCKER-CLOSURE-I
