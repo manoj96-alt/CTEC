@@ -47,6 +47,7 @@
         "governed-approval:request",
         "governed-approval:decide",
         "governed-agent:propose",
+        "oqi-remediation:prepare",
         "oqi-remediation:authorize",
         "oqi-remediation:report-execution",
         "oqi-reference-evidence:configure",
@@ -317,6 +318,15 @@
       "name": "oqi:read",
       "protocol": "openid-connect",
       "description": "CDD-045 canonical scope -- Ontology Quality Intelligence read authority (Command Center, Findings, evidence, ontology/business impact, Reliance, agent investigation, remediation state). Default-granted.",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "oqi-remediation:prepare",
+      "protocol": "openid-connect",
+      "description": "CDD-058 canonical scope -- OQI governed remediation-preparation trigger authority (not granted to the primary demo persona by default).",
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
