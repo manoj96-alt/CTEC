@@ -230,6 +230,7 @@ def build_default_fixture(
 
 if __name__ == "__main__":
     import os
+    import shutil
     import time
 
     _port = int(os.environ.get("CTEC_FIXTURE_PORT", "8443"))
@@ -240,6 +241,23 @@ if __name__ == "__main__":
     _server = build_default_fixture(port=_port, host="0.0.0.0")
     _server.start()
     print(f"[deterministic_http_fixture_server] listening on {_server.base_url}", flush=True)
+
+    # CDD-060 §29 -- additive-only, Compose-only: publishes this container's
+    # own generated certificate (never the private key, which stays only in
+    # `_server`'s own private tempdir) to a fixed filename in a
+    # governance-configured directory, so `backend` can trust it via a
+    # shared read-only volume. Every host/in-process test above constructs
+    # `DeterministicHttpFixtureServer` directly and never sets this
+    # environment variable, so this block never runs for them.
+    _cert_dir = os.environ.get("CTEC_FIXTURE_CERT_DIR")
+    if _cert_dir:
+        os.makedirs(_cert_dir, exist_ok=True)
+        _ca_path = os.path.join(_cert_dir, "ca.pem")
+        shutil.copyfile(_server.ca_bundle_path, _ca_path)
+        print(
+            f"[deterministic_http_fixture_server] published certificate to {_ca_path}", flush=True
+        )
+
     try:
         while True:
             time.sleep(3600)
