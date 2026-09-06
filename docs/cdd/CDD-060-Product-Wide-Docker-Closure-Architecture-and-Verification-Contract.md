@@ -1326,7 +1326,7 @@ keycloak/ctec-realm.json                                   4d16065fcb56c4f0de277
 backend/app/tests/test_oqi_keycloak_scope_reconciliation.py 05f5ad4b5b2e69582fecb121fbf9f16f129f8654588798a1a144b2824e1954ea
 ```
 
-## 33. Exact next phase
+## 33. PRODUCT-WIDE-DOCKER-CLOSURE-I-R6 (historical, superseded by later phases)
 
 ```
 PRODUCT-WIDE-DOCKER-CLOSURE-I-R6
@@ -1339,3 +1339,251 @@ verification contract. After I-R6 passes and commits, resume the original
 two-part §15 step 3a/3b connector proof and the now-reachable Step 4 OQI-evaluation trigger, as literal
 inline runbook text -- still entirely unauthorized to touch any of I-R4's, I-R5's, or I-R6's files,
 preserving defect attribution and phase clarity.
+
+I-R6 committed (`4aa9c9c2186e5fb9cafe10614820d0424850883f`); the resumed `PRODUCT-WIDE-DOCKER-CLOSURE-I`
+wrote and committed the final `DOCKER_SMOKE_TEST.md` (`f1c60c1308df117da816887f6f86ef1ccb6380b1`). The
+first `PRODUCT-WIDE-DOCKER-CLOSURE-VM` against that exact candidate correctly **STOPPED, did not merge**
+PR #195 (opened during that VM against `main`, since none pre-existed) -- see §34 below for the two findings
+that stopped it and their governed resolution.
+
+## 34. PRODUCT-WIDE-DOCKER-CLOSURE-G-R7 -- runbook Step-3b lookup + re-evaluation contract correction
+
+The first VM independently re-derived every fact in the closure (main/candidate SHAs, governance hashes,
+PR #195's 7-file diff against GitHub, CI green at the exact head SHA, fresh-boot health, DB certification
+46/0046/126/271, seed determinism, the real 3a production rejection, and a source-level no-bypass check)
+before finding two things requiring governance, neither of which is a security, tenancy, or regression
+defect: a runbook-script bug, and a documentation/architecture wording mismatch. Both are resolved here.
+
+### 34.1 Finding 1 -- Step-3b source-field lookup is not unique (independently reproduced)
+
+**Reproduction**: fresh, disposable `dockgr7` Compose stack, built from this exact candidate
+(`f1c60c1`), `demo_oqi_seeder` run once, then the literal Step-3b Python block extracted
+mechanically (via a `python3 -re` block match, never retyped) from the committed
+`DOCKER_SMOKE_TEST.md` and executed unmodified inside the real backend container:
+
+```
+sqlalchemy.exc.MultipleResultsFound: Multiple rows were found when exactly one was required
+```
+
+on the line `MFG_FIELD = conn.execute(text("SELECT source_field_id FROM source_fields WHERE
+field_label='Manufacturing Country'")).scalar_one()`. Reproduced deterministically on the very
+first execution of a freshly-seeded stack -- **not** an artifact of double-seeding (both rows carry
+the identical deterministic `created_on = 2026-01-01 00:00:00+00`, proving both are created by one
+`demo_oqi_seeder` invocation).
+
+**Root cause, proven via schema**: `source_fields` carries `uq_source_fields_object_label`, a
+uniqueness constraint on `(source_object_id, field_label)` -- **not** a global uniqueness constraint
+on `field_label` alone. This is correct, intentional schema design (mirroring real ERP/PLM systems,
+where two independent source systems may each expose a field they call "Manufacturing Country").
+The demo seed legitimately creates two such rows:
+
+```
+871a34f7-cc39-583e-9814-9aa52d0a87ab | source_object 614469d7-... | SAP ERP (demo) | Manufacturing Country
+8f0d8953-3e84-58ea-bf1c-45c9a4f8ddf5 | source_object 91e39f60-... | PLM System (demo) | Manufacturing Country
+```
+
+**Why SAP is the semantically-intended field**: the fixture's own payload
+(`deterministic_http_fixture_server.py`) carries no "Manufacturing Country" semantics at all --
+it returns `{"id": ..., "lead_time_days": ...}`. `ConnectorIngestionService.add_field_mapping`
+validates only `is_source_field_owned_by_tenant` (confirmed by reading its body) -- it does **not**
+enforce that a mapped `source_field_id` belongs to the same `source_system_id` the connector itself
+was configured against, so the PLM field would pass mechanical validation too. The correct choice is
+therefore architectural, not merely UUID-lucky: a connector explicitly `configure_connector`'d with
+`source_system_id=SAP_SYSTEM` should only ever map fields that themselves belong to that same source
+system -- exactly the invariant every other part of this same script (and §3a) already assumes.
+
+**Frozen correction** -- join through the field's owning source system, filtered by the same source
+system the script already resolves for `configure_connector`:
+```sql
+SELECT sf.source_field_id FROM source_fields sf
+JOIN source_objects so ON so.source_object_id = sf.source_object_id
+JOIN source_systems ss ON ss.source_system_id = so.source_system_id
+WHERE ss.source_system_name='SAP ERP (demo)' AND sf.field_label='Manufacturing Country'
+```
+Not a regression to a hardcoded UUID (§11's own instruction) -- a deterministic semantic lookup
+grounded in the seeded relationship the script already depends on. **Proven unique**: exactly 1 row,
+both on first seed and after an idempotent re-seed (re-run `demo_oqi_seeder`, re-queried, still 1
+row). `source_system_name='SAP ERP (demo)'` (the query already present one line above the broken
+one) is itself schema-guaranteed unique per-tenant via `uq_source_systems_tenant_name`, and the demo
+seeder operates on exactly one tenant (`ctec-demo-tenant`) -- safe as committed, no change needed.
+
+**Live functional proof of the corrected query** (temporary, uncommitted script, never a repository
+path, run against the same fresh stack): `configure_connector` → `add_field_mapping` (x2) →
+`run_connector` succeeds end-to-end with the shared-volume CA bundle:
+```
+RunResult(status='SUCCEEDED', fetched_records=2, accepted_records=2, rejected_records=0,
+          duplicate_records=0, evidence_written=2, failure_kind=None)
+```
+
+### 34.2 Finding 1b -- TLS negative-control documented expectation is also wrong (found while proving 34.1)
+
+While proving the corrected query end-to-end, the documented TLS negative control
+(`DOCKER_SMOKE_TEST.md` §3, "expect: `SSLCertVerificationError`") was independently re-checked and
+found **also incorrect**. `RestConnector`'s real fetch path (`rest_connector.py`, the
+`except OSError as exc:` branch around the HTTPS request) catches the TLS handshake failure --
+Python's `ssl.SSLCertVerificationError` is an `OSError` subclass -- and converts it to a structured,
+non-raising result:
+```
+RunResult(status='FAILED', failure_kind='CONNECTOR_UNAVAILABLE', evidence_written=0, ...)
+```
+confirmed via the persisted `oqi_connector_runs.failure_summary` row:
+`[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1010)`.
+The underlying cause genuinely is the undocumented-trust TLS failure the negative control is meant
+to prove -- only the *documented symptom* (an uncaught Python exception) was wrong; the real symptom
+is a caught, structured failure result. Frozen correction: document the actual `RunResult`/
+`failure_kind`/persisted-log shape above, not a raw traceback.
+
+### 34.3 Scan for further ambiguous runbook lookups (§14)
+
+Every `SELECT`/`scalar_one()` call in the final `DOCKER_SMOKE_TEST.md` was reviewed:
+- `alembic_version` / table-count aggregate: safe (single-row bookkeeping table / aggregate).
+- `source_systems WHERE source_system_name='SAP ERP (demo)'` (used twice): **safe**, DB-enforced
+  unique per-tenant (`uq_source_systems_tenant_name`), single-tenant demo context.
+- `source_fields WHERE field_label='Manufacturing Country'`: **definitely ambiguous** -- 34.1 above,
+  the sole defect requiring correction.
+- `oqi_business_processes WHERE tenant_id=... AND name='Supplier Qualification (Demo)'`: **not
+  DB-enforced unique** (no constraint on `name` alone, only `uq_oqi_business_processes_tenant_pk`),
+  but empirically safe under the current seeder, which creates exactly two hardcoded, distinct
+  process names. Recorded for completeness; not merge-blocking, no correction authorized or needed.
+
+### 34.4 Finding 2 -- re-evaluation lifecycle: reconstructed and resolved (Decision A)
+
+**Reconstruction from source** (not UI labels): `POST /api/v1/oqi/evaluate` is served entirely by
+`OqiEvaluationOrchestrationService`, which contains **zero** references to remediation anywhere in
+its own module (confirmed by grep) -- proving §21's required independence directly: the plain
+evaluation trigger cannot alter remediation-case state. The real re-evaluation trigger is
+`report_execution`'s own internal call to `ProductionRemediationOrchestrationService
+.reevaluate_after_execution`, which re-invokes the pre-existing, unmodified OQI1-4/OQI6 evaluator
+entrypoints directly (never a second HTTP round-trip), then calls
+`refresh_case_status_from_finding`, which transitions `EXTERNAL_EXECUTION_REPORTED` directly to
+`RESOLVED` in one atomic step when (and only when) the Finding's own resolved state says so --
+otherwise the case remains exactly where it was.
+
+**`AWAITING_REEVALUATION` -- exhaustive, repository-wide assignment search**: `grep -rn
+"AWAITING_REEVALUATION"` across every `.py`/`.ts`/`.tsx`/`.md` file in the repository returns exactly
+five hits: the enum literal itself (`case.py`), one docstring sentence in the same file, the
+frontend's `remediation-stepper.tsx` step-label array, one frontend test asserting that same label
+mapping, and three documentation mentions (CDD-045, CDD-043, and this document's own now-corrected
+§15). **Zero** production code path anywhere assigns this status to a `RemediationCase`. Every actual
+`RemediationCaseStatus` assignment site was independently enumerated:
+`CANDIDATE_READY`/`STEWARD_INVESTIGATION` (initial creation, `oqi_remediation_service.py`),
+`AWAITING_AUTHORITY` (after prepare), `AUTHORIZED` (after decide), `EXTERNAL_EXECUTION_REPORTED`
+(after report), `RESOLVED` (`refresh_case_status_from_finding`, the sole resolution site). Neither
+`AWAITING_REEVALUATION` nor `NO_REMEDIATION` (a status distinct from the unrelated
+`RecommendationType.NO_REMEDIATION_RECOMMENDED`) is ever assigned by current production code.
+
+**Authoritative architectural intent** (CDD-043 §16-§17, the original binding OQI5 architecture --
+read directly, not inferred): "`RemediationAuthorization` consumption transitions the
+`RemediationCase` to `EXTERNAL_EXECUTION_REPORTED`... and never itself changes `status` to
+`RESOLVED`" (§16); "OQI5 introduces zero new evaluation logic. Resolution... occurs exclusively
+through the pre-existing, unmodified `evaluate_current_state` entrypoints... triggered by ordinary
+fresh-evidence ingestion. `RemediationCase.status` transitions to `RESOLVED` **only as a read-only
+reflection** of the Finding's own resolved state **at the next case-status refresh** -- it never
+asserts resolution independently" (§17). This is a single-step, read-only reflection at refresh
+time -- exactly what `refresh_case_status_from_finding` implements. Nothing in CDD-043 requires a
+persisted intermediate status, and nothing requires `/evaluate` to be the trigger.
+
+**Test contract** (read directly, not assumed): `test_oqi_remediation_i1.py`'s
+`test_fresh_evidence_and_real_oqi2_evaluator_resolve_finding_execution_report_does_not` and
+`test_fresh_evidence_still_violated_leaves_finding_open_execution_report_does_not_resolve`, and
+`test_production_remediation_orchestration_postgres.py`'s
+`test_consistency_positive_remediation_crown_resolves_finding_and_reliance` and
+`test_consistency_negative_remediation_crown_never_falsely_resolves`, are the actual contract-tested
+behavior: a direct `EXTERNAL_EXECUTION_REPORTED` ⇄ `RESOLVED` transition (or no transition), asserted
+via fresh reads, with zero test anywhere asserting an `AWAITING_REEVALUATION` intermediate state.
+
+**Frontend contract**: `remediation-stepper.tsx`'s own header comment states it is "purely
+presentational -- renders exactly the server's own `case_status`... never derives, advances, or
+infers lifecycle state on its own." `AWAITING_REEVALUATION` sits in its `LINEAR_STEPS` ordinal array
+(not the `SIDE_STATE_LABEL` side-state map `STEWARD_INVESTIGATION`/`NO_REMEDIATION` already use for
+non-linear states) purely as reserved position vocabulary; because the component finds the *index*
+of whatever `case_status` the server sends and marks every lower index "past," a case that jumps
+straight from `EXTERNAL_EXECUTION_REPORTED` to `RESOLVED` will render "Awaiting Re-evaluation" as a
+completed step it never literally occupied. This is a harmless, purely cosmetic consequence of a
+fixed-position stepper rendering an atomic transition, consistent with CDD-043 §17's own framing of
+resolution as one atomic reflection -- not evidence of a missing backend transition. Recorded for a
+future CDD-045 UX polish; not a defect and not in scope here.
+
+**Decision: A -- stale CDD-060 wording, not a product defect.** All four independent lines of
+evidence (binding architecture text, exhaustive assignment search, contract-test behavior, and the
+frontend's own passive-rendering contract) agree: automatic, internal `report_execution →
+reevaluate_after_execution` **is** the intended governed architecture; `/evaluate` was never required
+to drive remediation-case transitions; `AWAITING_REEVALUATION` is not a required persisted lifecycle
+state for Step-14 closure. The already-committed `DOCKER_SMOKE_TEST.md` §8 (which documents exactly
+this real mechanism, and independently proves "remediation ≠ resolution" via a live GET showing the
+case correctly staying at `EXTERNAL_EXECUTION_REPORTED`) already describes actual product behavior
+more accurately than this document's own §15 step 11 did. No backend, frontend, or test-suite change
+is authorized or required. Per §26, `AWAITING_REEVALUATION` is **not** removed from the enum or the
+frontend stepper merely because it is currently unassigned -- that remains separate, unauthorized
+cleanup.
+
+### 34.5 Corrected §15 step 11 (documentation-only; §15 itself is not rewritten in place -- this
+supersedes its wording for VM-R1 purposes)
+
+```
+11. Re-evaluation: report_execution's own internal call automatically re-invokes the pre-existing,
+    unmodified OQI evaluator entrypoints against the Finding (ProductionRemediationOrchestrationService
+    .reevaluate_after_execution) -- no second POST /api/v1/oqi/evaluate is required or does anything to
+    remediation-case state (confirmed independent of remediation by source). The case transitions
+    directly EXTERNAL_EXECUTION_REPORTED -> RESOLVED in one atomic step only if the Finding's own
+    resolved state says so; otherwise it remains at EXTERNAL_EXECUTION_REPORTED (never a persisted
+    AWAITING_REEVALUATION intermediate -- CDD-043 SS17, "a read-only reflection... at the next
+    case-status refresh"). The explicit POST /api/v1/oqi/evaluate proof in step 4/5 stands unchanged
+    and is not affected by this correction.
+```
+
+No other CDD-060 §15 step, and no capability, is deleted or narrowed by this correction.
+
+### Frozen I-R7 authorization
+
+```
+CREATE = 0
+MODIFY = 1
+DELETE = 0
+TOTAL  = 1
+
+MODIFY  DOCKER_SMOKE_TEST.md -- ONLY within §3's embedded Step-3b script and its two documented
+        expected results:
+          1. the MFG_FIELD lookup query (34.1's frozen join, replacing the ambiguous field_label-only
+             lookup);
+          2. the TLS negative-control expected result (34.2's frozen RunResult/failure_kind/
+             failure_summary shape, replacing the incorrect raw-SSLCertVerificationError claim).
+        No other line, section, or word of DOCKER_SMOKE_TEST.md may change.
+```
+
+### I-R7 verification contract
+
+```
+LITERAL-RUNBOOK RULE   For every embedded executable block touched, extract and execute the literal
+                        committed text -- never a separately-maintained "corrected" copy -- exactly as
+                        VM-R1 will.
+STEP 3B                Literal corrected script, from a fresh seed, produces CONFIGURE OK and
+                        RunResult(status='SUCCEEDED', evidence_written=2, ...) with the CA bundle;
+                        RunResult(status='FAILED', failure_kind='CONNECTOR_UNAVAILABLE') without it.
+UNIQUENESS              The corrected MFG_FIELD query returns exactly 1 row, before and after an
+                        idempotent re-seed.
+EVIDENCE                Real FieldValueEvidence rows persist (count genuinely increases).
+EVALUATION              Step 4/5's negative/positive oqi-evaluation:trigger proof remains valid,
+                        unchanged.
+REMEDIATION             Prepare -> decide -> report-execution remains valid, unchanged.
+RE-EVALUATION           Re-run report-execution's live proof; confirm automatic internal
+                        reevaluate_after_execution and the case remaining at
+                        EXTERNAL_EXECUTION_REPORTED when the issue has not genuinely changed
+                        (remediation != resolution, reconfirmed live).
+PERSISTENCE/REBUILD     The full runbook scenario remains executable end to end from empty state.
+REGRESSION              Full backend (2184/2184 baseline, re-measured) and frontend (338/338 baseline,
+                        re-measured) regression green; static checks clean.
+ONE COMMIT              DOCKER_SMOKE_TEST.md alone, on top of f1c60c1308df117da816887f6f86ef1ccb6380b1.
+```
+
+## 35. Exact next phase
+
+```
+PRODUCT-WIDE-DOCKER-CLOSURE-I-R7
+```
+
+Implements exactly the one-file, two-correction authorization frozen in §34. After I-R7 passes and commits,
+the next phase is a **fresh** `PRODUCT-WIDE-DOCKER-CLOSURE-VM-R1` -- run from the beginning against the new
+exact candidate, not resumed from the first VM's stop point (the certification target changed; prior VM
+evidence may inform investigation but cannot substitute for certifying the new candidate). PR #195 remains
+open throughout G-R7/I-R7 and is only ever merged by a passing VM/VM-Rn.
