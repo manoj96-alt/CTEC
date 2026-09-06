@@ -152,8 +152,16 @@ with engine.connect() as conn:
     SAP_SYSTEM = conn.execute(text(
         "SELECT source_system_id FROM source_systems WHERE source_system_name='SAP ERP (demo)'"
     )).scalar_one()
+    # field_label is unique only per source object (uq_source_fields_object_label), not
+    # globally -- the demo seed legitimately has a "Manufacturing Country" field under both
+    # SAP ERP (demo) and PLM System (demo). Join through the field's owning source system so
+    # the field selected always belongs to the same source system the connector above is
+    # configured against.
     MFG_FIELD = conn.execute(text(
-        "SELECT source_field_id FROM source_fields WHERE field_label='Manufacturing Country'"
+        "SELECT sf.source_field_id FROM source_fields sf "
+        "JOIN source_objects so ON so.source_object_id = sf.source_object_id "
+        "JOIN source_systems ss ON ss.source_system_id = so.source_system_id "
+        "WHERE ss.source_system_name='SAP ERP (demo)' AND sf.field_label='Manufacturing Country'"
     )).scalar_one()
 
 with factory() as session:
@@ -191,9 +199,15 @@ with factory() as session:
 ```bash
 docker cp /tmp/step3b.py $(docker compose ps -q backend):/tmp/step3b.py
 
-# TLS negative control -- without the fixture's CA bundle, the connection must fail closed:
+# TLS negative control -- without the fixture's CA bundle, the connection must fail closed.
+# RestConnector catches the TLS handshake failure and returns a structured result rather than
+# letting the exception escape -- it never crashes the script:
 docker compose exec backend python3 /tmp/step3b.py
-# expect: SSLCertVerificationError (self-signed cert not yet trusted)
+# expect: CONFIGURE OK, connector_id=<uuid>
+# expect: RUN RESULT: RunResult(..., status='FAILED', fetched_records=0, accepted_records=0,
+#         evidence_written=0, failure_kind='CONNECTOR_UNAVAILABLE')
+# the persisted run log (oqi_connector_runs.failure_summary) preserves the underlying cause:
+#   [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate
 
 # TLS positive control -- with the shared, backend-mounted, read-only CA bundle:
 docker compose exec -e CTEC_CONNECTOR_TEST_CA_BUNDLE=/shared/fixture-ca/ca.pem backend python3 /tmp/step3b.py
