@@ -88,6 +88,18 @@ services:
       # checked into a compose file defeats its purpose.
       # python3 -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
       CTEC_RUNTIME_HANDOFF_KEY: ${CTEC_RUNTIME_HANDOFF_KEY:?Set CTEC_RUNTIME_HANDOFF_KEY in your .env — see docker-compose.yml comments for how to generate one}
+      # CDD-060 §29 -- inert by default (empty). Only the operator explicitly
+      # exporting this, pointed at the path below, lets RestConnector trust
+      # connector-fixture's ephemeral self-signed certificate for the
+      # ingestion-test profile; ordinary product/connector traffic is
+      # completely unaffected. Never set this for a real, non-fixture
+      # connector -- it replaces, not extends, the system trust store.
+      CTEC_CONNECTOR_TEST_CA_BUNDLE: ${CTEC_CONNECTOR_TEST_CA_BUNDLE:-}
+    volumes:
+      # Read-only: backend must never be able to write fixture trust
+      # material. Empty/unused unless the ingestion-test profile's
+      # connector-fixture service is also running.
+      - connector_fixture_ca:/shared/fixture-ca:ro
     ports: ["8000:8000"]
     depends_on:
       postgres:
@@ -111,9 +123,24 @@ services:
   connector-fixture:
     build: ./backend
     profiles: ["ingestion-test"]
+    # CDD-060 §29 -- overrides the image's own non-root `ctec` user (backend's
+    # Dockerfile) for this one test-only, no-published-port, profile-gated
+    # service only: the named volume Docker creates for connector_fixture_ca
+    # is root-owned, and this container is the sole writer into it (a single
+    # certificate-publish step, never any other root-requiring action).
+    # `backend` -- the only other consumer -- remains non-root throughout and
+    # mounts the same volume read-only.
+    user: "0:0"
     entrypoint: ["python", "-m", "app.tests.fixtures.deterministic_http_fixture_server"]
     environment:
       CTEC_FIXTURE_PORT: "8443"
+      # CDD-060 §29 -- additive-only: publishes this container's own
+      # generated certificate (never its private key) to the shared volume
+      # below so `backend` can trust it. In-process test usage of
+      # DeterministicHttpFixtureServer never sets this and is unaffected.
+      CTEC_FIXTURE_CERT_DIR: /shared/fixture-ca
+    volumes:
+      - connector_fixture_ca:/shared/fixture-ca
 
   frontend:
     build:
@@ -141,3 +168,7 @@ services:
 
 volumes:
   postgres_data:
+  # CDD-060 §29 -- ephemeral, connector-fixture-published trust material
+  # (certificate only, never a private key) for the ingestion-test profile.
+  # Destroyed with everything else by `docker compose down -v`.
+  connector_fixture_ca:

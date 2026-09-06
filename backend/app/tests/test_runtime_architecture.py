@@ -802,6 +802,11 @@ AUTHORIZED_CHANGED_PATHS = {
     # oqi_business_impact_repository.py) are omitted here as duplicates --
     # each already has its own pre-existing entry above from its original
     # OQI1/OQI2/OQI6 implementation block.
+    # PRODUCT-WIDE-DOCKER-CLOSURE-G-R5/I-R6 -- new static reconciliation test between
+    # backend/app/api/'s real OAuth-scope requirements and the Docker/dev-demo Keycloak
+    # realm (keycloak/ctec-realm.json), closing the oqi-evaluation:trigger scope-wiring
+    # gap (CDD-056) and guarding against the same recurring defect class in future.
+    "backend/app/tests/test_oqi_keycloak_scope_reconciliation.py",
 }
 
 
