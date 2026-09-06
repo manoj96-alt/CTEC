@@ -514,6 +514,14 @@ P2 = 3
       rejection + a CDD-059-Artifact-Authorization-I-R1-SS6.4-authorized ad hoc functional proof) and
       confirmed live that both hold simultaneously in the same running stack. Not itself an exploitable
       security defect; the reason §15 required this correction.
+    - **PRODUCT-WIDE-DOCKER-CLOSURE-G-R5 finding**: `POST /api/v1/oqi/evaluate` (CDD-056 §7-9) requires scope
+      `oqi-evaluation:trigger`, which is absent from `keycloak/ctec-realm.json` -- confirmed independently:
+      a real Authorization Code + PKCE request naming this scope is rejected by Keycloak itself
+      (`error=invalid_scope`) before any login page renders, blocking flagship Step 4 and everything
+      downstream of it (dashboard, remediation, re-evaluation, graph). This is the Docker/dev-demo identity
+      provider failing to implement an authorization requirement the backend already, correctly enforces --
+      a wiring defect, not a backend/CDD-056 defect. See §31 for the complete scope-reconciliation and
+      frozen correction.
 P3 = 3
     - No frontend UI action for the `remediation/prepare` trigger (already correctly out of CDD-058's own
       scope; disclosed here for completeness, not remediated).
@@ -572,7 +580,9 @@ TOTAL  = 1
    be rejected `422 CONNECTOR_ENDPOINT_REJECTED`, plus the CDD-059 Artifact Authorization I-R1 SS6.4-
    authorized ad hoc verification script -- inline shell/Python text in the runbook itself, never a new
    tracked file -- proving the real ingestion chain via `FixtureEndpointSecurityPolicy`), the `POST
-   /evaluate` explicit-orchestration trigger, and the `POST .../remediation/prepare` API-only trigger.
+   /evaluate` explicit-orchestration trigger (**PRODUCT-WIDE-DOCKER-CLOSURE-G-R5 correction**: requires the
+   realm's `oqi-evaluation:trigger` scope, absent until I-R5's own correction -- §31), and the `POST
+   .../remediation/prepare` API-only trigger.
 
 **Prohibited**: any change to `backend/`, `frontend/`, `docker-compose.yml`, either Dockerfile,
 `.github/workflows/ci.yml`, any migration, any test, any governance artifact other than this one's own
@@ -1069,15 +1079,174 @@ STATIC CHECKS      black/ruff/isort/mypy clean on both changed files.
 BOTH 3a AND 3b     both proofs reconfirmed once more immediately before commit, in the same running stack.
 ```
 
-## 31. Exact next phase
+## 31. PRODUCT-WIDE-DOCKER-CLOSURE-G-R5 — OQI Keycloak scope closure
+
+The resumed `PRODUCT-WIDE-DOCKER-CLOSURE-I` correctly STOPPED, before writing any file, on discovering that
+`POST /api/v1/oqi/evaluate` cannot be reached through governed authentication. This section independently
+reproduces that finding, re-derives the complete relevant authorization-scope contract, and freezes the
+smallest correct closure.
+
+### Independent reproduction
+
+Traced to source: `backend/app/api/oqi/router.py:775` calls `authorize(authenticated, "oqi-evaluation:trigger",
+dependencies, correlation)` before invoking `OqiEvaluationOrchestrationService.evaluate(...)` -- CDD-056
+§7-9's own binding, explicit, tenant-scoped production evaluation trigger. `keycloak/ctec-realm.json` defines
+no such scope. A real Authorization Code + PKCE request naming it is rejected outright:
+```
+GET .../protocol/openid-connect/auth?...&scope=openid+profile+oqi:read+oqi-evaluation:trigger&...
+→ 302 Found
+→ Location: .../auth/callback?error=invalid_scope&error_description=Invalid+scopes:+...
+```
+No login page is ever rendered while this scope is requested -- confirmed independently, matching the
+resumed-I STOP report exactly.
+
+### Complete OQI-domain scope reconciliation
+
+Every literal scope string passed to `authorize(...)` in `backend/app/api/oqi/router.py` and
+`backend/app/api/oqi_connector/router.py` (10 distinct scopes: `oqi:read`,
+`oqi-connector:configure/read/run`, `oqi-evaluation:trigger`, `oqi-reference-evidence:configure/verify`,
+`oqi-remediation:authorize/prepare/report-execution`) was extracted and diffed against the realm's defined
+`clientScopes`. **Exactly one gap: `oqi-evaluation:trigger`.** The other nine, including the previously
+corrected `oqi-remediation:prepare` (re-verified present and unmodified: 2 occurrences, matching commit
+`afe76b1597ab4b87c2ed319894f2dd185766f7fa`, untouched since), are all correctly defined and assigned.
+
+### Repository-wide scope reconciliation
+
+Every `authorize(...)`/`_authorize(...)` call and every inline `"<scope>" in authenticated.scopes` check
+across the complete `backend/app/api/` tree was enumerated (not just the OQI domain): 28 distinct scopes
+across 10 router modules (entity-resolution, gate-s, gate-v, information-element-context/evidence-fitness,
+ontology-copilot, ontology-modeling, oqi, oqi-connector, supplier-risk, supply-chain-impact). Cross-checked
+against the realm's 30 defined custom `clientScopes` and `ctec-frontend`'s default/optional assignment.
+**Result: `oqi-evaluation:trigger` remains the sole gap in the entire currently-exposed production API
+surface.**
+
+Two adjacent candidates were investigated and explicitly ruled *not* instances of the same defect class:
+- `tool-execution:execute` (`app/application/governed_tool_executor.py`) and `mcp-connector:read`
+  (`app/application/mcp_connector_catalog.py`) are both realm-defined (the former already correctly assigned
+  to `ctec-frontend`'s optional scopes) -- but neither module is imported or constructed anywhere under
+  `backend/app/api/` or `app/main.py`. They gate no currently-reachable route; there is nothing to wire.
+- `execution:replay` (`RECOVERY_SCOPE`, `app/runtime/persistence/contracts.py`) is never read from an
+  authenticated principal's own token scopes as an external requirement -- it is synthesized internally
+  (`app/application/supplier_risk_api.py:401`: appended to a principal's scope tuple only after that
+  principal already carries `supplier-risk:replay`) as an internal capability marker for the recovery-store's
+  own authorization object. It was never meant to come from Keycloak, so its absence from the realm is
+  correct, not a gap.
+
+One separate, pre-existing, out-of-Step-14-scope finding is disclosed but explicitly **not** authorized for
+correction here: `backend/app/api/supplier_risk/router.py:339` gates a recovery action on
+`"EXECUTION_RECOVERY_OPERATOR" not in authenticated.roles` -- the realm defines zero roles
+(`"roles": {}`), so this specific supplier-risk recovery path is likewise unreachable by any current token.
+This is a **role** gap, not a **scope** gap (a materially different Keycloak construct), it predates Step 14
+entirely, and it concerns supplier-risk, which CDD-060 §14 already places out of Step-14's own
+re-verification scope ("in scope only for a basic reachability check, not re-verification of their own
+already-closed capabilities"). Recorded for completeness; no correction authorized.
+
+### Default vs. optional placement
+
+`ctec-frontend`'s scope assignment shows one exceptionless OQI-domain sub-pattern: `oqi:read` is the sole
+default OQI scope; every other `oqi-*` scope -- including the read-only-but-sensitive
+`oqi-connector:read` -- is optional. `oqi-evaluation:trigger` is an explicit action trigger (CDD-056's own
+"explicit... production evaluation trigger" framing), exactly analogous to its already-optional siblings
+`oqi-remediation:prepare`/`authorize`/`report-execution`. **Placement: optional**, with zero exception to
+reconcile against.
+
+### Frontend requestability
+
+`frontend/lib/auth/config.ts`'s `browserAuthConfig()` hardcodes the ordinary browser session's default scope
+request (`NEXT_PUBLIC_OIDC_SCOPE` fallback): `"openid profile supplier-risk:read entity-resolution:read
+ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution"` --
+already, by design, omitting every action-trigger scope including `oqi-remediation:prepare` and
+`oqi-connector:configure/run`. `oqi-evaluation:trigger` fits this identical, already-established
+API-only/runbook-driven pattern; **no frontend code change is required or authorized**. (The variable is
+also independently operator-overridable via the `NEXT_PUBLIC_OIDC_SCOPE` build arg, reinforcing that no code
+change is ever needed regardless of approach.)
+
+### Fresh-realm-import mechanism, independently re-proven
+
+Rather than trust the earlier `oqi-remediation:prepare` precedent alone, the identical mechanism was
+re-verified fresh: a scratch, untracked copy of `keycloak/ctec-realm.json` (never committed, never touching
+the tracked file) was appended with one `clientScopes` entry and one `optionalClientScopes` entry, mounted
+into a disposable, freshly-created Keycloak 26.0 container (no compose file involved). Identical
+authorization request: **before**, `302 error=invalid_scope`; **after**, `200 OK` (a genuine login page
+renders). Container and scratch files destroyed immediately after. This independently confirms the fresh
+realm-import mechanism generalizes to this exact correction shape with no other change required.
+
+### Regression-test landscape and decision
+
+No existing test reconciles backend-required scopes against `keycloak/ctec-realm.json` -- the file appears
+in `test_runtime_architecture.py` only as one entry in a large tracked-file inventory allowlist, not a
+semantic check. `git log -- keycloak/ctec-realm.json` shows this exact defect class (a backend route
+requiring a scope the realm doesn't define/assign) recurring at least three times previously in this
+repository's own history (`f90b1c5 fix(auth): register information-element context read scope`, `8c3fdbf
+GAP-11: register Gate M Keycloak scopes as optional, not default`, and this Step-14 program's own
+`oqi-remediation:prepare` correction) -- always fixed ad hoc, never guarded systematically.
+
+**Decision: a new architecture test is justified (Option C)**, given this demonstrated recurring pattern and
+that a deterministic (not brittle-regex) reconciliation is achievable -- this section's own manual
+reconciliation above is exactly that computation, already proven traceable and exclusion-aware. Frozen
+contract for the new test: extract every scope literal from `authorize(...)`/`_authorize(...)` calls and
+inline `"<scope>" in/not in authenticated.scopes` checks under `backend/app/api/`; exclude scopes belonging
+to application modules not imported anywhere under `backend/app/api/` or `app/main.py` (the
+`tool-execution:execute`/`mcp-connector:read` class above) and any scope documented as internally-synthesized
+rather than externally-required (the `execution:replay` class above, via an explicit, commented allowlist in
+the test itself naming exactly why); assert every remaining scope is present in
+`keycloak/ctec-realm.json`'s `clientScopes` and assigned (default or optional) to `ctec-frontend`. This is a
+static, source-and-config-only test -- no live Keycloak required.
+
+### Security review
+
+The correction adds one `clientScopes` definition (identical shape to every sibling OQI action scope) and
+appends it to `ctec-frontend`'s `optionalClientScopes` only -- never `defaultClientScopes`. It is not granted
+to the primary demo persona by default, matches the established least-privilege pattern exactly, changes zero
+backend authorization logic, and does not touch tenant enforcement.
+
+### Frozen I-R5 authorization
 
 ```
-PRODUCT-WIDE-DOCKER-CLOSURE-I-R4
+CREATE = 1
+MODIFY = 1
+DELETE = 0
+TOTAL  = 2
+
+MODIFY  keycloak/ctec-realm.json  -- one clientScopes entry (mirroring
+        oqi-remediation:prepare's exact shape: protocol openid-connect,
+        include.in.token.scope=true, display.on.consent.screen=false,
+        CDD-056-referencing description) + one append to
+        ctec-frontend.optionalClientScopes.
+CREATE  backend/app/tests/test_oqi_keycloak_scope_reconciliation.py  --
+        the static reconciliation test specified above.
 ```
 
-Commits exactly the already-staged, already-verified two-file diff from `PRODUCT-WIDE-DOCKER-CLOSURE-I-R3`
-(no redesign -- §30 confirmed it correct and sufficient as implemented), after completing the deferred
-verification-contract items above. After I-R4 passes and commits, resume the original
+### I-R5 verification contract
+
+```
+FRESH REALM     docker compose down -v --remove-orphans; fresh keycloak import; oqi-evaluation:trigger
+                defined and optional-assigned to ctec-frontend.
+AUTH REQUEST    real Authorization Code + PKCE request naming the scope succeeds (200, login page renders,
+                not invalid_scope).
+TOKEN CLAIM     decoded issued token's scope claim contains oqi-evaluation:trigger.
+ROUTE PROOF     real authenticated POST /api/v1/oqi/evaluate reaches evaluation orchestration (authorization
+                passes) -- the domain evaluation result itself is not the proof; use a legitimately seeded
+                scenario, never a fabricated one.
+TENANT          authenticated.tenant_id continues to flow exactly as before; no tenant-scoping change.
+REPRESENTATIVE  oqi-remediation:prepare/authorize/report-execution, oqi-connector:configure/run,
+SCOPES          oqi-reference-evidence:configure/verify all remain requestable/functional, unregressed.
+NEW TEST        the new reconciliation test passes on the corrected realm and fails if
+                oqi-evaluation:trigger (or any future such gap) is reintroduced -- verify this by
+                temporarily reverting the realm change in a scratch copy, never the tracked file.
+NO CODE CHANGE  git diff confirms zero backend/frontend production code touched.
+CLEAN STACK     down -v / rebuild reproduces the corrected behavior from empty state.
+```
+
+## 32. Exact next phase
+
+```
+PRODUCT-WIDE-DOCKER-CLOSURE-I-R5
+```
+
+Implements exactly the §31 frozen correction (`keycloak/ctec-realm.json` + the new reconciliation test,
+nothing else). After I-R5 passes its own verification contract, resume the original
 `PRODUCT-WIDE-DOCKER-CLOSURE-I` to write `DOCKER_SMOKE_TEST.md` -- including, per §24 item 4 (amended), the
-two-part §15 step 3a/3b connector proof as literal inline runbook text -- still entirely unauthorized to
-touch either of I-R4's two files, preserving defect attribution and phase clarity.
+two-part §15 step 3a/3b connector proof and the now-reachable Step 4 OQI-evaluation trigger, as literal
+inline runbook text -- still entirely unauthorized to touch either I-R4's or I-R5's files, preserving defect
+attribution and phase clarity.
