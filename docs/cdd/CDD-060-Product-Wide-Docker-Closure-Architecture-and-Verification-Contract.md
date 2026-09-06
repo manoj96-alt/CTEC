@@ -1576,7 +1576,7 @@ REGRESSION              Full backend (2184/2184 baseline, re-measured) and front
 ONE COMMIT              DOCKER_SMOKE_TEST.md alone, on top of f1c60c1308df117da816887f6f86ef1ccb6380b1.
 ```
 
-## 35. Exact next phase
+## 35. PRODUCT-WIDE-DOCKER-CLOSURE-I-R7 (historical -- stopped before commit, see §36)
 
 ```
 PRODUCT-WIDE-DOCKER-CLOSURE-I-R7
@@ -1587,3 +1587,109 @@ the next phase is a **fresh** `PRODUCT-WIDE-DOCKER-CLOSURE-VM-R1` -- run from th
 exact candidate, not resumed from the first VM's stop point (the certification target changed; prior VM
 evidence may inform investigation but cannot substitute for certifying the new candidate). PR #195 remains
 open throughout G-R7/I-R7 and is only ever merged by a passing VM/VM-Rn.
+
+I-R7 independently re-verified both §34 corrections live (literal Step-3b script -- SHA-256
+`972e463bc0869dcc93beb883a0d57d14e58102201ae072b34c12ef8e84e5b2e4` -- no longer raises
+`MultipleResultsFound`; TLS positive/negative controls; Step 3a; evaluation controls; the full remediation
+lifecycle; remediation != resolution; backend 2184/2184; OAuth reconciliation 6/6, 10/10, 28/28; tenant
+crown 14/14 isolated; backend static checks) but correctly **stopped before commit** when the full frontend
+regression surfaced `frontend/tests/gate-x-runtime-architecture.test.tsx` failing (337/338) against the
+still-uncommitted runbook diff.
+
+## 36. PRODUCT-WIDE-DOCKER-CLOSURE-G-R8 -- Gate-X allowlist is a clean-tree-only tripwire, not a registry (Decision B)
+
+**Independently reproduced**: the exact failure I-R7 reported, from the preserved I-R7 worktree
+(`git status`/`git diff --name-status` show exactly one dirty path, `DOCKER_SMOKE_TEST.md`) --
+`AssertionError: expected false to be true` on `AUTHORIZED_CHANGED_PATHS.has(path)` for that path, in
+`gate-x-runtime-architecture.test.tsx`'s "touches only the frozen Artifact Authorization allowlist" test.
+Re-extracted the preserved literal Step-3b script independently; SHA-256 matches I-R7's reported
+`972e463bc0869dcc93beb883a0d57d14e58102201ae072b34c12ef8e84e5b2e4` exactly, confirming no drift.
+**Clean-tree control**: the same test, on a genuinely clean checkout of the identical committed candidate,
+passes 5/5 (the full frontend suite passes 338/338) -- confirming the failure is exposed specifically, and
+only, by the still-uncommitted runbook diff. **Missing-path set**, independently derived (`git diff
+--name-only HEAD` union `git ls-files --others --exclude-standard` against the preserved worktree): exactly
+one path, `DOCKER_SMOKE_TEST.md`. No second missing path.
+
+**This is not automatically analogous to G-R6's backend precedent** -- proven, not assumed, by reading this
+specific test's own history and the mechanics of the two allowlists side by side:
+
+- The backend's `AUTHORIZED_CHANGED_PATHS` (`test_runtime_architecture.py`) is, by its own name, its own
+  header comments, and G-R6's own independent finding, an intentionally-growing, cross-program registry --
+  "dozens of prior blocks each register their own phase's new paths the same way," spanning OQI-H1 through
+  this very Step-14 program's own G-R5/G-R6 additions.
+- The frontend's `AUTHORIZED_CHANGED_PATHS` (`gate-x-runtime-architecture.test.tsx`) carries a materially
+  different header: "scoped to exactly this Artifact Authorization's SS5 allowlist -- the frozen 29-file
+  Gate X surface." It has been touched exactly twice in its entire history (`git log --follow`): its
+  original authorship (Gate X8 PR5), and one later correction (`285fbb2`, "CDD-033 correction: align Gate X
+  runtime-architecture test with OQI7 findings-route authorization"). That correction commit's own message
+  is the decisive evidence: it explicitly characterizes this exact assertion -- "touches only the frozen
+  allowlist" -- as **"a local-diff-only development-time tripwire, not a standing architectural
+  boundary... it passes trivially on any clean checkout regardless of allowlist contents, so no allowlist
+  extension is needed."** Faced with a real, later, unrelated-program correction need in the very same file
+  (a forbidden-route check needing an update for OQI7's newly-authorized `/quality/findings` route), that
+  prior phase deliberately did **not** extend `AUTHORIZED_CHANGED_PATHS` -- it fixed the other, unrelated
+  assertion instead and left this one as-is, on the explicit reasoning above.
+- Mechanically, `gitChangedPaths()` reads `REPOSITORY_ROOT = join(process.cwd(), "..")` -- the whole
+  repository, not `frontend/` alone -- confirmed by re-running it; this test's "touches only the frozen
+  allowlist" assertion fires on *any* dirty path anywhere in the monorepo, including root-level docs and
+  backend files wholly outside Gate X's own frontend/navigation surface.
+
+**Decision: B -- test-architecture mismatch, not a registration gap.** Extending this specific allowlist
+with `DOCKER_SMOKE_TEST.md` would contradict this file's own established convention (proven by `285fbb2`'s
+own reasoning, not merely assumed) and would set a precedent of growing a closed, single-program's frontend
+allowlist for every future unrelated repository change -- exactly the outcome that prior correction
+declined to do. No second implementation path is authorized or needed.
+
+**Resolution, without any test change**: because this assertion is, by its own established convention, a
+clean-tree-only tripwire (vacuously satisfied whenever `git diff --name-only HEAD` union untracked files is
+empty), the correct operational fix is procedural, not code: commit the already-fully-verified, single-file
+`DOCKER_SMOKE_TEST.md` correction first (its content was independently re-verified live in full by both
+I-R7 and this phase's own reproduction, and a markdown runbook file participates in no Docker build or
+runtime path, so committing it before the remaining regression gates carries no genuine risk), then run the
+remaining verification (full frontend regression included) against the now-clean tree, where this assertion
+passes exactly as its own designer intended. §34's frozen `CREATE=0/MODIFY=1/DELETE=0/TOTAL=1` authorization
+(sole path `DOCKER_SMOKE_TEST.md`) is **unchanged and re-affirmed** -- I-R8 implements it, resequenced only
+so that commit precedes the frontend-regression gate rather than following it.
+
+### Reaffirmed I-R8 authorization (identical to I-R7's frozen §34 authorization)
+
+```
+CREATE = 0
+MODIFY = 1
+DELETE = 0
+TOTAL  = 1
+
+MODIFY  DOCKER_SMOKE_TEST.md -- reconciled byte-identical from the preserved I-R7 worktree (SHA-256
+        4ca50d0a6c8fe9638c433fb1b4b1fac4ceae8dcf1c7c28b934654adc0dfa8b20), containing only §34's two
+        corrections. No other path. frontend/tests/gate-x-runtime-architecture.test.tsx is NOT modified.
+```
+
+### I-R8 verification contract
+
+```
+PRESERVATION      DOCKER_SMOKE_TEST.md reconciled byte-identical from the preserved I-R7 worktree; literal
+                  Step-3b script re-extracted and SHA-verified against 972e463b... immediately before commit.
+COMMIT ORDER      Commit DOCKER_SMOKE_TEST.md first (parent 8de2aa9...), matching I-R7's own already-passed
+                  gates (Step 3a/3b, evaluation, remediation lifecycle, remediation != resolution, backend
+                  2184/2184, OAuth reconciliation, tenant crown, static checks -- all re-confirmed, not
+                  merely inherited). THEN run full frontend regression (format/lint/typecheck/tests/build)
+                  against the now-clean, post-commit tree -- require 338/338, and specifically confirm
+                  gate-x-runtime-architecture.test.tsx passes 5/5 vacuously with no test file touched.
+REMAINING GATES   Certificate rotation (force-recreate connector-fixture, certificate identity changes, no
+                  backend restart, literal Step-3b positive proof succeeds again) and a final clean rebuild
+                  (down -v --remove-orphans, fresh migrate/seed/Step-3a/Step-3b/evaluation/remediation-auth
+                  path) -- both deferred by I-R7, both required before VM-R1.
+PUSH              Push the single commit; verify local = origin = GitHub = PR #195 head.
+```
+
+## 37. Exact next phase
+
+```
+PRODUCT-WIDE-DOCKER-CLOSURE-I-R8
+```
+
+Implements exactly the single-file authorization reaffirmed in SS36 -- commit first, then complete the
+frontend-regression and remaining gates I-R7 could not reach (certificate rotation, final clean rebuild).
+After I-R8 passes, the next phase is a **fresh** `PRODUCT-WIDE-DOCKER-CLOSURE-VM-R1`, run from the
+beginning against the new exact candidate -- not resumed from either prior VM/I-phase stop point. PR #195
+remains open throughout and is only ever merged by a passing VM/VM-Rn.
