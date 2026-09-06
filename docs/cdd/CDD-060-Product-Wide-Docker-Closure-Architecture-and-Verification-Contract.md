@@ -322,9 +322,26 @@ Built entirely from capabilities directly confirmed to exist in the current code
 2.  Seed governed foundation: existing entrypoint (ontology/blueprint, automatic) +
     `demo_oqi_seeder` (manual, idempotent, demo-tenant-scoped) for the pre-existing SAP/PLM disagreement
     baseline
-3.  Real governed ingestion: authenticate a connector-scoped call (oqi-connector:configure/run),
-    POST /api/v1/oqi/connectors (configure against https://connector-fixture:8443/), POST .../run
-    -- proves the CDD-059 chain inside the FULL stack, not an isolated harness
+3.  Real governed ingestion (**PRODUCT-WIDE-DOCKER-CLOSURE-G-R4 correction** -- see §30; this step is now
+    two separate, independently truthful proofs, not one):
+    3a. Security proof: authenticate a connector-scoped call (oqi-connector:configure), POST
+        /api/v1/oqi/connectors configured against https://connector-fixture:8443/ through the real,
+        unmodified production HTTP API -- MUST be rejected, 422 CONNECTOR_ENDPOINT_REJECTED. Proves
+        `ProductionEndpointSecurityPolicy` (CDD-059 SS32, zero exceptions) holds inside the full
+        integrated stack, exactly as designed.
+    3b. Functional/image-runtime-parity proof: per CDD-059 Artifact Authorization I-R1 SS6.4's own
+        pre-existing, explicit authorization for "any ad hoc VM/CI verification script that is not
+        itself a repository path" to import/construct `FixtureEndpointSecurityPolicy` directly --
+        `docker compose exec backend python3` running a short, uncommitted script that directly
+        constructs `ConnectorIngestionService(session, endpoint_security_policy=
+        FixtureEndpointSecurityPolicy(allowed_addresses={<connector-fixture's real resolved Docker
+        address>}))` and calls `configure_connector`/`add_field_mapping`/`run_connector` against
+        `https://connector-fixture:8443/` for real -- exercising the actual, unmodified
+        `RestConnector`/`ConnectorIngestionService` production code (never a mock, never direct SQL),
+        with a real TLS handshake (trusting the fixture's certificate via the shared-volume mechanism,
+        §30) across the real Compose network, inside the actual built backend image. Proves genuine
+        image-runtime parity for the complete real-ingestion chain that 3a's necessary rejection at the
+        HTTP-API layer cannot, by itself, exercise.
 4.  FieldValueEvidence admitted against pre-existing SourceField configuration (real Postgres row check)
 5.  POST /api/v1/oqi/evaluate (CDD-056 explicit orchestration trigger) -- composes OQI1-4/OQI6/Reliance
     over both the seeded and the newly-ingested evidence
@@ -483,14 +500,20 @@ P2 = 3
     - No product-wide fresh-Docker verification has been performed since PR #180 despite the OQI hardening
       program, production/remediation orchestration, and REAL-ENTERPRISE-INGESTION all merging since. Not
       itself a code defect -- the reason this phase (and the following VM) exists.
-    - **PRODUCT-WIDE-DOCKER-CLOSURE-G-R3 finding**: `backend` cannot establish a trusted TLS connection to
-      `connector-fixture` over the real Compose network -- confirmed empirically
-      (`SSLCertVerificationError: self-signed certificate`) -- because the fixture's self-signed certificate
-      is generated inside its own container at a randomized temp path with no volume or environment wiring
-      to make it reachable/trusted by `backend`. This is the specific root cause of the item above for the
-      REAL-ENTERPRISE-INGESTION portion of the flagship scenario specifically; not itself an exploitable
-      security defect (verification correctly fails closed), but it blocks this phase's own required
-      full-stack proof of CDD-059's guarantees. See §29 for root cause, architecture, and frozen correction.
+    - **PRODUCT-WIDE-DOCKER-CLOSURE-G-R3/G-R4 finding (superseding G-R3's own initial "TLS trust gap"
+      framing -- see §30)**: `backend` cannot establish a trusted TLS connection to `connector-fixture` over
+      the real Compose network (confirmed empirically, root-caused and corrected in §29); separately, and
+      more fundamentally, `connector-fixture`'s address is unconditionally rejected by
+      `ProductionEndpointSecurityPolicy` (CDD-059 SS32, zero exceptions, by deliberate design) through the
+      real production HTTP API -- meaning CDD-060's own original §15 step 3 wording asked for a real,
+      full-stack, HTTP-API-triggered ingestion proof against a destination the security architecture is
+      designed to always refuse. This is a **verification-scenario defect in this document**, not a product
+      defect: the connector's rejection of a private-range destination is correct, governed, and
+      independently proven by CDD-059's own `test_crown_h_production_construction_cannot_activate_fixture_
+      policy`. G-R4 (§30) redesigned §15 step 3 into two separate, independently truthful proofs (security
+      rejection + a CDD-059-Artifact-Authorization-I-R1-SS6.4-authorized ad hoc functional proof) and
+      confirmed live that both hold simultaneously in the same running stack. Not itself an exploitable
+      security defect; the reason §15 required this correction.
 P3 = 3
     - No frontend UI action for the `remediation/prepare` trigger (already correctly out of CDD-058's own
       scope; disclosed here for completeness, not remediated).
@@ -544,8 +567,12 @@ TOTAL  = 1
    still-real, disclosed gap.
 4. Extend the walkthrough (additive steps only, no renumbering of the existing troubleshooting section) to
    cover the capabilities merged since PR #180 that Step 13's own flagship scenario (§15 of this document)
-   exercises: the `connector-fixture` ingestion-test profile and a real connector configure/run call, the
-   `POST /evaluate` explicit-orchestration trigger, and the `POST .../remediation/prepare` API-only trigger.
+   exercises: the `connector-fixture` ingestion-test profile, **PRODUCT-WIDE-DOCKER-CLOSURE-G-R4's own §15
+   step 3a/3b two-part connector proof** (a real HTTP configure call against `connector-fixture` expected to
+   be rejected `422 CONNECTOR_ENDPOINT_REJECTED`, plus the CDD-059 Artifact Authorization I-R1 SS6.4-
+   authorized ad hoc verification script -- inline shell/Python text in the runbook itself, never a new
+   tracked file -- proving the real ingestion chain via `FixtureEndpointSecurityPolicy`), the `POST
+   /evaluate` explicit-orchestration trigger, and the `POST .../remediation/prepare` API-only trigger.
 
 **Prohibited**: any change to `backend/`, `frontend/`, `docker-compose.yml`, either Dockerfile,
 `.github/workflows/ci.yml`, any migration, any test, any governance artifact other than this one's own
@@ -603,7 +630,11 @@ SECURITY     Real Authorization Code + PKCE login; unauthenticated OQI request f
              migration 0046's remediation authority tenant-chain integrity (§17) inside the FULL integrated
              stack -- at least one cross-tenant Case->Instruction (or Instruction->Authorization, or
              Case->AgentRun) attempt via a real HTTP call rejected, and the legitimate same-tenant chain
-             (prepare -> decide -> report-execution) still succeeds end-to-end.
+             (prepare -> decide -> report-execution) still succeeds end-to-end. G-R4 addition: reconfirm
+             both halves of §15 step 3 -- 3a, a real HTTP connector-configure call against
+             `connector-fixture` rejected `422 CONNECTOR_ENDPOINT_REJECTED` (production SSRF policy holds);
+             3b, the CDD-059 SS6.4-authorized ad hoc script produces real FieldValueEvidence via the real
+             ingestion chain, TLS included -- both proven to hold simultaneously in the same running stack.
 PRODUCT      Execute the full flagship scenario, §15 steps 1-12, exactly as frozen, with no step skipped
              and no outcome asserted without direct evidence (real HTTP response bodies, real Postgres
              rows, a real rendered frontend screen).
@@ -899,13 +930,154 @@ CLEAN STACK   `docker compose down -v --remove-orphans` followed by a fresh buil
               working chain from empty state.
 ```
 
-## 30. Exact next phase
+## 30. PRODUCT-WIDE-DOCKER-CLOSURE-G-R4 — production security policy vs. flagship connector proof
+
+`PRODUCT-WIDE-DOCKER-CLOSURE-I-R3` implemented and verified §29's TLS correction successfully, then
+correctly STOPPED pursuing §15 step 3's mandatory real-HTTP-API proof: `POST /api/v1/oqi/connectors`
+(configure) against `https://connector-fixture:8443/`, issued through the real, unmodified production API,
+returned `422 CONNECTOR_ENDPOINT_REJECTED` -- independently reproduced here. Root cause, traced to source:
+`ConnectorIngestionService`'s only production construction site
+(`app/api/oqi_connector/router.py`'s `connector_ingestion_service` dependency provider) constructs it with
+no `endpoint_security_policy` argument, so it always defaults to `ProductionEndpointSecurityPolicy()` --
+which rejects any resolved address where `ip.is_private` is true (`rest_connector.py`'s `_is_prohibited_
+address`), and `connector-fixture`'s Docker-bridge address (confirmed live: `172.18.0.x`) is always in that
+range. This is not a bug: `EndpointSecurityPolicy`'s own docstring states "Production code may only ever
+default-construct `ProductionEndpointSecurityPolicy`... reads no environment variable, accepts no allowlist
+of any kind, from any source," and a dedicated architecture test,
+`test_crown_h_production_construction_cannot_activate_fixture_policy` (an AST-based proof that
+`FixtureEndpointSecurityPolicy` is never referenced anywhere under `app/api/**` or in
+`dependency_container.py`, and that the router's own construction call passes no override), exists
+specifically to guarantee this can never be bypassed. **Verdict: this is a verification-scenario defect in
+this document's own §15 step 3, not a product defect.** The production connector's rejection of a
+Docker-internal/private destination is exactly correct, governed, and independently proven -- CDD-060
+should never have asked the real HTTP API to reach it and expect success.
+
+### The resolution CDD-059 already authorized
+
+Re-reading `CDD-059-Artifact-Authorization-I-R1-SSRF-Test-Boundary-Correction-Amendment.md` SS6.4 in full
+resolved this without requiring any new mechanism: *"Only test code
+(`backend/app/tests/test_oqi_connector_ingestion_postgres.py`, and **any ad hoc VM/CI verification script
+that is not itself a repository path**) may import `FixtureEndpointSecurityPolicy` and pass it explicitly
+into a directly-constructed `ConnectorIngestionService(session, endpoint_security_policy=
+FixtureEndpointSecurityPolicy(allowed_addresses=...))`."* This is a pre-existing, already-governed
+authorization for exactly the missing piece: a genuine, full-stack, image-runtime-parity proof of the real
+ingestion chain, constructed by an uncommitted script rather than the production HTTP surface, which the
+Crown H test guarantees can never be reached any other way.
+
+### Two-part resolution, verified live
+
+- **3a (production-security proof, unchanged mechanism)**: the real HTTP API call against
+  `connector-fixture` MUST be, and is, rejected -- proves `ProductionEndpointSecurityPolicy` holds inside the
+  full integrated stack. Independently reconfirmed: `curl` with a real Keycloak-issued token ->
+  `422 CONNECTOR_ENDPOINT_REJECTED`.
+- **3b (functional/image-runtime-parity proof, newly designed)**: `docker compose exec backend python3`
+  running an uncommitted script (not a repository path, per CDD-059 SS6.4) that directly constructs
+  `ConnectorIngestionService(session, endpoint_security_policy=FixtureEndpointSecurityPolicy(
+  allowed_addresses={<connector-fixture's live-resolved address>}))` and calls `configure_connector` ->
+  `add_field_mapping` -> `run_connector` against `https://connector-fixture:8443/`. Independently verified
+  live, inside the real built backend image, over the real Compose network, using §29's TLS correction for
+  the real cert trust: `RunResult(status='SUCCEEDED', fetched_records=2, accepted_records=2,
+  evidence_written=2, failure_kind=None)`; confirmed 3 real rows in `field_value_evidence` for the target
+  `source_field_id` via a direct Postgres query. Both 3a and 3b were proven **simultaneously** in the one
+  same running stack -- the production boundary holding does not depend on, or conflict with, the ad hoc
+  script's own governed bypass, exactly as CDD-059 SS6.9 requires (TLS-trust and endpoint-security-policy
+  remain two wholly separate controls).
+
+### Why this is not a test backdoor
+
+Nothing was added to, or weakened in, `rest_connector.py`, `connector_ingestion_service.py`, or any
+production module. `FixtureEndpointSecurityPolicy`'s own semantics (unchanged, pre-existing, defined only in
+the test file) already refuse to exempt link-local/multicast/reserved/unspecified addresses regardless of
+`allowed_addresses` content (`_is_absolute_deny`, CDD-059 SS6.5) and match only by exact resolved-IP-string
+equality (no CIDR, no hostname, no wildcard). The ad hoc script exercises this exact, already-governed,
+already-tested substitution mechanism -- it does not invent a new one.
+
+### TLS I-R3 correction disposition: RETAINED
+
+Re-assessed against the corrected architecture (I-R3's own §15 outcomes A/B/C): **Outcome A -- still
+needed.** The ad hoc verification script's real TLS handshake against `connector-fixture`'s self-signed
+certificate requires exactly the shared-volume CA-bundle mechanism §29 built and I-R3 implemented. Nothing
+about this resolution removes the need for it; it only clarifies which caller consumes it (an ad hoc
+verification script per CDD-059 SS6.4, not the production HTTP API, which was never a valid consumer).
+
+### `user: "0:0"` disposition: RETAINED, explicitly re-justified
+
+Independently reproduced: without it, `connector-fixture`'s non-root `ctec` process gets
+`PermissionError: [Errno 13] Permission denied` writing into the root-owned named-volume mount point --
+confirmed both by inspecting the error and by removing the override and observing the exact same failure.
+Alternatives considered and rejected: no Compose-native per-volume UID/GID initialization exists for the
+local driver without a bind mount (rejected -- adds host-path dependency, contrary to CDD-060 §5's own no-
+host-state-dependency principle); a custom root-then-drop-privileges entrypoint would require a Dockerfile
+change (out of this correction's authorized scope, and unnecessary complexity for one file-copy operation).
+Risk assessment: `connector-fixture` is profile-gated (never in the default graph), publishes no host port,
+mounts no host path, has no Docker-socket access, and its `user: root` override grants it nothing beyond
+writing into its own already-writable-by-nobody-else named volume; `backend` -- the only other volume
+consumer, and the only container any real network traffic reaches -- remains non-root throughout, mounts
+the volume read-only, and never receives the private key. Risk is not materially increased.
+
+### FieldValueEvidence path
+
+Produced exactly as CDD-059 designed: through the real `ConnectorIngestionService`/`RestConnector` code
+(§3b), never a database insertion substitute. §22's prohibition against "direct SQL insertion as substitute"
+is satisfied -- the ad hoc script constructs the service and calls its real methods; the only substitution
+is the injected policy *object*, an already-governed CDD-059 mechanism, not a bypass of evidence admission
+itself.
+
+### Severity / classification
+
+**Verification-contract defect (this document's §15), not a product defect.** No P0/P1. Folded into the
+existing Docker-specific P2 in §21 (superseding G-R3's own narrower "TLS trust gap" framing with this fuller
+diagnosis) -- not a new, separate severity entry, since it is the same underlying §15 step 3 correction, now
+completely resolved rather than partially diagnosed.
+
+### CI implications
+
+No CI change authorized or required. The functional/image-runtime-parity proof (3b) is a VM-level manual
+verification step (`docker compose exec`), mirroring how POSTGRES-DATA-MODEL-CLOSURE's own VM-R5 ran its
+adversarial test suite inside a built backend container -- not a new automated CI job. The existing
+`test_oqi_connector_ingestion_postgres.py` suite (in-process, already running in CI's `backend` job today)
+remains the durable, automated regression protection for the underlying connector/TLS/SSRF logic itself.
+
+### Frozen next implementation authorization
+
+The two-file diff already staged from `PRODUCT-WIDE-DOCKER-CLOSURE-I-R3` requires **no redesign** --
+confirmed correct and sufficient exactly as implemented:
 
 ```
-PRODUCT-WIDE-DOCKER-CLOSURE-I-R3
+CREATE = 0
+MODIFY = 2
+DELETE = 0
+TOTAL  = 2
+
+docker-compose.yml
+backend/app/tests/fixtures/deterministic_http_fixture_server.py
 ```
 
-Implements exactly the §29 frozen correction (`docker-compose.yml` + the fixture script's `__main__` guard,
-nothing else). After I-R3 passes its own verification contract (§29), resume the original
-`PRODUCT-WIDE-DOCKER-CLOSURE-I` to write `DOCKER_SMOKE_TEST.md` -- still entirely unauthorized to touch
-either of I-R3's two files, preserving defect attribution and phase clarity.
+### Verification contract for the resuming implementation phase
+
+Before committing, additionally confirm (deferred from the stopped I-R3, now unblocked):
+```
+NEGATIVE CONTROL   (already reconfirmed in G-R4, live) with CTEC_CONNECTOR_TEST_CA_BUNDLE unset, the raw
+                   TLS probe still fails exactly as before correction.
+SECURITY REGRESSION  existing SSRF/DNS-pinning/TLS/ambient-proxy connector tests remain green (rerun fresh;
+                   zero code in rest_connector.py changed by this correction).
+ARCHITECTURE TESTS  test_crown_h_production_construction_cannot_activate_fixture_policy and the rest of
+                   test_oqi_connector_ingestion_postgres.py remain green.
+FIXTURE IN-PROCESS  every host/in-process construction of DeterministicHttpFixtureServer remains unaffected
+                   (CTEC_FIXTURE_CERT_DIR unset in every such path).
+STATIC CHECKS      black/ruff/isort/mypy clean on both changed files.
+BOTH 3a AND 3b     both proofs reconfirmed once more immediately before commit, in the same running stack.
+```
+
+## 31. Exact next phase
+
+```
+PRODUCT-WIDE-DOCKER-CLOSURE-I-R4
+```
+
+Commits exactly the already-staged, already-verified two-file diff from `PRODUCT-WIDE-DOCKER-CLOSURE-I-R3`
+(no redesign -- §30 confirmed it correct and sufficient as implemented), after completing the deferred
+verification-contract items above. After I-R4 passes and commits, resume the original
+`PRODUCT-WIDE-DOCKER-CLOSURE-I` to write `DOCKER_SMOKE_TEST.md` -- including, per §24 item 4 (amended), the
+two-part §15 step 3a/3b connector proof as literal inline runbook text -- still entirely unauthorized to
+touch either of I-R4's two files, preserving defect attribution and phase clarity.
