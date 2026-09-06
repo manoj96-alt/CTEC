@@ -1238,15 +1238,104 @@ NO CODE CHANGE  git diff confirms zero backend/frontend production code touched.
 CLEAN STACK     down -v / rebuild reproduces the corrected behavior from empty state.
 ```
 
-## 32. Exact next phase
+## 32. PRODUCT-WIDE-DOCKER-CLOSURE-G-R6 — I-R5 artifact-allowlist dependency
+
+`PRODUCT-WIDE-DOCKER-CLOSURE-I-R5` implemented and content/runtime-verified §31's correction in full --
+fresh Keycloak import, real Authorization Code + PKCE, correct token claim, a real token without the scope
+receiving `403 AUTHORIZATION_SCOPE_REQUIRED`, a real token with the scope reaching
+`POST /api/v1/oqi/evaluate` and returning a genuine, differentiated `202` result against a legitimately
+seeded scenario (`CONFORMITY: FAILED`, `business_impact: BUSINESS_IMPACT_IDENTIFIED`,
+`reliance: RELIANCE_AT_RISK`), 10/10 OQI and 28/28 product-wide scope reconciliation, and the new
+reconciliation test demonstrably catching both a missing-definition and a missing-assignment defect via
+synthetic data. It then correctly stopped before commit: the mandatory full backend regression (2183
+passed, 1 failed) surfaced that `backend/app/tests/test_runtime_architecture.py`'s own
+`AUTHORIZED_CHANGED_PATHS` -- a flat, historically-additive set this repository has used since early in its
+history to gate exactly one thing: a currently-dirty working tree (`git diff --name-only HEAD` union
+`git ls-files --others --exclude-standard`) must be a subset of this pre-declared, known-path inventory --
+does not yet list the new reconciliation test's path.
+
+**Independently reproduced**: running the exact failing test against the preserved I-R5 worktree confirms
+the sole extra item is `backend/app/tests/test_oqi_keycloak_scope_reconciliation.py`;
+`keycloak/ctec-realm.json` is already correctly registered (line 272, from its original Gate E Phase 1
+freeze) and is not flagged. No other path is missing.
+
+**Mechanism, not a historical registry**: the set stops being extended after an OQI-H1/CDD-047 block (no
+entries added for H2-H5, OQI5/6/7, orchestration, remediation, REAL-ENTERPRISE-INGESTION, or any of Step
+14's own G-R1/G-R3/G-R4/G-R5 work) -- yet nothing has broken, because the assertion is vacuously satisfied
+whenever the working tree is clean (`changed` is empty, and the empty set is a subset of anything). It only
+becomes a live constraint when a full-suite run is made against an *uncommitted* diff -- which I-R5's own
+§16 full-regression-before-commit requirement was the first step in this entire Step-14 program to do. This
+is normal, additive bookkeeping (dozens of prior blocks each register their own phase's new paths the same
+way, e.g. the immediately preceding block's own comment explaining why `test_oqi_api_postgres.py` needed an
+entry "unlike this amendment's other 12 MODIFY-authorized test files, which all already had one") -- not a
+new defect, redesign, or security question.
+
+**Selected correction**: append exactly one new entry to `AUTHORIZED_CHANGED_PATHS`, immediately before the
+set's closing brace (the established end-of-list, additive placement), with one explanatory comment in the
+file's own established per-block style:
+```python
+    # PRODUCT-WIDE-DOCKER-CLOSURE-G-R5/I-R6 -- new static reconciliation test between
+    # backend/app/api/'s real OAuth-scope requirements and the Docker/dev-demo Keycloak
+    # realm (keycloak/ctec-realm.json), closing the oqi-evaluation:trigger scope-wiring
+    # gap (CDD-056) and guarding against the same recurring defect class in future.
+    "backend/app/tests/test_oqi_keycloak_scope_reconciliation.py",
+```
+No test-logic change, no wildcard/general exclusion, no weakening of `test_changed_files_match_cdd_010_and_
+cdd_012_exhaustive_allowlists` in any other respect.
+
+### Frozen I-R6 authorization
 
 ```
-PRODUCT-WIDE-DOCKER-CLOSURE-I-R5
+CREATE = 1
+MODIFY = 2
+DELETE = 0
+TOTAL  = 3
+
+CREATE  backend/app/tests/test_oqi_keycloak_scope_reconciliation.py  -- the already-implemented,
+        already-verified §31 reconciliation test, preserved byte-identical from I-R5.
+MODIFY  keycloak/ctec-realm.json  -- the already-implemented, already-verified §31 realm
+        correction, preserved byte-identical from I-R5.
+MODIFY  backend/app/tests/test_runtime_architecture.py  -- ONLY the single new
+        AUTHORIZED_CHANGED_PATHS entry above, in its exact frozen placement/wording.
+        No other line of this file may change.
 ```
 
-Implements exactly the §31 frozen correction (`keycloak/ctec-realm.json` + the new reconciliation test,
-nothing else). After I-R5 passes its own verification contract, resume the original
+### I-R6 verification contract
+
+```
+PRESERVATION        keycloak/ctec-realm.json and test_oqi_keycloak_scope_reconciliation.py remain
+                     byte-identical to their I-R5 hashes (below) unless a genuinely new defect is found.
+ARCHITECTURE TEST    test_changed_files_match_cdd_010_and_cdd_012_exhaustive_allowlists passes against
+                     the corrected, committed state.
+RECONCILIATION TEST  all 6 tests in test_oqi_keycloak_scope_reconciliation.py remain green, including its
+                     own demonstrated missing-definition/missing-assignment detection.
+FULL REGRESSION      re-run the complete backend suite; require zero failures (I-R5's own 2183/1 baseline,
+                     re-measured fresh, not assumed).
+CLEAN STACK          complete one additional full cycle I-R5 did not reach: docker compose down -v
+                     --remove-orphans, fresh rebuild, fresh Keycloak import, re-confirm the scope request
+                     succeeds, token contains it, negative control still 403, positive route still reaches
+                     a real domain result.
+STATIC CHECKS        black/ruff/isort/mypy clean on both Python files; no unrelated formatting churn on
+                     test_runtime_architecture.py.
+ONE COMMIT           all three paths committed together as a single governed implementation unit.
+```
+
+**I-R5 preserved artifact hashes** (I-R6 must reproduce, not regenerate, these bytes):
+```
+keycloak/ctec-realm.json                                   4d16065fcb56c4f0de277f1ff1dc268c290533afff921bb10c267f78da5a09cf
+backend/app/tests/test_oqi_keycloak_scope_reconciliation.py 05f5ad4b5b2e69582fecb121fbf9f16f129f8654588798a1a144b2824e1954ea
+```
+
+## 33. Exact next phase
+
+```
+PRODUCT-WIDE-DOCKER-CLOSURE-I-R6
+```
+
+Commits exactly the three paths frozen in §32 -- the preserved, already-verified I-R5 realm correction and
+reconciliation test, plus the single new architecture-allowlist entry -- after completing §32's own
+verification contract. After I-R6 passes and commits, resume the original
 `PRODUCT-WIDE-DOCKER-CLOSURE-I` to write `DOCKER_SMOKE_TEST.md` -- including, per §24 item 4 (amended), the
 two-part §15 step 3a/3b connector proof and the now-reachable Step 4 OQI-evaluation trigger, as literal
-inline runbook text -- still entirely unauthorized to touch either I-R4's or I-R5's files, preserving defect
-attribution and phase clarity.
+inline runbook text -- still entirely unauthorized to touch any of I-R4's, I-R5's, or I-R6's files,
+preserving defect attribution and phase clarity.
