@@ -18,6 +18,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  NOETVA_LIFECYCLE_ACTOR: ${{ github.actor }}
+  NOETVA_LIFECYCLE_RUN_ID: ${{ github.run_id }}
+
 jobs:
   monitor:
     strategy:
@@ -28,6 +32,9 @@ jobs:
       group: lifecycle-${{ matrix.environment }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    # Noetva R4-I (D2): job-level GitHub Environment binding -- see the
+    # identical note in azure-lifecycle-nightly-sweep.yml.
+    environment: ${{ matrix.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +45,15 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # Noetva R4-I (D1): the bounded-recheck classification result is now
+      # persisted into lastError via lifecycle_persist_metadata after
+      # every run -- previously computed and logged only, so
+      # `prior_suspected` below could never observe a real prior run and
+      # the classifier could never progress past
+      # TRANSIENT_MAINTENANCE_SUSPECTED (R4-DRG Section T). state itself
+      # is never written here (that stays DORMANT, unchanged by this
+      # workflow, unless a genuine restart-monitor-driven Stop is
+      # implemented as its own future phase).
       - name: Classify current Postgres state against lifecycle state
         env:
           NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
@@ -72,14 +88,23 @@ jobs:
           echo "classification: $result"
 
           case "$result" in
-            OK) echo "Nothing to do." ;;
+            OK)
+              echo "Nothing to do."
+              lifecycle_persist_metadata "$env" "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --last-error ""
+              ;;
             TRANSIENT_MAINTENANCE_SUSPECTED)
               echo "::notice::$env: Postgres unexpectedly Ready while DORMANT -- treating as possible monthly-maintenance blip, will recheck on the next scheduled run before alarming."
+              lifecycle_persist_metadata "$env" "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --last-error "TRANSIENT_MAINTENANCE_SUSPECTED"
               ;;
             UNEXPECTED_RESTART)
               echo "::warning::$env: sustained DORMANT+Ready -- Azure's 7-day auto-restart (or an unexplained restart). Safely re-stopping."
               deployment_in_progress_for_environment "$env" && { echo "::error::A deployment is in progress -- refusing to re-stop, will retry next run."; exit 0; }
               postgres_stop "$rg" "$server"
+              lifecycle_persist_metadata "$env" "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" \
+                --last-error "UNEXPECTED_RESTART: re-stopped at $(date -u --iso-8601=seconds)"
               echo "::notice::Anomaly recorded: unexpected restart, re-stopped at $(date -u --iso-8601=seconds)."
               ;;
           esac

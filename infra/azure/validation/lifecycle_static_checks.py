@@ -174,11 +174,15 @@ def check_stop_checks_migration_and_postgres():
 
 def check_dormant_only_after_verification():
     src = read(WORKFLOWS / "azure-lifecycle-stop.yml")
-    # The "Record DORMANT" step must appear strictly after the postgres-stop
-    # polling step in file order.
+    # The step that persists DORMANT (Noetva R4-I: "Persist DORMANT...")
+    # must appear strictly after the postgres-stop polling step in file
+    # order -- and it must actually be the lifecycle_apply_transition call
+    # that writes DORMANT, not merely a mention of the word.
     stop_poll_idx = src.find('[ "$state" = "Stopped" ]')
-    dormant_idx = src.find("Record DORMANT")
+    dormant_idx = src.find("Persist DORMANT")
+    persists_dormant = re.search(r"lifecycle_apply_transition\s+\"\$env\"\s+DORMANT\b", src) is not None
     check("dormant-recorded-only-after-postgres-stopped-check", 0 < stop_poll_idx < dormant_idx, f"poll@{stop_poll_idx} dormant@{dormant_idx}")
+    check("dormant-actually-persisted-via-apply-transition", persists_dormant, "lifecycle_apply_transition \"$env\" DORMANT is called in stop.yml" if persists_dormant else "MISSING")
 
 
 def check_failed_stop_exists():
@@ -280,6 +284,316 @@ def check_start_stop_toggle_suppression_correctly():
     check("stop-toggles-suppression-with-failure-cleanup", stop_ok, "stop.yml calls alert_suppression_set and has an if:failure() cleanup step")
 
 
+def check_apply_transition_cli_exists_and_pure_controller_unmodified():
+    cli_src = read(LIFECYCLE / "lifecycle_cli.py")
+    controller_src = read(LIFECYCLE / "lifecycle_controller.py")
+    has_apply = '"apply-transition"' in cli_src and "cmd_apply_transition" in cli_src
+    has_persist_metadata = '"persist-metadata"' in cli_src and "cmd_persist_metadata" in cli_src
+    # The pure controller must still contain zero Azure SDK / network I/O
+    # / shell execution / Storage Table I/O -- R4-I Section 6's hard
+    # boundary. A docstring MENTION of azure-data-tables (design intent)
+    # is fine; an actual import or subprocess call is not.
+    controller_lines_no_docstring_or_comment = "\n".join(
+        line for line in controller_src.splitlines()
+        if not line.strip().startswith(("#", '"', "'"))
+    )
+    no_io = not re.search(r"\bimport\s+(subprocess|requests|socket)\b|\bos\.system\(|azure\.data\.tables", controller_lines_no_docstring_or_comment)
+    check("apply-transition-cli-exists", has_apply, "lifecycle_cli.py exposes apply-transition, wired to lifecycle_controller.apply_transition()")
+    check("persist-metadata-cli-exists", has_persist_metadata, "lifecycle_cli.py exposes persist-metadata for non-transition updates")
+    check("lifecycle-controller-remains-pure", no_io, "no Azure SDK / subprocess / socket / os.system in lifecycle_controller.py's real code")
+
+
+def check_workflows_invoke_governed_persistence():
+    start_src = read(WORKFLOWS / "azure-lifecycle-start.yml")
+    stop_src = read(WORKFLOWS / "azure-lifecycle-stop.yml")
+    extend_src = read(WORKFLOWS / "azure-lifecycle-extend.yml")
+    hold_src = read(WORKFLOWS / "azure-lifecycle-hold.yml")
+
+    start_states = ["START_REQUESTED", "STARTING_DATABASE", "STARTING_APPLICATION", "VERIFYING", "READY", "FAILED_START"]
+    # The very first transition (lock acquisition) has no local $env yet --
+    # it addresses the environment directly via the workflow input.
+    missing_start = [s for s in start_states if not re.search(rf'lifecycle_apply_transition\s+"(\$env|\$\{{\{{\s*inputs\.environment\s*\}}\}})"\s+{s}\b', start_src)]
+    check("start-persists-every-required-state", not missing_start, "; ".join(missing_start) or "start.yml calls lifecycle_apply_transition for all 6 required states")
+
+    stop_states = ["DRAIN_REQUESTED", "STOPPING_APPLICATION", "STOPPING_DATABASE", "DORMANT", "FAILED_STOP"]
+    missing_stop = [s for s in stop_states if not re.search(rf'lifecycle_apply_transition\s+"\$env"\s+{s}\b', stop_src)]
+    check("stop-persists-every-required-state", not missing_stop, "; ".join(missing_stop) or "stop.yml calls lifecycle_apply_transition for all 5 required states")
+
+    # Start must persist the intent state BEFORE the corresponding az
+    # mutation call in the same step (Section 16's hard invariant) -- spot
+    # check the two combined persist+mutate steps.
+    db_step = re.search(r"STARTING_DATABASE.*?postgres_start", start_src, re.DOTALL)
+    app_step = re.search(r"STARTING_APPLICATION.*?containerapp_activate_revision", start_src, re.DOTALL)
+    check("start-persists-starting-database-before-postgres-start", db_step is not None, "STARTING_DATABASE persisted before postgres_start in file order")
+    check("start-persists-starting-application-before-revision-activate", app_step is not None, "STARTING_APPLICATION persisted before containerapp_activate_revision in file order")
+
+    stop_app_step = re.search(r"STOPPING_APPLICATION.*?containerapp_deactivate_revision", stop_src, re.DOTALL)
+    stop_db_step = re.search(r"STOPPING_DATABASE.*?postgres_stop", stop_src, re.DOTALL)
+    check("stop-persists-stopping-application-before-revision-deactivate", stop_app_step is not None, "STOPPING_APPLICATION persisted before containerapp_deactivate_revision in file order")
+    check("stop-persists-stopping-database-before-postgres-stop", stop_db_step is not None, "STOPPING_DATABASE persisted before postgres_stop in file order")
+
+    extend_ok = "lifecycle_persist_metadata" in extend_src and "--ttl-expires-at" in extend_src
+    hold_ok = "lifecycle_persist_metadata" in hold_src and "--hold-until" in hold_src
+    check("extend-persists-ttl-via-metadata-wrapper", extend_ok, "extend.yml calls lifecycle_persist_metadata --ttl-expires-at")
+    check("hold-persists-expiry-via-metadata-wrapper", hold_ok, "hold.yml calls lifecycle_persist_metadata --hold-until")
+
+
+def check_table_read_fails_closed():
+    src = read(LIFECYCLE / "az_lifecycle_ops.sh")
+    fn = re.search(r"lifecycle_table_read\(\)\s*\{.*?\n\}", src, re.DOTALL)
+    assert fn, "lifecycle_table_read function not found"
+    body = fn.group(0)
+    # Success path returns 0; the missing-row path (ResourceNotFound)
+    # returns 0 with "{}"; every OTHER path must return 1 (fail closed),
+    # not silently fall through to an implicit "{}"/DORMANT default.
+    has_success_path = 'echo "$output"' in body and "return 0" in body
+    has_missing_row_path = "ResourceNotFound" in body and 'echo "{}"' in body
+    has_fail_closed_path = body.strip().endswith("return 1\n}") or "return 1" in body.split("ResourceNotFound")[-1]
+    no_blind_fallback = "|| echo" not in body  # the old fail-open pattern must be gone
+    check("table-read-distinguishes-missing-row-from-failure", has_missing_row_path, "ResourceNotFound path returns {} + exit 0")
+    check("table-read-fails-closed-on-other-errors", has_fail_closed_path and no_blind_fallback, "every non-success, non-ResourceNotFound path returns 1, no blind '|| echo' fallback remains")
+
+
+def check_first_row_bootstrap_and_etag_paths_exist():
+    src = read(LIFECYCLE / "az_lifecycle_ops.sh")
+    has_insert = "lifecycle_table_insert()" in src and "entity insert" in src
+    has_etag_replace = "--if-match" in src and "entity replace" in src
+    has_persist_dispatch = "is_new_row" in src and "lifecycle_table_insert" in src and "lifecycle_table_write" in src
+    check("first-row-insert-path-exists", has_insert, "lifecycle_table_insert uses az storage entity insert (no --if-match -- Azure itself rejects a duplicate insert)")
+    check("existing-row-etag-conditional-path-exists", has_etag_replace, "lifecycle_table_write uses az storage entity replace --if-match")
+    check("persistence-wrapper-dispatches-insert-vs-replace-on-isNewRow", has_persist_dispatch, "_lifecycle_persist_result branches on isNewRow")
+
+
+def check_d2_federated_credential_loop_and_subjects():
+    identity_src = read(MODULES / "lifecycle-identity.bicep")
+    main_src = read(INFRA / "lifecycle-main.bicep")
+    has_loop = re.search(r"federatedIdentityCredentials@[\d-]+'\s*=\s*\[for\s+\w+\s+in\s+githubEnvironmentNames", identity_src) is not None
+    subject_correct = "subject: 'repo:${githubRepository}:environment:${envName}'" in identity_src or re.search(r"subject:\s*'repo:\$\{githubRepository\}:environment:\$\{\w+\}'", identity_src) is not None
+    default_envs = re.search(r"param\s+githubEnvironmentNames\s+array\s*=\s*\[([^\]]+)\]", main_src)
+    envs = [e.strip().strip("'") for e in default_envs.group(1).split("\n") if e.strip()] if default_envs else []
+    envs = [e for e in (x.strip().strip("'") for x in default_envs.group(1).replace("\n", ",").split(",")) if e] if default_envs else []
+    check("lifecycle-identity-loops-federated-credentials-per-environment", has_loop, "one federatedIdentityCredentials resource per githubEnvironmentNames entry (bicep for-loop)")
+    check("lifecycle-federated-credential-subject-uses-real-github-oidc-shape", subject_correct, "subject is repo:<repo>:environment:<name>, matching GitHub's own OIDC token claim")
+    check("lifecycle-main-default-environments-exactly-dev-staging-demo", set(envs) == {"dev", "staging", "demo"}, f"got {envs!r}")
+    check("lifecycle-main-default-excludes-prod", "prod" not in envs and "production" not in envs, f"got {envs!r}")
+
+
+def check_scheduled_matrix_workflows_bind_github_environment():
+    sweep_src = read(WORKFLOWS / "azure-lifecycle-nightly-sweep.yml")
+    monitor_src = read(WORKFLOWS / "azure-lifecycle-restart-monitor.yml")
+    sweep_ok = re.search(r"environment:\s*\$\{\{\s*matrix\.environment\s*\}\}", sweep_src) is not None
+    monitor_ok = re.search(r"environment:\s*\$\{\{\s*matrix\.environment\s*\}\}", monitor_src) is not None
+    check("nightly-sweep-binds-job-level-github-environment", sweep_ok, "job-level environment: ${{ matrix.environment }} present")
+    check("restart-monitor-binds-job-level-github-environment", monitor_ok, "job-level environment: ${{ matrix.environment }} present")
+
+
+def check_restart_monitor_persists_classification():
+    src = read(WORKFLOWS / "azure-lifecycle-restart-monitor.yml")
+    has_ok_clear = re.search(r'OK\)\s*\n\s*echo[^\n]*\n\s*lifecycle_persist_metadata[\s\S]*?--last-error\s+""', src) is not None
+    has_suspected_persist = "TRANSIENT_MAINTENANCE_SUSPECTED" in src and re.search(r"TRANSIENT_MAINTENANCE_SUSPECTED\)[\s\S]*?lifecycle_persist_metadata", src) is not None
+    has_unexpected_persist = re.search(r"UNEXPECTED_RESTART\)[\s\S]*?lifecycle_persist_metadata", src) is not None
+    check("restart-monitor-persists-ok-clears-lasterror", has_ok_clear, "OK branch calls lifecycle_persist_metadata --last-error \"\"")
+    check("restart-monitor-persists-suspected-classification", has_suspected_persist, "TRANSIENT_MAINTENANCE_SUSPECTED branch persists it to lastError")
+    check("restart-monitor-persists-unexpected-restart-classification", has_unexpected_persist, "UNEXPECTED_RESTART branch persists a description to lastError")
+
+
+FAKE_AZ_STUB = r'''#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = "storage" ] && [ "$2" = "entity" ]; then
+  op="$3"; shift 3
+  partition=""; row=""; ifmatch=""
+  declare -a kvs=()
+  in_entity=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --entity) in_entity=true; shift; continue ;;
+      --if-match) ifmatch="$2"; in_entity=false; shift 2; continue ;;
+      --partition-key) partition="$2"; in_entity=false; shift 2; continue ;;
+      --row-key) row="$2"; in_entity=false; shift 2; continue ;;
+      --account-name|--table-name|--auth-mode|--output)
+        in_entity=false; shift 2; continue ;;
+      *)
+        if $in_entity; then
+          case "$1" in
+            PartitionKey=*) partition="${1#PartitionKey=}" ;;
+            RowKey=*) row="${1#RowKey=}" ;;
+            *) kvs+=("$1") ;;
+          esac
+        fi
+        shift
+        ;;
+    esac
+  done
+  file="$FAKE_TABLE_DIR/${partition}-${row}.json"
+  case "$op" in
+    show)
+      if [ ! -f "$file" ]; then
+        echo '{"odata.error":{"code":"ResourceNotFound","message":{"value":"The specified resource does not exist."}}}' >&2
+        exit 1
+      fi
+      cat "$file"
+      exit 0
+      ;;
+    insert)
+      if [ -f "$file" ]; then
+        echo "Conflict: entity already exists" >&2
+        exit 1
+      fi
+      python3 - "$file" "${kvs[@]}" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+data = {}
+for kv in sys.argv[2:]:
+    k, _, v = kv.partition("=")
+    data[k] = v
+data["etag"] = "W/\"1\""
+json.dump(data, open(path, "w"))
+PYEOF
+      exit 0
+      ;;
+    replace)
+      if [ ! -f "$file" ]; then
+        echo "Not found" >&2
+        exit 1
+      fi
+      current_etag=$(python3 -c "import json;print(json.load(open('$file')).get('etag',''))")
+      if [ "$current_etag" != "$ifmatch" ]; then
+        echo "Precondition Failed (412): etag mismatch" >&2
+        exit 1
+      fi
+      next_n=$(python3 -c "import json,re;e=json.load(open('$file')).get('etag','W/\"1\"');m=re.search(r'\d+',e);print(int(m.group())+1 if m else 2)")
+      python3 - "$file" "$next_n" "${kvs[@]}" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+n = sys.argv[2]
+data = {}
+for kv in sys.argv[3:]:
+    k, _, v = kv.partition("=")
+    data[k] = v
+data["etag"] = f'W/"{n}"'
+json.dump(data, open(path, "w"))
+PYEOF
+      exit 0
+      ;;
+  esac
+fi
+echo "fake az: unsupported command: $*" >&2
+exit 1
+'''
+
+ORCHESTRATION_SCRIPT = r'''
+set -euo pipefail
+source "%(lifecycle_dir)s/az_lifecycle_ops.sh"
+
+echo "=== 1 ==="
+lifecycle_apply_transition dev START_REQUESTED test-actor --workflow-run-id run1
+lifecycle_apply_transition dev STARTING_DATABASE test-actor --workflow-run-id run1
+lifecycle_apply_transition dev STARTING_APPLICATION test-actor --workflow-run-id run1
+lifecycle_apply_transition dev VERIFYING test-actor --workflow-run-id run1
+lifecycle_apply_transition dev READY test-actor --workflow-run-id run1 --ttl-expires-at 2026-09-10T00:00:00+00:00
+echo "---after-start---"
+lifecycle_table_read dev
+
+echo "=== 2 ==="
+lifecycle_persist_metadata dev test-actor --workflow-run-id run2 --ttl-expires-at 2026-09-10T02:00:00+00:00
+echo "---after-extend---"
+lifecycle_table_read dev
+
+echo "=== 3 ==="
+lifecycle_apply_transition dev DRAIN_REQUESTED test-actor --workflow-run-id run3
+lifecycle_apply_transition dev STOPPING_APPLICATION test-actor --workflow-run-id run3
+lifecycle_apply_transition dev STOPPING_DATABASE test-actor --workflow-run-id run3
+lifecycle_apply_transition dev DORMANT test-actor --workflow-run-id run3 --db-auto-restart-risk-at 2026-09-17T00:00:00+00:00
+echo "---after-stop---"
+lifecycle_table_read dev
+
+echo "=== 4 ==="
+if lifecycle_apply_transition dev READY test-actor --workflow-run-id run4; then
+  echo "ILLEGAL TRANSITION NOT REJECTED" >&2
+  exit 1
+fi
+echo "---illegal-transition-rejected---"
+
+echo "=== 5 ==="
+lifecycle_apply_transition staging START_REQUESTED test-actor --workflow-run-id run5
+echo "---second-env-bootstrap-ok---"
+lifecycle_table_read staging
+
+echo "=== 6 ==="
+lifecycle_apply_transition dev START_REQUESTED test-actor --workflow-run-id run6
+lifecycle_apply_transition dev STARTING_DATABASE test-actor --workflow-run-id run6
+lifecycle_apply_transition dev FAILED_START test-actor --workflow-run-id run6 --error "postgres did not become Ready"
+echo "---after-failed-start---"
+lifecycle_table_read dev
+
+echo "=== 7 ==="
+stale_row=$(lifecycle_table_read dev)
+lifecycle_apply_transition dev START_REQUESTED test-actor --workflow-run-id run7
+stale_entity=$(python3 "%(lifecycle_dir)s/lifecycle_cli.py" apply-transition --environment dev --current-row-json "$stale_row" --target START_REQUESTED --actor test-actor | jq -c '.entity')
+stale_etag=$(echo "$stale_row" | jq -r '.etag // ""')
+if lifecycle_table_write dev "$stale_entity" "$stale_etag" 2>/dev/null; then
+  echo "ETAG CONFLICT NOT DETECTED" >&2
+  exit 1
+fi
+echo "---etag-conflict-rejected---"
+'''
+
+
+def check_orchestration_end_to_end_with_fake_azure():
+    """Noetva R4-I Section 32/34: proves, with NO real Azure dependency
+    (a fake `az` stub simulating exactly the `storage entity
+    show|insert|replace` subset az_lifecycle_ops.sh actually calls), that
+    the real lifecycle_apply_transition/lifecycle_persist_metadata shell
+    wrappers and the real lifecycle_cli.py genuinely persist a full
+    START chain to READY, a metadata-only Extend, a full STOP chain to
+    DORMANT, a FAILED_START with a real error message, an illegal
+    transition rejection, first-row bootstrap for two independent
+    environments, and a real ETag-conflict rejection at the
+    `--if-match` layer. This exercises the actual shipped shell/Python
+    code, not a reimplementation of it."""
+    import stat
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        fake_az = tmp_path / "az"
+        fake_az.write_text(FAKE_AZ_STUB)
+        fake_az.chmod(fake_az.stat().st_mode | stat.S_IEXEC)
+        table_dir = tmp_path / "table"
+        table_dir.mkdir()
+
+        env = dict(__import__("os").environ)
+        env["PATH"] = f"{tmp}:{env['PATH']}"
+        env["FAKE_TABLE_DIR"] = str(table_dir)
+        env["NOETVA_LIFECYCLE_STORAGE_ACCOUNT"] = "fakeaccount"
+
+        script = ORCHESTRATION_SCRIPT % {"lifecycle_dir": str(LIFECYCLE)}
+        proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env)
+        output = proc.stdout + proc.stderr
+        ran_clean = proc.returncode == 0
+
+        def section(a, b=None):
+            try:
+                s = output.split(a, 1)[1]
+                return s.split(b, 1)[0] if b else s
+            except IndexError:
+                return ""
+
+        after_start = section("---after-start---", "=== 2 ===")
+        after_extend = section("---after-extend---", "=== 3 ===")
+        after_stop = section("---after-stop---", "=== 4 ===")
+        after_failed_start = section("---after-failed-start---", "=== 7 ===")
+
+        check("orchestration-ran-without-unexpected-error", ran_clean, "fake-Azure orchestration script exited 0" if ran_clean else f"FAILED (exit {proc.returncode}): {output[-1000:]}")
+        check("orchestration-start-chain-reaches-ready-with-ttl", '"state": "READY"' in after_start and '"ttlExpiresAt": "2026-09-10T00:00:00+00:00"' in after_start, "full START chain persisted state=READY with the merged ttlExpiresAt")
+        check("orchestration-extend-updates-ttl-without-changing-state", '"ttlExpiresAt": "2026-09-10T02:00:00+00:00"' in after_extend and '"state": "READY"' in after_extend, "Extend updated ttlExpiresAt only, state remained READY")
+        check("orchestration-stop-chain-reaches-dormant-with-restart-risk", '"state": "DORMANT"' in after_stop and '"dbAutoRestartRiskAt": "2026-09-17T00:00:00+00:00"' in after_stop, "full STOP chain persisted state=DORMANT with the merged dbAutoRestartRiskAt")
+        check("orchestration-illegal-transition-rejected", "---illegal-transition-rejected---" in output, "DORMANT -> READY refused end-to-end through the real shell+CLI path")
+        check("orchestration-second-environment-bootstraps-independently", "---second-env-bootstrap-ok---" in output, "staging's first-ever Start bootstraps independently of dev's row")
+        check("orchestration-failed-start-persists-with-error-message", '"state": "FAILED_START"' in after_failed_start and '"lastError": "postgres did not become Ready"' in after_failed_start, "FAILED_START persisted with the specific error message, not merely logged")
+        check("orchestration-etag-conflict-rejected-at-if-match-layer", "---etag-conflict-rejected---" in output, "a write against a stale ETag is rejected by the real --if-match mechanism, not silently clobbered")
+
+
 def check_r1_security_boundaries_intact():
     # Spot check: R1's role-assignments.bicep and postgresql.bicep are
     # byte-for-byte untouched (not merely "still present").
@@ -319,6 +633,14 @@ check_alert_suppression_module_exists_and_skips_prod()
 check_alert_suppression_narrowly_scoped()
 check_lifecycle_role_no_monitoring_contributor()
 check_start_stop_toggle_suppression_correctly()
+check_apply_transition_cli_exists_and_pure_controller_unmodified()
+check_workflows_invoke_governed_persistence()
+check_table_read_fails_closed()
+check_first_row_bootstrap_and_etag_paths_exist()
+check_d2_federated_credential_loop_and_subjects()
+check_scheduled_matrix_workflows_bind_github_environment()
+check_restart_monitor_persists_classification()
+check_orchestration_end_to_end_with_fake_azure()
 check_r1_security_boundaries_intact()
 
 
