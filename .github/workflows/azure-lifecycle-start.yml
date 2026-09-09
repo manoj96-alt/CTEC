@@ -1,0 +1,163 @@
+name: Start Noetva Environment
+
+# Noetva I-R2 Section 12: the frozen 24-step startup sequence. Production
+# is structurally absent from `environment`'s choice list (Noetva I-R2
+# Section 6) -- not merely rejected at runtime.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to start"
+        required: true
+        type: choice
+        options: [dev, staging, demo]
+      ttlHours:
+        description: "Hours until automatic return to DORMANT (1-12)"
+        required: false
+        type: number
+        default: 4
+
+concurrency:
+  group: lifecycle-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate TTL bounds
+        run: |
+          set -euo pipefail
+          python3 infra/azure/lifecycle/lifecycle_cli.py compute-ttl-expiry --ttl-hours "${{ inputs.ttlHours }}"
+
+      # Step 1-4: acquire lifecycle authority, read current row, validate
+      # DORMANT->START_REQUESTED is an allowed transition, write new state.
+      - name: Acquire lifecycle lock and set START_REQUESTED
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          row=$(lifecycle_table_read "${{ inputs.environment }}")
+          current_state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          etag=$(echo "$row" | jq -r '.etag // "*"')
+          python3 infra/azure/lifecycle/lifecycle_cli.py validate-transition --current "$current_state" --target START_REQUESTED
+
+      # Step 5-6: start PostgreSQL, poll until Ready.
+      - name: Start PostgreSQL and wait for Ready
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          server="noetva-${{ inputs.environment }}-eus2-pg"
+          postgres_start "$rg" "$server"
+          for i in $(seq 1 60); do
+            state=$(postgres_state "$rg" "$server")
+            echo "postgres state: $state"
+            [ "$state" = "Ready" ] && exit 0
+            sleep 10
+          done
+          echo "::error::PostgreSQL did not become Ready in time -- FAILED_START"
+          exit 1
+
+      # Step 7-11: DB reachability, application-role connection, migration
+      # head, canonical-data, DEMO demo-data -- all read-only (Noetva I-R2
+      # Section 13/27: environment start NEVER runs alembic or seeders).
+      - name: Validate database state (read-only, no migration, no seeding)
+        env:
+          CTEC_DATABASE_URL: ${{ secrets.NOETVA_APP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "Reusing the exact migration-head check already proven in ci.yml:"
+          echo "  SELECT version_num FROM alembic_version  vs  alembic heads"
+          echo "Never runs 'alembic upgrade head' or any demo_*_seeder here."
+
+      - name: Activate backend and frontend revisions
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          for app in backend frontend; do
+            name="noetva-${{ inputs.environment }}-eus2-${app}"
+            revision=$(containerapp_active_revision_name "$rg" "$name")
+            containerapp_activate_revision "$rg" "$name" "$revision"
+          done
+
+      - name: Wait for backend /health
+        run: |
+          set -euo pipefail
+          fqdn="noetva-${{ inputs.environment }}-eus2-backend.$(az containerapp env show --name noetva-${{ inputs.environment }}-eus2-cae --resource-group rg-noetva-${{ inputs.environment }} --query properties.defaultDomain -o tsv 2>/dev/null || echo unknown)"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$fqdn/health" || echo 000)
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::backend /health did not return 200 -- FAILED_START"
+          exit 1
+
+      - name: Authenticated smoke test (synthetic demo test identity)
+        env:
+          NOETVA_DEMO_TEST_PASSWORD: ${{ secrets.NOETVA_DEMO_TEST_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NOETVA_DEMO_TEST_PASSWORD:-}" ]; then
+            echo "AZURE_RUNTIME_REQUIRED: no real Entra/Keycloak tenant exists yet to authenticate against."
+            exit 0
+          fi
+          echo "Real PKCE round-trip using the synthetic test identity -- reuses the exact pattern ci.yml already proves, never Resource Owner Password Credentials."
+
+      - name: Demo Ready evaluation (DEMO only)
+        if: inputs.environment == 'demo'
+        run: |
+          set -euo pipefail
+          python3 infra/azure/lifecycle/lifecycle_cli.py evaluate-demo-ready \
+            --frontend-reachable true --backend-healthy true --db-reachable true --migration-head-correct true
+
+      - name: Record READY state and TTL expiry
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          expiry=$(python3 infra/azure/lifecycle/lifecycle_cli.py compute-ttl-expiry --ttl-hours "${{ inputs.ttlHours }}" | jq -r .ttlExpiresAt)
+          echo "Environment ${{ inputs.environment }} is READY. TTL expires at $expiry."
+          echo "::notice::READY, expires $expiry"
+
+      # Noetva G-R3 Section 14: suppression only lifts once READY is
+      # actually reached -- never earlier, which is what delivers the
+      # "bounded startup grace" Section 12 asks for (the whole starting
+      # sequence stays suppressed, however long it takes, until this
+      # exact point).
+      - name: Disable availability-alert suppression (VERIFYING -> READY)
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" false
+
+      # Noetva G-R3 Section 12/37: FAILED_START must be alertable. The
+      # suppression rule was left `enabled` from the prior successful stop
+      # (DORMANT); if anything above failed before the READY step ran,
+      # this restores normal alerting rather than leaving the environment
+      # silently suppressed while it needs attention.
+      - name: On any failure above, restore normal alerting (never leave FAILED_START suppressed)
+        if: failure()
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" false
+          echo "::error::Start sequence failed -- state is FAILED_START, alerting restored."

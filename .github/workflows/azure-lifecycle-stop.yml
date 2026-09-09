@@ -1,0 +1,153 @@
+name: Stop Noetva Environment
+
+# Noetva I-R2 Section 14: the frozen 20-step shutdown sequence. Production
+# is structurally absent from the choice list -- not merely rejected.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to stop"
+        required: true
+        type: choice
+        options: [dev, staging, demo]
+
+concurrency:
+  group: lifecycle-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: DRAIN_REQUESTED + evaluate stop preconditions (migration/deployment/hold/sessions)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+          NOETVA_PG_ADMIN_PASSWORD: ${{ secrets.NOETVA_PG_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          job="noetva-${{ inputs.environment }}-eus2-migrate"
+
+          migration_running=false
+          migration_job_is_running "$rg" "$job" && migration_running=true
+
+          deployment_running=false
+          deployment_in_progress_for_environment "${{ inputs.environment }}" && deployment_running=true
+
+          row=$(lifecycle_table_read "${{ inputs.environment }}")
+          hold_until=$(echo "$row" | jq -r '.holdUntil // empty')
+          hold_active=false
+          if [ -n "$hold_until" ] && [ "$(date -u -d "$hold_until" +%s 2>/dev/null || echo 0)" -gt "$(date -u +%s)" ]; then
+            hold_active=true
+          fi
+
+          args=()
+          [ "$migration_running" = "true" ] && args+=(--migration-job-running)
+          [ "$deployment_running" = "true" ] && args+=(--deployment-in-progress)
+          [ "$hold_active" = "true" ] && args+=(--hold-active)
+
+          result=$(python3 infra/azure/lifecycle/lifecycle_cli.py evaluate-stop-preconditions "${args[@]}")
+          echo "$result"
+          can_stop=$(echo "$result" | jq -r .canStop)
+          if [ "$can_stop" != "true" ]; then
+            echo "::error::Stop refused: $(echo "$result" | jq -r '.reasons | join("; ")')"
+            exit 1
+          fi
+
+      # Noetva G-R3 Section 14: suppression is enabled BEFORE revision
+      # deactivation begins, precisely so the deactivation itself never
+      # triggers a false availability alert. Disclosed, not hidden: Azure's
+      # own documentation states this can take up to 30 minutes to actually
+      # take effect -- this ordering minimizes, but does not eliminate,
+      # that window.
+      - name: Enable availability-alert suppression (DRAIN_REQUESTED -> STOPPING)
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" true
+
+      - name: Deactivate frontend and backend revisions
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          for app in frontend backend; do
+            name="noetva-${{ inputs.environment }}-eus2-${app}"
+            revision=$(containerapp_active_revision_name "$rg" "$name")
+            containerapp_deactivate_revision "$rg" "$name" "$revision"
+            active=$(containerapp_revision_active "$rg" "$revision")
+            if [ "$active" = "true" ]; then
+              echo "::error::$app revision did not deactivate -- FAILED_STOP"
+              exit 1
+            fi
+          done
+
+      - name: Verify no unsafe DB sessions, then stop PostgreSQL
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          server="noetva-${{ inputs.environment }}-eus2-pg"
+          host="${server}.postgres.database.azure.com"
+          if postgres_has_unsafe_long_running_session "$host" "noetva_pg_admin"; then
+            echo "::error::Unsafe long-running DB session detected -- stop refused, not automatically terminated (Noetva I-R2 Section 24)"
+            exit 1
+          fi
+          postgres_stop "$rg" "$server"
+          for i in $(seq 1 60); do
+            state=$(postgres_state "$rg" "$server")
+            echo "postgres state: $state"
+            [ "$state" = "Stopped" ] && exit 0
+            sleep 10
+          done
+          echo "::error::PostgreSQL did not reach Stopped -- FAILED_STOP"
+          exit 1
+
+      - name: Record DORMANT + next auto-restart-risk timestamp
+        run: |
+          set -euo pipefail
+          risk=$(python3 infra/azure/lifecycle/lifecycle_cli.py compute-restart-risk --stopped-at "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" | jq -r .dbAutoRestartRiskAt)
+          echo "::notice::DORMANT. Next auto-restart risk (Azure's own 7-day behavior): $risk"
+
+      - name: Report remaining billable resource categories
+        run: |
+          cat <<'EOF'
+          Remaining while DORMANT (Noetva G-R2 Section AH, not $0):
+            - PostgreSQL storage + backup storage
+            - ACR Premium (fixed monthly charge)
+            - Key Vault (operation-based)
+            - VNet/Private DNS (negligible)
+            - NAT Gateway + Public IP, where provisioned for this environment
+            - Log Analytics retained data
+          EOF
+
+      # Noetva G-R3 Section 12/14/38: FAILED_STOP must never be left
+      # silently suppressed. Runs only if any prior step in this job
+      # failed (`if: failure()`) -- a clean run never reaches this step at
+      # all, since suppression correctly stays enabled through a genuine
+      # DORMANT result.
+      - name: On any failure above, restore normal alerting (never leave FAILED_STOP suppressed)
+        if: failure()
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          rg="rg-noetva-${{ inputs.environment }}"
+          alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" false
+          echo "::error::Stop sequence failed -- state is FAILED_STOP, alerting restored, cost alert must remain active (Noetva I-R2 Section 14/O)."

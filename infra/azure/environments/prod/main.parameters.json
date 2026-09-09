@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "prod" },
+    "location": { "value": "eastus2" },
+    "namePrefix": { "value": "noetva-prod-eus2" },
+    "backendImageReference": { "value": "REPLACE_AT_DEPLOY_TIME_WITH_DIGEST_REFERENCE" },
+    "frontendImageReference": { "value": "REPLACE_AT_DEPLOY_TIME_WITH_DIGEST_REFERENCE" },
+    "frontendHostname": { "value": "" },
+    "backendHostname": { "value": "" },
+    "oidcIssuer": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_ISSUER_URL" },
+    "oidcAudience": { "value": "REPLACE_WITH_API_APPLICATION_ID_URI" },
+    "oidcJwksUrl": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_JWKS_URL" },
+    "corsOrigins": { "value": "[\"REPLACE_WITH_PRODUCTION_FRONTEND_ORIGIN\"]" },
+    "acrSku": { "value": "Premium" },
+    "postgresSkuName": { "value": "Standard_D2ds_v5" },
+    "postgresSkuTier": { "value": "GeneralPurpose" },
+    "postgresStorageGb": { "value": 128 },
+    "postgresBackupRetentionDays": { "value": 14 },
+    "postgresHaMode": { "value": "ZoneRedundant" },
+    "postgresAdminPassword": { "value": "REPLACE_AT_DEPLOY_TIME_FROM_KEY_VAULT_NEVER_COMMIT" },
+    "enableNatGateway": { "value": true },
+    "backendMinReplicas": { "value": 2 },
+    "backendMaxReplicas": { "value": 4 },
+    "frontendMinReplicas": { "value": 2 },
+    "frontendMaxReplicas": { "value": 4 },
+    "logRetentionDays": { "value": 30 },
+    "alertEmail": { "value": "REPLACE_WITH_ONCALL_EMAIL" },
+    "githubRepository": { "value": "manoj96-alt/CTEC" },
+    "githubEnvironmentName": { "value": "production" }
+  }
+}

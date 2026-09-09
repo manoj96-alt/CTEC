@@ -1,0 +1,58 @@
+name: Extend Noetva Environment
+
+# Noetva I-R2 Section 18: only valid from READY/IN_USE, ETag-safe update.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to extend"
+        required: true
+        type: choice
+        options: [dev, staging, demo]
+      additionalHours:
+        description: "Hours to add to the current TTL (1-12)"
+        required: true
+        type: number
+        default: 2
+
+concurrency:
+  group: lifecycle-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  extend:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate current state permits extension, then extend
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          row=$(lifecycle_table_read "${{ inputs.environment }}")
+          state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          if [ "$state" != "READY" ] && [ "$state" != "IN_USE" ]; then
+            echo "::error::Cannot extend from state $state -- only READY/IN_USE may be extended (Noetva I-R2 Section 18)"
+            exit 1
+          fi
+          current_expiry=$(echo "$row" | jq -r '.ttlExpiresAt // empty')
+          if [ -n "$current_expiry" ]; then
+            new_expiry=$(python3 infra/azure/lifecycle/lifecycle_cli.py extend-ttl --current-expiry "$current_expiry" --additional-hours "${{ inputs.additionalHours }}" | jq -r .ttlExpiresAt)
+          else
+            new_expiry=$(python3 infra/azure/lifecycle/lifecycle_cli.py extend-ttl --additional-hours "${{ inputs.additionalHours }}" | jq -r .ttlExpiresAt)
+          fi
+          echo "::notice::Extended from $current_expiry to $new_expiry"

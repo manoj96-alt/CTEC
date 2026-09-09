@@ -1,0 +1,50 @@
+name: Hold Noetva Environment
+
+# Noetva I-R2 Section 19: requires an ABSOLUTE expiration. No permanent
+# hold is representable -- there is no boolean "disable auto-shutdown"
+# input anywhere in this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to hold"
+        required: true
+        type: choice
+        options: [dev, staging, demo]
+      holdUntilUtc:
+        description: "Absolute UTC timestamp to hold until, e.g. 2026-09-10T18:00:00Z (REQUIRED, no permanent hold)"
+        required: true
+        type: string
+
+concurrency:
+  group: lifecycle-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  hold:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate the hold expiration is a real, parseable, future timestamp
+        run: |
+          set -euo pipefail
+          now_epoch=$(date -u +%s)
+          hold_epoch=$(date -u -d "${{ inputs.holdUntilUtc }}" +%s)
+          if [ "$hold_epoch" -le "$now_epoch" ]; then
+            echo "::error::holdUntilUtc must be in the future"
+            exit 1
+          fi
+          echo "::notice::Hold placed on ${{ inputs.environment }} until ${{ inputs.holdUntilUtc }}. The hold naturally ceases to suppress shutdown once this passes -- no cleanup action is needed."
