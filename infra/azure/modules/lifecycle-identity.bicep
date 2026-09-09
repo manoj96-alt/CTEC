@@ -19,8 +19,12 @@ param tags object
 @description('GitHub repository in owner/repo form, used only for the federated credential subject')
 param githubRepository string
 
-@description('GitHub Actions environment name this identity is federated to (e.g. lifecycle)')
-param githubEnvironmentName string
+@description('GitHub Actions environment names this SHARED identity is federated to -- one credential per name, all under the same id-lifecycle identity. Noetva R4-DRG D2: every lifecycle workflow (start, stop, extend, hold, status, nightly-sweep, restart-monitor) authenticates under the GitHub Environment matching its own target Azure environment, never a single shared lifecycle environment -- so this identity needs one federated credential per lifecycle-managed environment, not one credential total. Preserves the single-identity, single-custom-role, cross-RG-role-assignment design (Noetva I-R2 Section 11); only the trust-binding count changes.')
+param githubEnvironmentNames array = [
+  'dev'
+  'staging'
+  'demo'
+]
 
 @description('Subscription ID, used only to scope the custom role definition')
 param subscriptionId string = subscription().subscriptionId
@@ -31,17 +35,27 @@ resource idLifecycle 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-3
   tags: tags
 }
 
-resource lifecycleFederatedCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
+// Noetva R4-DRG D2 / R4-I Section 28-29: one federated credential per
+// GitHub Environment this identity is actually invoked under -- each
+// subject is `repo:<githubRepository>:environment:<name>`, exactly what
+// GitHub's own OIDC token carries for a job declaring `environment:
+// <name>` (confirmed directly against every lifecycle workflow's job
+// definition, R4-DRG Section AC-AE). No wildcard subject, no ref-based
+// fallback credential, no `prod` entry -- `githubEnvironmentNames`'
+// frozen default is exactly Noetva's three lifecycle-managed
+// environments (LIFECYCLE_MANAGED_ENVIRONMENTS in
+// lifecycle_controller.py), nothing broader.
+resource lifecycleFederatedCredentials 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = [for envName in githubEnvironmentNames: {
   parent: idLifecycle
-  name: 'github-${githubEnvironmentName}'
+  name: 'github-${envName}'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${githubRepository}:environment:${githubEnvironmentName}'
+    subject: 'repo:${githubRepository}:environment:${envName}'
     audiences: [
       'api://AzureADTokenExchange'
     ]
   }
-}
+}]
 
 // Custom role: exactly the actions Section 11 (I-R2) authorizes, nothing
 // broader. Deliberately does NOT include any `Microsoft.Authorization/*`

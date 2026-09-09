@@ -2,6 +2,12 @@ name: Stop Noetva Environment
 
 # Noetva I-R2 Section 14: the frozen 20-step shutdown sequence. Production
 # is structurally absent from the choice list -- not merely rejected.
+#
+# Noetva R4-I: every intent/terminal state below is now durably persisted
+# through the governed `lifecycle_apply_transition` wrapper (R4-DRG D1
+# correction). DORMANT is only ever persisted after Postgres has been
+# verified Stopped (Section 19's dormancy-honesty invariant, unchanged
+# from before this phase -- only the persistence itself was missing).
 on:
   workflow_dispatch:
     inputs:
@@ -19,6 +25,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  NOETVA_LIFECYCLE_ACTOR: ${{ github.actor }}
+  NOETVA_LIFECYCLE_RUN_ID: ${{ github.run_id }}
+
 jobs:
   stop:
     runs-on: ubuntu-latest
@@ -33,7 +43,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: DRAIN_REQUESTED + evaluate stop preconditions (migration/deployment/hold/sessions)
+      - name: Persist DRAIN_REQUESTED, evaluate stop preconditions (migration/deployment/hold/sessions)
         env:
           GH_TOKEN: ${{ github.token }}
           NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
@@ -41,16 +51,17 @@ jobs:
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
-          job="noetva-${{ inputs.environment }}-eus2-migrate"
+          env="${{ inputs.environment }}"
+          rg="rg-noetva-${env}"
+          job="noetva-${env}-eus2-migrate"
 
           migration_running=false
           migration_job_is_running "$rg" "$job" && migration_running=true
 
           deployment_running=false
-          deployment_in_progress_for_environment "${{ inputs.environment }}" && deployment_running=true
+          deployment_in_progress_for_environment "$env" && deployment_running=true
 
-          row=$(lifecycle_table_read "${{ inputs.environment }}")
+          row=$(lifecycle_table_read "$env")
           hold_until=$(echo "$row" | jq -r '.holdUntil // empty')
           hold_active=false
           if [ -n "$hold_until" ] && [ "$(date -u -d "$hold_until" +%s 2>/dev/null || echo 0)" -gt "$(date -u +%s)" ]; then
@@ -70,6 +81,12 @@ jobs:
             exit 1
           fi
 
+          # DRAIN_REQUESTED is persisted only once preconditions are
+          # confirmed clear -- a refused stop above never touches the
+          # lifecycle row at all (Noetva I-R2 Section 23/24, unchanged).
+          lifecycle_apply_transition "$env" DRAIN_REQUESTED "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
+
       # Noetva G-R3 Section 14: suppression is enabled BEFORE revision
       # deactivation begins, precisely so the deactivation itself never
       # triggers a false availability alert. Disclosed, not hidden: Azure's
@@ -83,31 +100,46 @@ jobs:
           rg="rg-noetva-${{ inputs.environment }}"
           alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" true
 
-      - name: Deactivate frontend and backend revisions
+      - name: Persist STOPPING_APPLICATION, deactivate frontend and backend revisions
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
+          env="${{ inputs.environment }}"
+          lifecycle_apply_transition "$env" STOPPING_APPLICATION "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
+          rg="rg-noetva-${env}"
           for app in frontend backend; do
-            name="noetva-${{ inputs.environment }}-eus2-${app}"
+            name="noetva-${env}-eus2-${app}"
             revision=$(containerapp_active_revision_name "$rg" "$name")
             containerapp_deactivate_revision "$rg" "$name" "$revision"
             active=$(containerapp_revision_active "$rg" "$revision")
             if [ "$active" = "true" ]; then
               echo "::error::$app revision did not deactivate -- FAILED_STOP"
+              lifecycle_apply_transition "$env" FAILED_STOP "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "$app revision did not deactivate"
               exit 1
             fi
           done
 
-      - name: Verify no unsafe DB sessions, then stop PostgreSQL
+      - name: Persist STOPPING_DATABASE, verify no unsafe DB sessions, then stop PostgreSQL
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+          NOETVA_PG_ADMIN_PASSWORD: ${{ secrets.NOETVA_PG_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
-          server="noetva-${{ inputs.environment }}-eus2-pg"
+          env="${{ inputs.environment }}"
+          lifecycle_apply_transition "$env" STOPPING_DATABASE "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
+          rg="rg-noetva-${env}"
+          server="noetva-${env}-eus2-pg"
           host="${server}.postgres.database.azure.com"
           if postgres_has_unsafe_long_running_session "$host" "noetva_pg_admin"; then
             echo "::error::Unsafe long-running DB session detected -- stop refused, not automatically terminated (Noetva I-R2 Section 24)"
+            lifecycle_apply_transition "$env" FAILED_STOP "$NOETVA_LIFECYCLE_ACTOR" \
+              --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "unsafe long-running DB session detected, refused to stop"
             exit 1
           fi
           postgres_stop "$rg" "$server"
@@ -118,12 +150,24 @@ jobs:
             sleep 10
           done
           echo "::error::PostgreSQL did not reach Stopped -- FAILED_STOP"
+          lifecycle_apply_transition "$env" FAILED_STOP "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "PostgreSQL did not reach Stopped within 600s"
           exit 1
 
-      - name: Record DORMANT + next auto-restart-risk timestamp
+      # DORMANT is only ever persisted here, strictly after the Postgres-
+      # Stopped poll above has succeeded -- never merely because the CLI
+      # commands issuing the stop returned success (Noetva R4-I Section
+      # 19's dormancy-honesty invariant).
+      - name: Persist DORMANT and next auto-restart-risk timestamp
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          env="${{ inputs.environment }}"
           risk=$(python3 infra/azure/lifecycle/lifecycle_cli.py compute-restart-risk --stopped-at "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" | jq -r .dbAutoRestartRiskAt)
+          lifecycle_apply_transition "$env" DORMANT "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --db-auto-restart-risk-at "$risk"
           echo "::notice::DORMANT. Next auto-restart risk (Azure's own 7-day behavior): $risk"
 
       - name: Report remaining billable resource categories
@@ -138,16 +182,33 @@ jobs:
             - Log Analytics retained data
           EOF
 
-      # Noetva G-R3 Section 12/14/38: FAILED_STOP must never be left
-      # silently suppressed. Runs only if any prior step in this job
-      # failed (`if: failure()`) -- a clean run never reaches this step at
-      # all, since suppression correctly stays enabled through a genuine
-      # DORMANT result.
-      - name: On any failure above, restore normal alerting (never leave FAILED_STOP suppressed)
+      # Noetva G-R3 Section 12/14/38 + R4-I: safety net only, mirroring
+      # start.yml's own FSM-aware cleanup step. FAILED_STOP is only
+      # attempted from a state that can legally reach it; a failure after
+      # DORMANT was already persisted (e.g. the "report billable
+      # resources" step, which cannot fail) is not treated as a stop
+      # failure.
+      - name: On any failure above, persist FAILED_STOP if not already recorded, and restore normal alerting
         if: failure()
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
-          alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" false
-          echo "::error::Stop sequence failed -- state is FAILED_STOP, alerting restored, cost alert must remain active (Noetva I-R2 Section 14/O)."
+          env="${{ inputs.environment }}"
+          row=$(lifecycle_table_read "$env" || echo '{}')
+          state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          case "$state" in
+            DRAIN_REQUESTED|STOPPING_APPLICATION|STOPPING_DATABASE)
+              lifecycle_apply_transition "$env" FAILED_STOP "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" \
+                --error "unexpected failure -- see this workflow run's step logs (safety-net cleanup, not a specific instrumented failure branch)" \
+                || echo "::warning::could not persist FAILED_STOP from $state -- see logs above"
+              ;;
+            *)
+              echo "state is already $state -- no FAILED_STOP transition needed from here."
+              ;;
+          esac
+          rg="rg-noetva-${env}"
+          alert_suppression_set "$rg" "noetva-${env}-eus2-availability-suppression" false
+          echo "::error::Stop sequence failed -- alerting restored, cost alert must remain active (Noetva I-R2 Section 14/O)."

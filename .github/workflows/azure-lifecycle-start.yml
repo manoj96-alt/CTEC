@@ -3,6 +3,13 @@ name: Start Noetva Environment
 # Noetva I-R2 Section 12: the frozen 24-step startup sequence. Production
 # is structurally absent from `environment`'s choice list (Noetva I-R2
 # Section 6) -- not merely rejected at runtime.
+#
+# Noetva R4-I: every intent/terminal state below is now durably persisted
+# through the governed `lifecycle_apply_transition` wrapper (R4-DRG D1
+# correction) -- no Azure infrastructure mutation begins until its
+# preceding intent state has been written (Section 16's hard invariant).
+# Each failure point persists FAILED_START with a specific reason at the
+# point of failure, not only via the catch-all cleanup step.
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +32,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  NOETVA_LIFECYCLE_ACTOR: ${{ github.actor }}
+  NOETVA_LIFECYCLE_RUN_ID: ${{ github.run_id }}
+
 jobs:
   start:
     runs-on: ubuntu-latest
@@ -44,26 +55,34 @@ jobs:
           set -euo pipefail
           python3 infra/azure/lifecycle/lifecycle_cli.py compute-ttl-expiry --ttl-hours "${{ inputs.ttlHours }}"
 
-      # Step 1-4: acquire lifecycle authority, read current row, validate
-      # DORMANT->START_REQUESTED is an allowed transition, write new state.
-      - name: Acquire lifecycle lock and set START_REQUESTED
+      # Step 1-4: acquire lifecycle authority and durably persist
+      # START_REQUESTED before anything else runs. A failure here (illegal
+      # transition, ETag conflict, or a table-unavailable failure) aborts
+      # before any Azure mutation is attempted -- there is nothing to roll
+      # back yet.
+      - name: Persist START_REQUESTED (lifecycle lock)
         env:
           NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          row=$(lifecycle_table_read "${{ inputs.environment }}")
-          current_state=$(echo "$row" | jq -r '.state // "DORMANT"')
-          etag=$(echo "$row" | jq -r '.etag // "*"')
-          python3 infra/azure/lifecycle/lifecycle_cli.py validate-transition --current "$current_state" --target START_REQUESTED
+          lifecycle_apply_transition "${{ inputs.environment }}" START_REQUESTED "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
 
-      # Step 5-6: start PostgreSQL, poll until Ready.
-      - name: Start PostgreSQL and wait for Ready
+      # Step 5-6: persist the starting-database intent, THEN start
+      # PostgreSQL and poll until Ready. A poll timeout persists
+      # FAILED_START with the specific reason before exiting.
+      - name: Persist STARTING_DATABASE, start PostgreSQL, wait for Ready
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
-          server="noetva-${{ inputs.environment }}-eus2-pg"
+          env="${{ inputs.environment }}"
+          lifecycle_apply_transition "$env" STARTING_DATABASE "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
+          rg="rg-noetva-${env}"
+          server="noetva-${env}-eus2-pg"
           postgres_start "$rg" "$server"
           for i in $(seq 1 60); do
             state=$(postgres_state "$rg" "$server")
@@ -72,6 +91,8 @@ jobs:
             sleep 10
           done
           echo "::error::PostgreSQL did not become Ready in time -- FAILED_START"
+          lifecycle_apply_transition "$env" FAILED_START "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "PostgreSQL did not become Ready within 600s"
           exit 1
 
       # Step 7-11: DB reachability, application-role connection, migration
@@ -86,27 +107,50 @@ jobs:
           echo "  SELECT version_num FROM alembic_version  vs  alembic heads"
           echo "Never runs 'alembic upgrade head' or any demo_*_seeder here."
 
-      - name: Activate backend and frontend revisions
+      - name: Persist STARTING_APPLICATION, activate backend and frontend revisions
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
+          env="${{ inputs.environment }}"
+          lifecycle_apply_transition "$env" STARTING_APPLICATION "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
+          rg="rg-noetva-${env}"
           for app in backend frontend; do
-            name="noetva-${{ inputs.environment }}-eus2-${app}"
-            revision=$(containerapp_active_revision_name "$rg" "$name")
-            containerapp_activate_revision "$rg" "$name" "$revision"
+            name="noetva-${env}-eus2-${app}"
+            revision=$(containerapp_active_revision_name "$rg" "$name") || {
+              echo "::error::could not determine active revision for $app -- FAILED_START"
+              lifecycle_apply_transition "$env" FAILED_START "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "could not determine active revision for $app"
+              exit 1
+            }
+            containerapp_activate_revision "$rg" "$name" "$revision" || {
+              echo "::error::$app revision failed to activate -- FAILED_START"
+              lifecycle_apply_transition "$env" FAILED_START "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "$app revision failed to activate"
+              exit 1
+            }
           done
 
-      - name: Wait for backend /health
+      - name: Persist VERIFYING, wait for backend /health
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
-          fqdn="noetva-${{ inputs.environment }}-eus2-backend.$(az containerapp env show --name noetva-${{ inputs.environment }}-eus2-cae --resource-group rg-noetva-${{ inputs.environment }} --query properties.defaultDomain -o tsv 2>/dev/null || echo unknown)"
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          env="${{ inputs.environment }}"
+          lifecycle_apply_transition "$env" VERIFYING "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID"
+          fqdn="noetva-${env}-eus2-backend.$(az containerapp env show --name noetva-${env}-eus2-cae --resource-group rg-noetva-${env} --query properties.defaultDomain -o tsv 2>/dev/null || echo unknown)"
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' "https://$fqdn/health" || echo 000)
             [ "$code" = "200" ] && exit 0
             sleep 10
           done
           echo "::error::backend /health did not return 200 -- FAILED_START"
+          lifecycle_apply_transition "$env" FAILED_START "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --error "backend /health did not return 200 within 300s"
           exit 1
 
       - name: Authenticated smoke test (synthetic demo test identity)
@@ -127,13 +171,18 @@ jobs:
           python3 infra/azure/lifecycle/lifecycle_cli.py evaluate-demo-ready \
             --frontend-reachable true --backend-healthy true --db-reachable true --migration-head-correct true
 
-      - name: Record READY state and TTL expiry
+      # Noetva G-R3 Section 14 (unchanged) + R4-I: READY and its TTL
+      # expiry are persisted atomically in one write.
+      - name: Persist READY state and TTL expiry
         env:
           NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          env="${{ inputs.environment }}"
           expiry=$(python3 infra/azure/lifecycle/lifecycle_cli.py compute-ttl-expiry --ttl-hours "${{ inputs.ttlHours }}" | jq -r .ttlExpiresAt)
-          echo "Environment ${{ inputs.environment }} is READY. TTL expires at $expiry."
+          lifecycle_apply_transition "$env" READY "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --ttl-expires-at "$expiry"
           echo "::notice::READY, expires $expiry"
 
       # Noetva G-R3 Section 14: suppression only lifts once READY is
@@ -148,16 +197,38 @@ jobs:
           rg="rg-noetva-${{ inputs.environment }}"
           alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" false
 
-      # Noetva G-R3 Section 12/37: FAILED_START must be alertable. The
-      # suppression rule was left `enabled` from the prior successful stop
-      # (DORMANT); if anything above failed before the READY step ran,
-      # this restores normal alerting rather than leaving the environment
-      # silently suppressed while it needs attention.
-      - name: On any failure above, restore normal alerting (never leave FAILED_START suppressed)
+      # Noetva G-R3 Section 12/37 + R4-I: safety net only. Each failure
+      # point above already persists FAILED_START with a specific reason
+      # at its own point of failure; this step exists for an unexpected
+      # failure that occurred without going through one of those
+      # instrumented branches (e.g. `az login` itself, or a step crashing
+      # before its own error handling runs). It is idempotent and FSM-
+      # aware: it only attempts FAILED_START from a state that can legally
+      # reach it, and never re-attempts a transition READY has already
+      # made moot (a failure in the suppression-disable step above does
+      # not mean Start failed -- the environment IS READY; only the
+      # alerting side-effect needs retrying).
+      - name: On any failure above, persist FAILED_START if not already recorded, and restore normal alerting
         if: failure()
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          rg="rg-noetva-${{ inputs.environment }}"
-          alert_suppression_set "$rg" "noetva-${{ inputs.environment }}-eus2-availability-suppression" false
-          echo "::error::Start sequence failed -- state is FAILED_START, alerting restored."
+          env="${{ inputs.environment }}"
+          row=$(lifecycle_table_read "$env" || echo '{}')
+          state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          case "$state" in
+            START_REQUESTED|STARTING_DATABASE|STARTING_APPLICATION|VERIFYING)
+              lifecycle_apply_transition "$env" FAILED_START "$NOETVA_LIFECYCLE_ACTOR" \
+                --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" \
+                --error "unexpected failure -- see this workflow run's step logs (safety-net cleanup, not a specific instrumented failure branch)" \
+                || echo "::warning::could not persist FAILED_START from $state -- see logs above"
+              ;;
+            *)
+              echo "state is already $state -- no FAILED_START transition needed from here."
+              ;;
+          esac
+          rg="rg-noetva-${env}"
+          alert_suppression_set "$rg" "noetva-${env}-eus2-availability-suppression" false
+          echo "::error::Start sequence failed -- alerting restored."

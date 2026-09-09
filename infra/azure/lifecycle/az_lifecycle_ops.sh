@@ -15,36 +15,167 @@
 set -euo pipefail
 
 # ---- Table Storage (lifecycle state) ----------------------------------
+#
+# Noetva R4-DRG/R4-I: the durability invariant is "a lifecycle transition
+# is not authoritative until its new state and transition metadata have
+# been durably persisted." That requires lifecycle_table_read to FAIL
+# CLOSED on any real read failure -- distinct from a genuinely-missing
+# row, which is the expected, safe-to-default first-ever-Start case
+# (Section O/34) -- so no caller can mistake "the table is unreachable"
+# for "this environment has simply never started."
 
-# Reads one environment's lifecycle row. Returns JSON on stdout (or empty
-# if no row exists yet, which the caller treats as an implicit DORMANT/
-# never-started row). Never assumes PostgreSQL is reachable to determine
-# this (Noetva I-R2 Section 9's core requirement).
+# Reads one environment's lifecycle row. On success, returns the full
+# entity JSON (including Azure's own `etag`) on stdout and exits 0. If the
+# row genuinely does not exist yet (Azure Table Storage's stable
+# ResourceNotFound/404 signal -- confirmed against Microsoft's documented
+# Table service error codes; exact wording remains AZURE_RUNTIME_REQUIRED
+# to reconfirm against a live account), returns `{}` and exits 0 -- this
+# is the ONLY case allowed to default to an implicit DORMANT/never-started
+# row. Every OTHER failure (auth/permission, network, throttling, a
+# malformed response) prints a diagnostic to stderr and returns non-zero:
+# the caller must treat that as "cannot determine lifecycle state" and
+# abort BEFORE any Azure infrastructure mutation, never silently proceed
+# as if DORMANT (Noetva R4-DRG Section N, R4-I Section 10).
 lifecycle_table_read() {
   local environment="$1"
-  az storage entity show \
+  local output exit_code
+  output=$(az storage entity show \
     --account-name "$NOETVA_LIFECYCLE_STORAGE_ACCOUNT" \
     --table-name "noetvalifecyclestate" \
     --partition-key "noetva" \
     --row-key "$environment" \
     --auth-mode login \
-    --output json 2>/dev/null || echo "{}"
+    --output json 2>&1)
+  exit_code=$?
+  if [ "$exit_code" -eq 0 ]; then
+    echo "$output"
+    return 0
+  fi
+  if echo "$output" | grep -qi "ResourceNotFound\|does not exist\|(404)\|not found"; then
+    echo "{}"
+    return 0
+  fi
+  echo "lifecycle_table_read: FAILED reading '$environment' -- refusing to default to DORMANT (Noetva R4-DRG Section N/AR: exact Azure error text reconfirmed only during Azure-runtime verification)." >&2
+  echo "$output" >&2
+  return 1
 }
 
-# Writes one environment's lifecycle row with ETag-conditional replace
-# (optimistic-lock layer 2, Noetva I-R2 Section 10). Fails loudly (non-zero
-# exit) on an ETag mismatch -- the caller must treat that as a LockConflict
-# and abort the workflow run, never retry blindly.
+# Converts a flat JSON object (as emitted by lifecycle_cli.py's
+# apply-transition/persist-metadata `.entity`) into the `Key=Value
+# [Key=Value ...]` argument list `az storage entity insert|replace
+# --entity` requires. Null-valued keys are omitted entirely -- Azure Table
+# Storage has no null; an absent property is the correct representation
+# of "not set," matching how every reader in this codebase already
+# treats a missing property (`jq -r '.foo // "default"'`).
+_lifecycle_entity_args() {
+  local entity_json="$1"
+  echo "$entity_json" | jq -r 'to_entries | map(select(.value != null)) | map("\(.key)=\(.value|tostring)") | .[]'
+}
+
+# Inserts a BRAND-NEW lifecycle row (Noetva R4-DRG Section O/11: the
+# first-ever Start for an environment is the bootstrap, not a separate
+# initialization step). Azure Table Storage's Insert operation fails
+# (HTTP 409 Conflict) if an entity with this PartitionKey+RowKey already
+# exists -- a concurrent first writer therefore produces a conflict, never
+# a silent clobber (Section 34's "first insert race does not clobber").
+lifecycle_table_insert() {
+  local environment="$1" entity_json="$2"
+  local -a kv_args=()
+  local _line
+  while IFS= read -r _line; do
+    [ -n "$_line" ] && kv_args+=("$_line")
+  done < <(_lifecycle_entity_args "$entity_json")
+  az storage entity insert \
+    --account-name "$NOETVA_LIFECYCLE_STORAGE_ACCOUNT" \
+    --table-name "noetvalifecyclestate" \
+    --entity "PartitionKey=noetva" "RowKey=$environment" "${kv_args[@]}" \
+    --auth-mode login
+}
+
+# Writes an EXISTING environment's lifecycle row with ETag-conditional
+# replace (optimistic-lock layer 2, Noetva I-R2 Section 10). Fails loudly
+# (non-zero exit, HTTP 412 Precondition Failed) on an ETag mismatch -- the
+# caller must treat that as a lifecycle concurrency conflict and abort the
+# workflow run, never retry blindly (R4-I Section 12).
 lifecycle_table_write() {
   local environment="$1"
   local entity_json="$2"
   local expected_etag="$3"
+  local -a kv_args=()
+  local _line
+  while IFS= read -r _line; do
+    [ -n "$_line" ] && kv_args+=("$_line")
+  done < <(_lifecycle_entity_args "$entity_json")
   az storage entity replace \
     --account-name "$NOETVA_LIFECYCLE_STORAGE_ACCOUNT" \
     --table-name "noetvalifecyclestate" \
-    --entity "PartitionKey=noetva" "RowKey=$environment" "$entity_json" \
+    --entity "PartitionKey=noetva" "RowKey=$environment" "${kv_args[@]}" \
     --if-match "$expected_etag" \
     --auth-mode login
+}
+
+# Shared insert-vs-replace tail for both governed persistence wrappers
+# below: `$current_result` is one `lifecycle_cli.py apply-transition` or
+# `persist-metadata` JSON object, `{"entity": {...}, "isNewRow": bool}`.
+_lifecycle_persist_result() {
+  local environment="$1" row="$2" current_result="$3"
+  local entity_json is_new_row expected_etag
+  entity_json=$(echo "$current_result" | jq -c '.entity')
+  is_new_row=$(echo "$current_result" | jq -r '.isNewRow')
+  if [ "$is_new_row" = "true" ]; then
+    lifecycle_table_insert "$environment" "$entity_json"
+  else
+    expected_etag=$(echo "$row" | jq -r '.etag // ""')
+    lifecycle_table_write "$environment" "$entity_json" "$expected_etag"
+  fi
+}
+
+# ---- Governed lifecycle persistence (Noetva R4-DRG Section AA/21-22) ----
+# The SOLE authority every lifecycle workflow step uses to move a row
+# forward: READ -> (lifecycle_table_read already distinguishes missing vs.
+# failure) -> COMPUTE THE VALID NEXT ROW (via lifecycle_controller.py's
+# apply_transition(), through lifecycle_cli.py -- never re-implemented
+# here) -> CONDITIONAL PERSIST (insert-if-absent for a first-ever row,
+# ETag-conditional replace otherwise). No workflow implements its own ad
+# hoc lifecycle row-mutation logic; every write in every lifecycle
+# workflow goes through one of these two functions.
+
+# Real FSM state transitions (Start/Stop steps). Extra args after the
+# required three are forwarded verbatim to `apply-transition` --
+# `--workflow-run-id ID`, `--error MSG`, `--ttl-expires-at ISO8601`,
+# `--db-auto-restart-risk-at ISO8601`.
+lifecycle_apply_transition() {
+  local environment="$1" target="$2" actor="$3"
+  shift 3
+  local row current_result
+  row=$(lifecycle_table_read "$environment") || return 1
+  if ! current_result=$(python3 "$(dirname "${BASH_SOURCE[0]}")/lifecycle_cli.py" apply-transition \
+      --environment "$environment" --current-row-json "$row" --target "$target" --actor "$actor" "$@"); then
+    echo "lifecycle_apply_transition: refused ($environment -> $target)" >&2
+    echo "$current_result" >&2
+    return 1
+  fi
+  _lifecycle_persist_result "$environment" "$row" "$current_result"
+}
+
+# Non-transition metadata updates (Extend's ttlExpiresAt, Hold's
+# holdUntil, the restart-monitor's bounded-recheck lastError memory) --
+# state itself is never touched. Forwards all args after environment/actor
+# to `persist-metadata` -- `--workflow-run-id ID`, `--ttl-expires-at
+# ISO8601`, `--hold-until ISO8601`, `--last-error MSG` (empty string
+# clears it).
+lifecycle_persist_metadata() {
+  local environment="$1" actor="$2"
+  shift 2
+  local row current_result
+  row=$(lifecycle_table_read "$environment") || return 1
+  if ! current_result=$(python3 "$(dirname "${BASH_SOURCE[0]}")/lifecycle_cli.py" persist-metadata \
+      --environment "$environment" --current-row-json "$row" --actor "$actor" "$@"); then
+    echo "lifecycle_persist_metadata: refused ($environment)" >&2
+    echo "$current_result" >&2
+    return 1
+  fi
+  _lifecycle_persist_result "$environment" "$row" "$current_result"
 }
 
 # ---- PostgreSQL Flexible Server -----------------------------------------

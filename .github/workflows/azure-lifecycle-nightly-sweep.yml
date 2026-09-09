@@ -26,6 +26,13 @@ jobs:
       group: lifecycle-${{ matrix.environment }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    # Noetva R4-I (D2): job-level GitHub Environment binding, matching the
+    # id-lifecycle federated credential's per-environment subject
+    # (infra/azure/modules/lifecycle-identity.bicep). Previously absent --
+    # the scheduled matrix jobs authenticated with a ref-based OIDC
+    # subject that matched none of the three credentials, distinct from
+    # (and in addition to) D1's persistence gap.
+    environment: ${{ matrix.environment }}
     steps:
       - uses: actions/checkout@v4
 

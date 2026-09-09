@@ -23,6 +23,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  NOETVA_LIFECYCLE_ACTOR: ${{ github.actor }}
+  NOETVA_LIFECYCLE_RUN_ID: ${{ github.run_id }}
+
 jobs:
   extend:
     runs-on: ubuntu-latest
@@ -37,13 +41,20 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate current state permits extension, then extend
+      # Noetva R4-I: the new TTL is computed exactly as before (the
+      # controller's extend_ttl() arithmetic is unchanged and not
+      # duplicated here), then durably persisted through
+      # lifecycle_persist_metadata -- Extend is a metadata-only update
+      # (state does not change; there is no "stay in READY" edge in the
+      # FSM), so this does not go through lifecycle_apply_transition.
+      - name: Validate current state permits extension, then extend and persist
         env:
           NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
           source infra/azure/lifecycle/az_lifecycle_ops.sh
-          row=$(lifecycle_table_read "${{ inputs.environment }}")
+          env="${{ inputs.environment }}"
+          row=$(lifecycle_table_read "$env")
           state=$(echo "$row" | jq -r '.state // "DORMANT"')
           if [ "$state" != "READY" ] && [ "$state" != "IN_USE" ]; then
             echo "::error::Cannot extend from state $state -- only READY/IN_USE may be extended (Noetva I-R2 Section 18)"
@@ -55,4 +66,6 @@ jobs:
           else
             new_expiry=$(python3 infra/azure/lifecycle/lifecycle_cli.py extend-ttl --additional-hours "${{ inputs.additionalHours }}" | jq -r .ttlExpiresAt)
           fi
+          lifecycle_persist_metadata "$env" "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --ttl-expires-at "$new_expiry"
           echo "::notice::Extended from $current_expiry to $new_expiry"

@@ -24,6 +24,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  NOETVA_LIFECYCLE_ACTOR: ${{ github.actor }}
+  NOETVA_LIFECYCLE_RUN_ID: ${{ github.run_id }}
+
 jobs:
   hold:
     runs-on: ubuntu-latest
@@ -38,13 +42,23 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate the hold expiration is a real, parseable, future timestamp
+      # Noetva R4-I: holdUntilUtc is already an absolute timestamp (the
+      # workflow input itself, validated below exactly as before -- no
+      # arithmetic to delegate to the controller here) and is now durably
+      # persisted through lifecycle_persist_metadata. HOLD is a
+      # metadata-only update, like Extend: state does not change.
+      - name: Validate the hold expiration is a real, parseable, future timestamp, then persist
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
         run: |
           set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
           now_epoch=$(date -u +%s)
           hold_epoch=$(date -u -d "${{ inputs.holdUntilUtc }}" +%s)
           if [ "$hold_epoch" -le "$now_epoch" ]; then
             echo "::error::holdUntilUtc must be in the future"
             exit 1
           fi
+          lifecycle_persist_metadata "${{ inputs.environment }}" "$NOETVA_LIFECYCLE_ACTOR" \
+            --workflow-run-id "$NOETVA_LIFECYCLE_RUN_ID" --hold-until "${{ inputs.holdUntilUtc }}"
           echo "::notice::Hold placed on ${{ inputs.environment }} until ${{ inputs.holdUntilUtc }}. The hold naturally ceases to suppress shutdown once this passes -- no cleanup action is needed."

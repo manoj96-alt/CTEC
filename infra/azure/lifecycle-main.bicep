@@ -19,8 +19,12 @@ param namePrefix string = 'noetva-lifecycle-eus2'
 @description('GitHub repository in owner/repo form')
 param githubRepository string
 
-@description('GitHub Actions environment name federated to the lifecycle identity (e.g. lifecycle)')
-param githubEnvironmentName string = 'lifecycle'
+@description('GitHub Actions environment names federated to the shared lifecycle identity -- Noetva R4-DRG D2: one credential per name is created (modules/lifecycle-identity.bicep), matching every lifecycle workflow own per-environment job binding. Frozen default is exactly the three lifecycle-managed environments -- never a single shared name (that subject matches no real workflow run), never including production.')
+param githubEnvironmentNames array = [
+  'dev'
+  'staging'
+  'demo'
+]
 
 @description('Log Analytics workspace resource ID to send lifecycle storage diagnostics to. If empty, an environment-specific workspace ID must be supplied at deploy time -- lifecycle automation spans environments and does not own its own Log Analytics workspace by design.')
 param logAnalyticsWorkspaceId string
@@ -65,7 +69,7 @@ module identity 'modules/lifecycle-identity.bicep' = {
     location: location
     tags: tags
     githubRepository: githubRepository
-    githubEnvironmentName: githubEnvironmentName
+    githubEnvironmentNames: githubEnvironmentNames
   }
 }
 
