@@ -1,0 +1,85 @@
+name: Noetva PostgreSQL Restart Monitor
+
+# Noetva G-R2 Section J (mandatory, per its own framing): Azure Database
+# for PostgreSQL Flexible Server automatically restarts a stopped server
+# after 7 days -- directly quoted from current Microsoft documentation
+# during that phase. This workflow detects DORMANT-but-Ready and safely
+# re-stops it, while tolerating the separately-documented transient
+# monthly-maintenance restart (Noetva G-R2 Section AR / I-R2 Section 16)
+# via bounded recheck logic rather than alarming on first sighting.
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Daily -- comfortably inside the 7-day window even if one run is
+    # delayed or skipped (GitHub schedule timing is best-effort).
+    - cron: "30 8 * * *"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  monitor:
+    strategy:
+      matrix:
+        environment: [dev, staging, demo]
+      fail-fast: false
+    concurrency:
+      group: lifecycle-${{ matrix.environment }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Classify current Postgres state against lifecycle state
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          env="${{ matrix.environment }}"
+          rg="rg-noetva-${env}"
+          server="noetva-${env}-eus2-pg"
+
+          row=$(lifecycle_table_read "$env")
+          state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          pg_state=$(postgres_state "$rg" "$server")
+          ready=false
+          [ "$pg_state" = "Ready" ] && ready=true
+
+          # Bounded recheck: the table row records whether a PRIOR run
+          # already flagged this as suspected-transient-maintenance and,
+          # if so, whether Postgres was found Stopped again on this run.
+          prior_suspected=$(echo "$row" | jq -r '.lastError // empty' | grep -q "TRANSIENT_MAINTENANCE_SUSPECTED" && echo true || echo false)
+          recheck_arg=()
+          if [ "$prior_suspected" = "true" ]; then
+            if [ "$ready" = "false" ]; then
+              recheck_arg=(--recheck-passed true)
+            else
+              recheck_arg=(--recheck-passed false)
+            fi
+          fi
+
+          result=$(python3 infra/azure/lifecycle/lifecycle_cli.py classify-postgres-state \
+            --lifecycle-state "$state" --postgres-reports-ready "$ready" "${recheck_arg[@]}" | jq -r .result)
+          echo "classification: $result"
+
+          case "$result" in
+            OK) echo "Nothing to do." ;;
+            TRANSIENT_MAINTENANCE_SUSPECTED)
+              echo "::notice::$env: Postgres unexpectedly Ready while DORMANT -- treating as possible monthly-maintenance blip, will recheck on the next scheduled run before alarming."
+              ;;
+            UNEXPECTED_RESTART)
+              echo "::warning::$env: sustained DORMANT+Ready -- Azure's 7-day auto-restart (or an unexplained restart). Safely re-stopping."
+              deployment_in_progress_for_environment "$env" && { echo "::error::A deployment is in progress -- refusing to re-stop, will retry next run."; exit 0; }
+              postgres_stop "$rg" "$server"
+              echo "::notice::Anomaly recorded: unexpected restart, re-stopped at $(date -u --iso-8601=seconds)."
+              ;;
+          esac

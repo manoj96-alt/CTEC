@@ -1,0 +1,246 @@
+name: Azure Deploy
+
+# Manual only -- production never deploys automatically from every push
+# (Noetva D0 Section AK / I0-R1 Section 44). Depends on the existing `CI`
+# workflow's quality gates having already passed for the exact commit
+# being deployed -- verified explicitly below via the GitHub Checks API,
+# never assumed.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod, demo]
+      git_sha:
+        description: "Exact commit SHA to deploy (must have a passing CI run)"
+        required: true
+        type: string
+
+permissions:
+  id-token: write   # required for OIDC federation to Azure -- no AZURE_CLIENT_SECRET anywhere
+  contents: read
+  checks: read
+
+env:
+  ACR_REPO_BACKEND: noetva/backend
+  ACR_REPO_FRONTEND: noetva/frontend
+
+# Noetva I-R2 Section 22: deployment shares the SAME concurrency domain as
+# every lifecycle workflow for this environment -- it cannot race a start,
+# stop, TTL sweep, or restart-monitor run targeting the same environment.
+# For `prod` this group is simply never contended (no lifecycle workflow
+# ever targets prod), so this is a no-op there and a real interlock
+# everywhere lifecycle automation exists.
+concurrency:
+  group: lifecycle-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  verify-ci-passed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the CI workflow succeeded for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          conclusion=$(gh api "repos/${{ github.repository }}/commits/${{ inputs.git_sha }}/check-runs" \
+            --jq '[.check_runs[] | select(.name=="backend" or .name=="frontend" or .name=="containers")] | map(.conclusion) | unique | join(",")')
+          echo "CI check-run conclusions for ${{ inputs.git_sha }}: $conclusion"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::CI has not passed (conclusion=$conclusion) for ${{ inputs.git_sha }} -- refusing to deploy."
+            exit 1
+          fi
+
+  # Noetva I-R2 Section 22/AA: if the target is one of the lifecycle-
+  # managed, currently-DORMANT environments, deployment invokes the real
+  # Start Noetva Environment workflow rather than deploying against a
+  # stopped database -- reused, not duplicated. `prod` has no lifecycle
+  # row and this step is a pure no-op for it.
+  ensure-environment-ready:
+    needs: verify-ci-passed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        if: inputs.environment != 'prod'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Wake a DORMANT environment before deploying to it
+        if: inputs.environment != 'prod'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          row=$(lifecycle_table_read "${{ inputs.environment }}")
+          state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          if [ "$state" = "DORMANT" ]; then
+            echo "::notice::${{ inputs.environment }} is DORMANT -- dispatching Start Noetva Environment before deploying."
+            gh workflow run azure-lifecycle-start.yml -f environment="${{ inputs.environment }}" -f ttlHours=4
+            for i in $(seq 1 60); do
+              row=$(lifecycle_table_read "${{ inputs.environment }}")
+              state=$(echo "$row" | jq -r '.state // "DORMANT"')
+              [ "$state" = "READY" ] && exit 0
+              [[ "$state" == FAILED_* ]] && { echo "::error::Environment failed to start -- refusing to deploy."; exit 1; }
+              sleep 15
+            done
+            echo "::error::Environment did not reach READY in time -- refusing to deploy."
+            exit 1
+          fi
+          echo "${{ inputs.environment }} is already $state -- proceeding."
+
+  build-and-push:
+    needs: [verify-ci-passed, ensure-environment-ready]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      backend_digest: ${{ steps.push-backend.outputs.digest }}
+      frontend_digest: ${{ steps.push-frontend.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_sha }}
+
+      - name: Azure login (OIDC federation, no stored client secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_CICD_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ vars.NOETVA_ACR_NAME }}
+
+      # Backend: no NEXT_PUBLIC_* build args -- runtime-configured, so the
+      # SAME digest is valid to promote across environments unmodified
+      # (Noetva D0 Section O -- unaffected by the frontend's build-time
+      # OIDC constraint, Noetva I0-R1 Section 28/W).
+      - name: Build and push backend image (tag = git SHA, never `latest`)
+        id: push-backend
+        run: |
+          set -euo pipefail
+          IMAGE="${{ vars.NOETVA_ACR_LOGIN_SERVER }}/${{ env.ACR_REPO_BACKEND }}:${{ inputs.git_sha }}"
+          docker build -t "$IMAGE" ./backend
+          docker push "$IMAGE"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # Frontend: THIS environment's own NEXT_PUBLIC_OIDC_* build args are
+      # baked in now -- Noetva I0-R1 Section 28/W's resolution: frontend
+      # images are environment-specific, never promoted unchanged across
+      # environments. The image still traces to the same immutable git SHA
+      # and is never rebuilt again once pushed.
+      - name: Build and push frontend image (environment-specific OIDC build args)
+        id: push-frontend
+        run: |
+          set -euo pipefail
+          IMAGE="${{ vars.NOETVA_ACR_LOGIN_SERVER }}/${{ env.ACR_REPO_FRONTEND }}:${{ inputs.git_sha }}-${{ inputs.environment }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_CTEC_API_ORIGIN="${{ vars.NOETVA_BACKEND_ORIGIN }}" \
+            --build-arg NEXT_PUBLIC_OIDC_AUTHORITY="${{ vars.NOETVA_OIDC_AUTHORITY }}" \
+            --build-arg NEXT_PUBLIC_OIDC_CLIENT_ID="${{ vars.NOETVA_OIDC_CLIENT_ID }}" \
+            --build-arg NEXT_PUBLIC_OIDC_REDIRECT_URI="${{ vars.NOETVA_OIDC_REDIRECT_URI }}" \
+            --build-arg NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI="${{ vars.NOETVA_OIDC_POST_LOGOUT_REDIRECT_URI }}" \
+            -t "$IMAGE" ./frontend
+          docker push "$IMAGE"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  migrate:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Azure login (OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_CICD_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Runs ONLY the migration Job (Noetva D0 Section Z / I0-R1 Section
+      # 22) -- never the backend Container App itself, which never runs
+      # migrations on ordinary startup.
+      - name: Update migration Job image and start it
+        run: |
+          set -euo pipefail
+          az containerapp job update \
+            --name "noetva-${{ inputs.environment }}-eus2-migrate" \
+            --resource-group "rg-noetva-${{ inputs.environment }}" \
+            --image "${{ needs.build-and-push.outputs.backend_digest }}"
+          az containerapp job start \
+            --name "noetva-${{ inputs.environment }}-eus2-migrate" \
+            --resource-group "rg-noetva-${{ inputs.environment }}"
+
+      - name: Wait for migration Job to complete and verify success
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            status=$(az containerapp job execution list \
+              --name "noetva-${{ inputs.environment }}-eus2-migrate" \
+              --resource-group "rg-noetva-${{ inputs.environment }}" \
+              --query "[0].properties.status" -o tsv)
+            echo "migration job status: $status"
+            if [ "$status" = "Succeeded" ]; then exit 0; fi
+            if [ "$status" = "Failed" ]; then
+              echo "::error::Migration Job failed -- halting before any application deployment."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::Migration Job did not complete in time."
+          exit 1
+
+  deploy:
+    needs: [build-and-push, migrate]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Azure login (OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_CICD_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy backend Container App to the migrated digest
+        run: |
+          az containerapp update \
+            --name "noetva-${{ inputs.environment }}-eus2-backend" \
+            --resource-group "rg-noetva-${{ inputs.environment }}" \
+            --image "${{ needs.build-and-push.outputs.backend_digest }}"
+
+      - name: Deploy frontend Container App
+        run: |
+          az containerapp update \
+            --name "noetva-${{ inputs.environment }}-eus2-frontend" \
+            --resource-group "rg-noetva-${{ inputs.environment }}" \
+            --image "${{ needs.build-and-push.outputs.frontend_digest }}"
+
+      - name: Health check (liveness only -- see infra/azure/README.md on /health's known limitation)
+        run: |
+          set -euo pipefail
+          backend_fqdn=$(az containerapp show --name "noetva-${{ inputs.environment }}-eus2-backend" \
+            --resource-group "rg-noetva-${{ inputs.environment }}" --query "properties.configuration.ingress.fqdn" -o tsv)
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$backend_fqdn/health" || echo 000)
+            [ "$code" = "200" ] && { echo "backend healthy"; break; }
+            sleep 5
+          done
+
+      - name: Smoke test -- unauthenticated OQI request fails closed
+        run: |
+          set -euo pipefail
+          backend_fqdn=$(az containerapp show --name "noetva-${{ inputs.environment }}-eus2-backend" \
+            --resource-group "rg-noetva-${{ inputs.environment }}" --query "properties.configuration.ingress.fqdn" -o tsv)
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://$backend_fqdn/api/v1/oqi/command-center")
+          [ "$code" = "401" ] || { echo "::error::expected 401, got $code"; exit 1; }

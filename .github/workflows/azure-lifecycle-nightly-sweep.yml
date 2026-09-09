@@ -1,0 +1,105 @@
+name: Noetva Nightly Lifecycle Sweep
+
+# Noetva I-R2 Section 20/21: configurable UTC schedule (not Pacific-coded),
+# checks policy/TTL/hold/deployment/migration for every lifecycle-managed
+# environment. GitHub `schedule` timing is best-effort (Noetva G-R2 Section
+# AY) -- acceptable for cost shutdown, disclosed, not pretended precise.
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 08:00 UTC default -- a reasoned, timezone-independent default
+    # (Noetva G-R2 Section V), not hardcoded to any founder timezone.
+    # Configurable by editing this cron expression.
+    - cron: "0 8 * * *"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sweep:
+    strategy:
+      matrix:
+        environment: [dev, staging, demo]
+      fail-fast: false
+    concurrency:
+      group: lifecycle-${{ matrix.environment }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Evaluate whether this environment should be swept to DORMANT
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          env="${{ matrix.environment }}"
+
+          row=$(lifecycle_table_read "$env")
+          state=$(echo "$row" | jq -r '.state // "DORMANT"')
+          if [ "$state" = "DORMANT" ] || [[ "$state" == FAILED_* ]]; then
+            echo "$env already $state -- nothing to sweep."
+            exit 0
+          fi
+
+          ttl=$(echo "$row" | jq -r '.ttlExpiresAt // empty')
+          ttl_expired=false
+          if [ -n "$ttl" ] && [ "$(date -u -d "$ttl" +%s 2>/dev/null || echo 0)" -le "$(date -u +%s)" ]; then
+            ttl_expired=true
+          fi
+
+          hold_until=$(echo "$row" | jq -r '.holdUntil // empty')
+          hold_active=false
+          if [ -n "$hold_until" ] && [ "$(date -u -d "$hold_until" +%s 2>/dev/null || echo 0)" -gt "$(date -u +%s)" ]; then
+            hold_active=true
+          fi
+
+          # STAGING-specific policy (Noetva G-R2 Section AL/I-R2 Section 20):
+          # never swept during an active release-validation/deployment
+          # window, regardless of TTL.
+          deployment_running=false
+          deployment_in_progress_for_environment "$env" && deployment_running=true
+
+          # Nightly sweep always fires for DEV regardless of TTL (dormant-
+          # by-default policy); DEMO/STAGING respect TTL expiry as their
+          # trigger, on top of the same hold/deployment/migration checks.
+          should_sweep=false
+          if [ "$env" = "dev" ]; then
+            should_sweep=true
+          elif [ "$ttl_expired" = "true" ]; then
+            should_sweep=true
+          fi
+
+          if [ "$hold_active" = "true" ]; then
+            echo "$env has an active HOLD until $hold_until -- skipping sweep."
+            exit 0
+          fi
+          if [ "$deployment_running" = "true" ]; then
+            echo "$env has a deployment in progress -- skipping sweep."
+            exit 0
+          fi
+          if [ "$should_sweep" != "true" ]; then
+            echo "$env TTL not yet expired and not DEV -- skipping sweep."
+            exit 0
+          fi
+
+          echo "::notice::$env is eligible for nightly sweep -- dispatching Stop Noetva Environment (reused, not duplicated)."
+          echo "should_stop=true" >> "$GITHUB_OUTPUT"
+        id: decide
+
+      - name: Dispatch the real Stop Noetva Environment workflow (reuses its own migration/deployment/session checks)
+        if: steps.decide.outputs.should_stop == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run azure-lifecycle-stop.yml -f environment="${{ matrix.environment }}"

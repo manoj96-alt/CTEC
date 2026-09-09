@@ -1,0 +1,60 @@
+name: Check Noetva Environment Status
+
+# Noetva I-R2 Section 35: read-only operator action, the "CHECK DEMO
+# STATUS" half of the founder UX. Never prints a secret value.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to check"
+        required: true
+        type: choice
+        options: [dev, staging, demo]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (lifecycle identity, OIDC federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Report full lifecycle + Azure resource status (no secrets)
+        env:
+          NOETVA_LIFECYCLE_STORAGE_ACCOUNT: ${{ vars.NOETVA_LIFECYCLE_STORAGE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          source infra/azure/lifecycle/az_lifecycle_ops.sh
+          env="${{ inputs.environment }}"
+          rg="rg-noetva-${env}"
+
+          row=$(lifecycle_table_read "$env")
+          pg_state=$(postgres_state "$rg" "noetva-${env}-eus2-pg" 2>/dev/null || echo "unknown")
+          backend_revision=$(containerapp_active_revision_name "$rg" "noetva-${env}-eus2-backend" 2>/dev/null || echo "unknown")
+          backend_active=$(containerapp_revision_active "$rg" "$backend_revision" 2>/dev/null || echo "unknown")
+          frontend_revision=$(containerapp_active_revision_name "$rg" "noetva-${env}-eus2-frontend" 2>/dev/null || echo "unknown")
+          frontend_active=$(containerapp_revision_active "$rg" "$frontend_revision" 2>/dev/null || echo "unknown")
+
+          cat <<EOF
+          environment:              $env
+          lifecycle state:          $(echo "$row" | jq -r '.state // "DORMANT"')
+          postgres actual state:    $pg_state
+          backend revision active:  $backend_active
+          frontend revision active: $frontend_active
+          TTL expiry:               $(echo "$row" | jq -r '.ttlExpiresAt // "none"')
+          hold expiry:              $(echo "$row" | jq -r '.holdUntil // "none"')
+          last transition at:       $(echo "$row" | jq -r '.lastTransitionAt // "never"')
+          last actor:               $(echo "$row" | jq -r '.lastActor // "none"')
+          last workflow run:        $(echo "$row" | jq -r '.lastWorkflowRunId // "none"')
+          next DB auto-restart risk:$(echo "$row" | jq -r '.dbAutoRestartRiskAt // "n/a"')
+          EOF
