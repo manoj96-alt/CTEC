@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ConnectorCatalogPanel } from "@/app/ontology-studio/_components/connector-catalog-panel";
+import { EmptyState } from "@/components/design-system/empty-state";
 import { PageHeader } from "@/components/design-system/page-header";
 import {
   ontologyApi,
@@ -58,7 +59,7 @@ export default function Page() {
         ) : connectors ? (
           <ConnectorCatalogPanel connectors={connectors} />
         ) : (
-          <p>Loading…</p>
+          <EmptyState kind="loading" title="Loading connector catalog" />
         )}
       </div>
     </div>

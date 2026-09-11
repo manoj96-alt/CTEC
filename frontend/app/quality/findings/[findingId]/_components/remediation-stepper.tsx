@@ -60,30 +60,19 @@ export function RemediationStepper({
   return (
     <div role="group" aria-label="Remediation lifecycle">
       <span className="eyebrow">Remediation Lifecycle</span>
-      <ol
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.5rem",
-          listStyle: "none",
-          padding: 0,
-          marginTop: "0.25rem",
-        }}
-      >
+      <ol className="stepper-list">
         {LINEAR_STEPS.map((step, index) => {
           const isCurrent = index === currentIndex;
           const isPast = currentIndex >= 0 && index < currentIndex;
+          const variant = isCurrent ? "current" : isPast ? "past" : "future";
           return (
             <li
               key={step.status}
               aria-current={isCurrent ? "step" : undefined}
-              style={{
-                fontWeight: isCurrent ? 700 : 400,
-                color: isPast || isCurrent ? undefined : "var(--muted)",
-              }}
+              className={`stepper-step stepper-step--${variant}`}
             >
+              <span className="stepper-marker" aria-hidden="true" />
               {step.label}
-              {index < LINEAR_STEPS.length - 1 ? " ->" : ""}
             </li>
           );
         })}

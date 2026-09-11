@@ -35,7 +35,7 @@ describe("SiteShell", () => {
     );
     expect(screen.getByText("Page content")).toBeInTheDocument();
     expect(
-      screen.getByText(/Enterprise Cognitive Operating Model prototype/),
+      screen.getByText(/Noetva — Governed Enterprise Understanding/),
     ).toBeInTheDocument();
   });
 });

@@ -435,6 +435,53 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
     );
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("CDD-062: current step carries aria-current=step and a distinct, non-color class from past/future steps", () => {
+    const remediation = {
+      case_status: "AUTHORIZED",
+      candidate: null,
+      recommendation: null,
+      authorization: null,
+      external_execution: null,
+    } as unknown as RemediationResponse;
+    render(<RemediationStepper remediation={remediation} />);
+
+    const current = screen.getByText("Authorized").closest("li");
+    const past = screen.getByText("Candidate Ready").closest("li");
+    const future = screen.getByText("Resolved").closest("li");
+
+    expect(current).toHaveAttribute("aria-current", "step");
+    expect(current).toHaveClass("stepper-step--current");
+    expect(past).toHaveClass("stepper-step--past");
+    expect(past).not.toHaveAttribute("aria-current");
+    expect(future).toHaveClass("stepper-step--future");
+    expect(future).not.toHaveAttribute("aria-current");
+    // Each step carries a decorative, non-color marker distinct from its
+    // label text -- the class distinction above, not color alone, is what
+    // this test proves.
+    expect(current?.querySelector(".stepper-marker")).not.toBeNull();
+  });
+
+  it("CDD-062: rejected composite renders as its own group, never inside the linear <ol> step list", () => {
+    const remediation = {
+      case_status: "AWAITING_AUTHORITY",
+      candidate: null,
+      recommendation: null,
+      authorization: {
+        authorization_id: "auth-1",
+        principal: "requester",
+        decided_on: "2026-01-01T00:00:00Z",
+        instruction: "UPDATE_FIELD",
+        authorized_against_state_revision: 1,
+        is_stale: false,
+        status: "REJECTED",
+      },
+      external_execution: null,
+    } as unknown as RemediationResponse;
+    render(<RemediationStepper remediation={remediation} />);
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
 });
 
 describe("Remediation Panel — governed truth boundary", () => {

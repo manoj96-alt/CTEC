@@ -266,6 +266,55 @@ test("external consumption examples for Palantir, Databricks, Snowflake, and MCP
   expect(screen.queryByText(/live integration/i)).not.toBeInTheDocument();
 });
 
+test("CDD-062: static graph legend explains selection border and edge style, adds no new interaction", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(ontologyFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const legend = screen.getByLabelText("Graph legend");
+  expect(legend).toBeInTheDocument();
+  expect(screen.getByText("Selected concept")).toBeInTheDocument();
+  expect(screen.getByText("Unselected concept")).toBeInTheDocument();
+  expect(screen.getByText("Governed relationship")).toBeInTheDocument();
+});
+
+test("CDD-062: concept lifecycle_state and governance_status render as a visual tag, text unchanged", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(ontologyFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const supplierNodes = screen.getAllByText("Supplier");
+  fireEvent.click(supplierNodes[0]);
+
+  await waitFor(() =>
+    expect(
+      screen.getByText("An organization that provides materials."),
+    ).toBeInTheDocument(),
+  );
+  const lifecycleValues = screen.getAllByText("Active");
+  const governanceValues = screen.getAllByText("Approved");
+  expect(lifecycleValues.length).toBeGreaterThan(0);
+  expect(governanceValues.length).toBeGreaterThan(0);
+  expect(lifecycleValues[0]).toHaveClass("status-tag");
+  expect(governanceValues[0]).toHaveClass("status-tag");
+});
+
 test("shows a bounded error state with Retry when the ontology API is unavailable, never a fabricated fallback", async () => {
   vi.stubGlobal(
     "fetch",
