@@ -9,6 +9,12 @@
   --accent-strong: #0e4f63;
   --success: #166534;
   --danger: #b42318;
+  /* CDD-062 §6: two new semantic tokens only. --attention tokenizes the
+     value already hardcoded once below in .conditions (same rendered
+     color, now named). --pending is new: a cool slate, distinct from
+     --muted's warmer gray and --accent's teal. */
+  --attention: #b45309;
+  --pending: #64748b;
 }
 * {
   box-sizing: border-box;
@@ -210,7 +216,7 @@ textarea:focus-visible {
   font-size: 1.05rem;
 }
 .conditions {
-  border-left: 4px solid #b45309;
+  border-left: 4px solid var(--attention);
   padding-left: 1rem;
 }
 .assessment-form fieldset {
@@ -292,6 +298,125 @@ dialog textarea {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* CDD-062 §8: active primary-nav visual cue beyond font-weight alone --
+   a bottom underline, non-color. */
+.nav-link-active {
+  text-decoration: underline;
+  text-underline-offset: 0.3rem;
+}
+
+/* CDD-062 §11: generic, neutral visual normalization for raw backend
+   enum values that do NOT belong to the capability-status taxonomy
+   (e.g. concept.lifecycle_state, concept.governance_status,
+   coverage_status, evidence_availability_status). Rendered text is
+   unchanged wherever this class is applied -- presentation only, no
+   taxonomy consolidation. */
+.status-tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: #f8fafc;
+}
+
+/* CDD-062 §7: flagship remediation stepper -- presentation only, driven
+   entirely by the existing isPast/isCurrent/index logic already in
+   remediation-stepper.tsx. Connected step markers + non-color
+   completed/current/future distinction. */
+.stepper-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+  padding: 0;
+  margin-top: 0.5rem;
+}
+.stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.stepper-step:not(:last-child)::after {
+  content: "";
+  display: inline-block;
+  width: 1.75rem;
+  height: 0;
+  border-top: 2px solid var(--line);
+  margin: 0 0.5rem;
+}
+.stepper-marker {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  flex: none;
+}
+.stepper-step--past .stepper-marker {
+  background: var(--success);
+  border: 2px solid var(--success);
+}
+.stepper-step--past:not(:last-child)::after {
+  border-top-color: var(--success);
+}
+.stepper-step--current .stepper-marker {
+  background: white;
+  border: 2px solid var(--accent-strong);
+}
+.stepper-step--current {
+  font-weight: 700;
+}
+.stepper-step--future .stepper-marker {
+  background: white;
+  border: 2px solid var(--line);
+}
+.stepper-step--future {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* CDD-062 §13: static ontology-graph legend -- explains only the two
+   visual semantics the graph already has (selection border, edge
+   style). No new interaction, no new data. */
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.graph-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.graph-legend-swatch {
+  display: inline-block;
+  width: 1.5rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  background: white;
+  flex: none;
+}
+.graph-legend-swatch--selected {
+  border: 2px solid var(--accent-strong);
+}
+.graph-legend-swatch--unselected {
+  border: 1px solid var(--line);
+}
+.graph-legend-swatch--edge {
+  height: 0;
+  border-top: 2px solid var(--muted);
+  background: none;
 }
 @media (max-width: 760px) {
   .page-heading {

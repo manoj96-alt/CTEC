@@ -137,12 +137,16 @@ export function ContextLookup() {
             <dt style={{ fontWeight: 700, marginTop: "0.5rem" }}>
               Coverage status
             </dt>
-            <dd>{state.result.coverage_status}</dd>
+            <dd>
+              <span className="status-tag">{state.result.coverage_status}</span>
+            </dd>
             <dt style={{ fontWeight: 700, marginTop: "0.5rem" }}>
               Evidence availability
             </dt>
             <dd>
-              {state.result.evidence_availability_status ?? "Not available"}
+              <span className="status-tag">
+                {state.result.evidence_availability_status ?? "Not available"}
+              </span>
             </dd>
           </dl>
         </section>

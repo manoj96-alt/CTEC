@@ -38,7 +38,7 @@ export default function Page() {
       ) : data ? (
         <AssessmentTable items={data.items} />
       ) : (
-        <p>Loading…</p>
+        <RouteState title="Loading" message="Loading decisions…" />
       )}
     </div>
   );

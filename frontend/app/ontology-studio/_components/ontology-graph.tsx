@@ -105,6 +105,33 @@ export function OntologyGraph({
         )}
       </div>
 
+      {/* CDD-062 §13: static legend explaining only the two visual
+          semantics the graph above already has -- no new interaction,
+          no new data, no new graph library. */}
+      <div className="graph-legend" aria-label="Graph legend">
+        <span className="graph-legend-item">
+          <span
+            className="graph-legend-swatch graph-legend-swatch--selected"
+            aria-hidden="true"
+          />
+          Selected concept
+        </span>
+        <span className="graph-legend-item">
+          <span
+            className="graph-legend-swatch graph-legend-swatch--unselected"
+            aria-hidden="true"
+          />
+          Unselected concept
+        </span>
+        <span className="graph-legend-item">
+          <span
+            className="graph-legend-swatch graph-legend-swatch--edge"
+            aria-hidden="true"
+          />
+          Governed relationship
+        </span>
+      </div>
+
       {/* Readable fallback list — always rendered, not conditional on the
           graph, so the demo never depends solely on canvas rendering. */}
       <ul
@@ -134,11 +161,15 @@ export function OntologyGraph({
             </div>
             <div>
               <strong>Lifecycle state:</strong>{" "}
-              {selectedConcept.lifecycle_state}
+              <span className="status-tag">
+                {selectedConcept.lifecycle_state}
+              </span>
             </div>
             <div>
               <strong>Governance status:</strong>{" "}
-              {selectedConcept.governance_status}
+              <span className="status-tag">
+                {selectedConcept.governance_status}
+              </span>
             </div>
             <div>
               <strong>Version:</strong> {selectedConcept.version_number}

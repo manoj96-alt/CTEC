@@ -4,7 +4,7 @@ import { SiteShell } from "@/components/site-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "CTEC", template: "%s · CTEC" },
+  title: { default: "Noetva", template: "%s · Noetva" },
   description: "Cognitive Twin Enterprise Core",
 };
 export default function RootLayout({
