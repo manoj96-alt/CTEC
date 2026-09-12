@@ -54,9 +54,7 @@ def resolve(
         Depends(information_element_evidence_fitness_service),
     ],
 ) -> ResolveResponse:
-    _authorize(
-        authenticated, "evidence-fitness:read", dependencies, correlation
-    )
+    _authorize(authenticated, "evidence-fitness:read", dependencies, correlation)
     result = service.resolve(
         principal=authenticated,
         blueprint_name=body.blueprint_name,
