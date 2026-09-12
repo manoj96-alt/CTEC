@@ -62,7 +62,7 @@ def _principal(*, tenant_id: str = "gate-cdd034-unit-tenant") -> TrustedPrincipa
     return TrustedPrincipal(
         principal_id="user-jane",
         tenant_id=tenant_id,
-        scopes=("information-element-evidence-fitness:read",),
+        scopes=("evidence-fitness:read",),
         roles=(),
         issuer="issuer",
         issued_at=NOW - timedelta(seconds=1),

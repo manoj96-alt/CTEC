@@ -106,7 +106,8 @@ _VALID_BODY = {
 }
 
 _ENDPOINT = "/api/v1/information-element-evidence-fitness/resolve"
-_SCOPE = "information-element-evidence-fitness:read"
+_SCOPE = "evidence-fitness:read"
+_RETIRED_SCOPE = "information-element-evidence-fitness:read"
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +130,19 @@ def test_missing_scope_is_rejected_before_resolution_is_invoked() -> None:
     assert response.json()["detail"]["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
     # An under-scoped caller must never cause Blueprint resolution, Gate I,
     # H4, or Gate T to execute (CDD-034 §13, §16).
+    assert service.calls == []
+
+
+def test_retired_scope_literal_alone_is_rejected() -> None:
+    # CDD-034 Azure Entra Scope-Length R1 Correction: a principal carrying
+    # only the retired, pre-migration scope literal must be rejected exactly
+    # like any other under-scoped caller -- no dual-scope compatibility.
+    service = FakeService()
+    client = _client(_container(audit=Audit()), service, _principal(scopes=(_RETIRED_SCOPE,)))
+    response = client.post(_ENDPOINT, json=_VALID_BODY)
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
     assert service.calls == []
 
 

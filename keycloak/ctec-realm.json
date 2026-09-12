@@ -30,7 +30,7 @@
         "ontology-copilot:ask",
         "supply-chain-impact:read",
         "supply-chain-impact:evaluate",
-        "information-element-evidence-fitness:read",
+        "evidence-fitness:read",
         "information-element-context:read",
         "ontology-modeling:read",
         "oqi:read"
@@ -253,7 +253,7 @@
       }
     },
     {
-      "name": "information-element-evidence-fitness:read",
+      "name": "evidence-fitness:read",
       "protocol": "openid-connect",
       "description": "CDD-034 canonical scope -- Governed Evidence Fitness Exposure read access.",
       "attributes": {
