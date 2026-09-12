@@ -80,6 +80,9 @@ param postgresHaMode string = 'Disabled'
 @description('PostgreSQL administrator (break-glass ADMIN authority) password, supplied at deploy time only, never committed')
 param postgresAdminPassword string
 
+@description('CDD-067: false = foundation stage only; true = also deploy the application tier (backend/frontend Container Apps, migration Job, monitoring alerts). Foundation stage must converge safely without any application-tier prerequisite (real image digests, populated Key Vault secrets) existing yet.')
+param deployApplicationTier bool = false
+
 @description('Whether to provision a NAT Gateway for deterministic egress (required staging/prod, optional dev)')
 param enableNatGateway bool = true
 
@@ -243,7 +246,7 @@ var backendSecretRefs = [
   { name: 'ctec-runtime-handoff-key', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-runtime-handoff-key' }
 ]
 
-module backendApp 'modules/container-app.bicep' = {
+module backendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
   name: 'backend-app'
   params: {
     name: '${namePrefix}-backend'
@@ -271,7 +274,7 @@ module backendApp 'modules/container-app.bicep' = {
   }
 }
 
-module migrationJob 'modules/container-apps-job-migration.bicep' = {
+module migrationJob 'modules/container-apps-job-migration.bicep' = if (deployApplicationTier) {
   name: 'migration-job'
   params: {
     name: '${namePrefix}-migrate'
@@ -282,13 +285,18 @@ module migrationJob 'modules/container-apps-job-migration.bicep' = {
     managedIdentityId: identities.outputs.migrationIdentityId
     acrLoginServer: acr.outputs.registryLoginServer
     envVars: []
+    // CDD-067 Defect 3 correction: this secret must be the migration role's
+    // OWN full connection string (postgresql+psycopg://noetva_migrate:...),
+    // never the mismatched/undocumented "postgres-migration-role-password"
+    // name the original source referenced -- ctec-migration-database-url is
+    // the exact name the governed bootstrap runbook populates.
     keyVaultSecretRefs: [
-      { name: 'ctec-database-url', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-migration-role-password' }
+      { name: 'ctec-database-url', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-migration-database-url' }
     ]
   }
 }
 
-module frontendApp 'modules/container-app.bicep' = {
+module frontendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
   name: 'frontend-app'
   params: {
     name: '${namePrefix}-frontend'
@@ -307,14 +315,20 @@ module frontendApp 'modules/container-app.bicep' = {
   }
 }
 
-module monitoringAlerts 'modules/monitoring-alerts-only.bicep' = {
+// CDD-067: alerts reference the migration Job's resource ID, so they can
+// only be created once the application tier (which creates that Job) is
+// itself being deployed -- gated identically, not a new/independent condition.
+module monitoringAlerts 'modules/monitoring-alerts-only.bicep' = if (deployApplicationTier) {
   name: 'monitoring-alerts-only'
   params: {
     namePrefix: namePrefix
     tags: tags
     alertEmail: alertEmail
     postgresServerId: postgres.outputs.serverId
-    migrationJobId: migrationJob.outputs.jobId
+    // Null-forgiving: this module is gated by the identical deployApplicationTier
+    // condition that gates migrationJob, so if this module deploys at all,
+    // migrationJob is guaranteed non-null.
+    migrationJobId: migrationJob!.outputs.jobId
   }
 }
 
@@ -332,8 +346,11 @@ module lifecycleAlertSuppression 'modules/lifecycle-alert-suppression.bicep' = i
 }
 
 output resourceGroupName string = resourceGroup().name
-output backendFqdn string = backendApp.outputs.fqdn
-output frontendFqdn string = frontendApp.outputs.fqdn
+// CDD-067: empty string when the application tier is not deployed yet --
+// these outputs are only meaningful once deployApplicationTier=true creates
+// the Container Apps that produce a real FQDN.
+output backendFqdn string = deployApplicationTier ? backendApp!.outputs.fqdn : ''
+output frontendFqdn string = deployApplicationTier ? frontendApp!.outputs.fqdn : ''
 output natGatewayEgressIp string = network.outputs.natGatewayEgressIp
 output acrLoginServer string = acr.outputs.registryLoginServer
 output keyVaultUri string = keyVault.outputs.keyVaultUri
