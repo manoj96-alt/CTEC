@@ -198,10 +198,11 @@ Shared across dev/staging/demo (in rg-noetva-lifecycle, deployed once):
 User opens https://<frontend-fqdn>
    -> Frontend redirects to Microsoft Entra External ID
    -> User signs in
-   -> External ID issues an ACCESS TOKEN containing a tenant_id claim
+   -> External ID issues an ACCESS TOKEN containing the configured business-tenant claim
+      (local Keycloak: tenant_id; Azure Entra: a namespaced claim, CDD-064 Part 22)
    -> Frontend calls the backend, attaching that access token
-   -> Backend validates: issuer, audience, signature, expiry, AND tenant_id
-   -> Backend queries PostgreSQL, scoped to that exact tenant_id
+   -> Backend validates: issuer, audience, signature, expiry, AND the business-tenant claim
+   -> Backend queries PostgreSQL, scoped to that exact tenant
    -> Response returns to the user
 ```
 
@@ -932,35 +933,45 @@ Read `frontend/lib/auth/config.ts` yourself before adding scopes here — do not
 
 ---
 
-# PART 22 — `tenant_id` configuration — critical section, read fully
+# PART 22 — business-tenant claim configuration (CDD-065) — critical section, read fully
 
 ### Noetva application tenant vs Azure tenant, one more time
 
-A **Noetva application tenant** (e.g. `noetva-dev-tenant`) is just a value in a `tenant_id` column in Noetva's own PostgreSQL database — it has nothing to do with Azure or Entra as *platforms*. What connects the two: a real, logged-in Entra External ID user carries a `tenant_id` **claim** inside their token, and the backend trusts that claim to decide which Noetva application tenant's data this user may see.
+A **Noetva application tenant** (e.g. `noetva-dev-tenant`) is just a value in a `tenant_id` column in Noetva's own PostgreSQL database — it has nothing to do with Azure or Entra as *platforms*. What connects the two: a real, logged-in Entra External ID user carries a JWT **claim** inside their access token, and the backend trusts that claim to decide which Noetva application tenant's data this user may see. **This is a different concept from Entra's own directory-tenant GUID (`tid`, `8f9e2dee-5a5b-4b33-9044-4d11691899de` for `Noetva External`) — `tid` is the same for every user in this Entra tenant and must never be treated as the Noetva business tenant.**
 
-### Step 22.1 — Create the custom attribute
+### Real-Azure blocker, and why a Namespace does NOT fix it (CDD-065) — read before attempting Step 22.2
+
+Attempting to add an outgoing claim literally named `tenant_id` in the backend API's Attributes & Claims editor fails with **"This claim type is restricted."** This is not a misconfiguration: `tenant_id` is a permanent member of Microsoft Entra's JWT restricted claim set, and no custom signing key unlocks it (CDD-064).
+
+**A first correction attempt tried adding a Namespace (`https://noetva.ai/claims`) alongside `Name=tenant_id`, on the theory that the resulting compound identifier would no longer literally match the restricted name. Real Entra evidence disproved this: Azure still shows "This claim type is restricted" and Save remains disabled.** The restriction is checked against the literal **Name** field itself, independent of any Namespace supplied alongside it — a Namespace changes how a claim is displayed/prefixed, not whether its Name is on the restricted list. **Do not attempt `Name=tenant_id` with any Namespace value — it will not save.**
+
+**The correct fix (CDD-065): use a different, non-restricted Name entirely — `noetva_tenant_id` — with no Namespace at all.** The **directory attribute** stays named `tenant_id` (Step 22.1, unchanged) — only the **outgoing JWT claim name** changes, to a name Microsoft's restricted-claim-set list does not contain. See CDD-064 (root cause) and CDD-065 (this correction) for the full analysis.
+
+### Step 22.1 — Create the custom attribute (unchanged)
 
 **Where:** the External ID tenant → **External Identities** → **Custom user attributes** → **Add**.
 
-**Value:** name it `tenant_id`, data type String.
+**Value:** name it `tenant_id`, data type String. (If this attribute already exists from a prior attempt, do not delete or recreate it — reuse it.)
 
-### Step 22.2 — Map it into the token
+### Step 22.2 — Map it into the ACCESS token using a non-restricted claim name (CDD-065 correction)
 
-**Where:** the backend API app registration's **Overview** → **Managed application in local directory** link → **Single sign-on** → **Attributes & Claims** → **Edit**.
+**Where:** `noetva-dev-backend-api`'s own **Enterprise Application** entry (the resource/API application — *not* the frontend's) → **Single sign-on** → **Attributes & Claims** → **Edit**. Configuring this on the backend's own service principal, rather than the frontend's, is what makes the claim land in the ACCESS token (audience `api://3a880f13-985d-4a71-be05-20f97b9bcfa3`) rather than only the frontend's ID token.
 
-**Action:** `[ENTRA MUTATION]` — **Add new claim** → Name `tenant_id` → Source **Directory schema extension** → Select Application **`b2c-extensions-app`** (the app that holds every custom attribute in this tenant) → select the `tenant_id` attribute from Step 22.1 → **Save**.
+**Action:** `[ENTRA MUTATION]` — **Add new claim** → Name `noetva_tenant_id` → **Namespace: leave blank** → Source **Directory schema extension** → Select Application **`b2c-extensions-app`** → select the existing `tenant_id` attribute from Step 22.1 using the portal's own dropdown (do not manually type or guess its internal `extension_<appid>_tenant_id` identifier — the portal resolves this for you; if that literal string is ever needed directly, retrieve it via Microsoft Graph `GET /applications/{b2c-extensions-app-object-id}/extensionProperties`, never invent it) → **Save**.
 
-Then, on the backend app registration's **Manifest**: set `acceptMappedClaims: true` and `isFallbackPublicClient: true` → **Save**.
+Then, on the backend app registration's **Manifest**: set `acceptMappedClaims: true` → **Save**. (This is required and sufficient here because the backend's Application ID URI, `api://3a880f13-985d-4a71-be05-20f97b9bcfa3`, uses the application-GUID form Microsoft's `acceptMappedClaims` rule permits without a custom signing key. Do **not** set `isFallbackPublicClient` — no evidence has ever shown this backend claims-mapping scenario needs it; it governs an unrelated public-client/ROPC concern that does not apply here, and setting it is not authorized by CDD-064 or CDD-065.)
 
-**SCREENSHOT TO CAPTURE:** the Attributes & Claims page showing `tenant_id`, Source = Directory schema extension — this proves the claim is wired to the real attribute, not typed as an identical literal for every user.
+**Confirm Save actually succeeds this time** (unlike both prior attempts with `Name=tenant_id`) — `noetva_tenant_id` is not on Microsoft's restricted claim list. Because no Namespace is used, the resulting outgoing claim key is exactly `noetva_tenant_id` — there is no concatenation to capture or guess.
+
+**SCREENSHOT TO CAPTURE:** the Attributes & Claims page showing `noetva_tenant_id`, Source = Directory schema extension → `tenant_id` — this proves the claim is wired to the real attribute, not typed as an identical literal for every user, and confirms Save succeeded.
 
 **Why no Azure Function is required here** (unlike some Microsoft tutorials you may find): for a static, per-user value at Noetva's current scale, the native Attributes & Claims path is sufficient — confirmed directly against current Microsoft Learn documentation, and structurally identical to what Noetva's own local `keycloak/ctec-realm.json` already does for local development.
 
-### Step 22.3 — Create your first DEV test user and set their `tenant_id`
+### Step 22.3 — Create your first DEV test user and set their `tenant_id` (unchanged)
 
 **Where:** External ID tenant → **Users** → **New user**.
 
-**Action:** create a user, then on their profile's custom-attribute section, set `tenant_id` to a value matching a real Noetva tenant your DEV database will actually have (Part 39's Start step doesn't seed tenants — you'll create this alongside your first real login test, Part 33).
+**Action:** create a user, then on their profile's custom-attribute section, set `tenant_id` to a value matching a real Noetva tenant your DEV database will actually have (Part 39's Start step doesn't seed tenants — you'll create this alongside your first real login test, Part 33). **This value is set by the administrator here, on the user's directory profile — it is never collected from the user during the `noetva-dev-signup-signin` self-service sign-up flow.** A public/signup user must never be able to choose, edit, forge, or self-assert this value.
 
 **SAVE THIS VALUE:**
 ```
@@ -969,7 +980,7 @@ DEV_NOETVA_TENANT_ID = ______________________
 
 ### The critical acceptance rule
 
-**`tenant_id` must appear in the ACCESS TOKEN — the one the frontend actually sends to the backend — not merely the ID token.** An ID token is meant for the frontend's own use (displaying "logged in as ___"); the backend never sees it and must never be asked to trust it. If Part 34's verification finds `tenant_id` only in the ID token, this is not done — go back to Step 22.2 and confirm the claim mapping targets the **API/access token**, not just the ID token, in the Attributes & Claims editor.
+**The configured business-tenant claim must appear in the ACCESS TOKEN — the one the frontend actually sends to the backend — not merely the ID token.** An ID token is meant for the frontend's own use (displaying "logged in as ___"); the backend never sees it and must never be asked to trust it. If Part 34's verification finds the claim only in the ID token, this is not done — go back to Step 22.2 and confirm the claim mapping was configured on the **backend's own Enterprise Application entry** and targets the **access token**, not just the ID token.
 
 ### Step 22.4 — Negative tests (mandatory, not optional)
 
@@ -978,13 +989,14 @@ Perform every row below for real, once DEV is running (Part 34):
 | Test | Expected result |
 |---|---|
 | No `Authorization` header | `401` |
-| Access token missing `tenant_id` | Rejected, never a silent default tenant |
-| `tenant_id` that doesn't exist in Noetva's own tenant table | Rejected at the application authorization layer |
+| Access token missing the configured tenant claim | Rejected, never a silent default tenant |
+| Access token carrying only Entra's `tid` (no configured tenant claim) | Rejected — `tid` is never treated as the Noetva tenant |
+| Configured tenant claim value that doesn't exist in Noetva's own tenant table | Rejected at the application authorization layer |
 | Token from the wrong issuer | Rejected |
 | Token whose audience doesn't match | Rejected |
 | Expired token | `401` |
 
-No email-derived fallback tenant exists anywhere in the backend. No header-supplied tenant authority exists anywhere. Confirm this yourself: `grep -rn "tenant_id" backend/app/api/supplier_risk/authentication.py`.
+No email-derived fallback tenant exists anywhere in the backend. No header-supplied tenant authority exists anywhere. No `tid`/`oid`/`sub` fallback exists anywhere. Confirm this yourself: `grep -rn "oidc_tenant_claim" backend/app/api/supplier_risk/authentication.py backend/app/core/config.py`.
 
 ---
 
@@ -1170,7 +1182,7 @@ az containerapp update --name noetva-dev-eus2-backend --resource-group rg-noetva
   --image <DEV_ACR_LOGIN_SERVER>/noetva/backend@<BACKEND_IMAGE_DIGEST>
 ```
 
-**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); Key Vault secret references `ctec-database-url`, `ctec-runtime-handoff-key`. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
+**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); `CTEC_OIDC_TENANT_CLAIM=noetva_tenant_id` (CDD-064/CDD-065: the bare `tenant_id` claim name is Microsoft-reserved and cannot be used as an outgoing Entra claim, even with a Namespace -- local/Docker Keycloak is unaffected and continues using the backend's own `tenant_id` default); Key Vault secret references `ctec-database-url`, `ctec-runtime-handoff-key`. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
 
 **Verify (`[AZURE READ-ONLY]`):**
 
@@ -1228,13 +1240,15 @@ curl -s -D - -o /dev/null -H "Origin: https://<DEV_FRONTEND_FQDN>" "https://<DEV
 
 ---
 
-# PART 34 — Verify `tenant_id` end to end
+# PART 34 — Verify the business-tenant claim end to end (CDD-064)
 
 1. In DevTools → Network, find the token response (or use `jwt.ms`, pasting only a redacted copy you understand the sensitivity of — **never post a real token anywhere shared**).
 2. Decode the payload only (never print the raw signed token in a ticket, chat, or this worksheet).
-3. Confirm the payload contains `"tenant_id": "<DEV_NOETVA_TENANT_ID>"`.
+3. Confirm the payload contains **`noetva_tenant_id`** (not a bare `tenant_id`) with value `<DEV_NOETVA_TENANT_ID>`.
 4. Confirm this is the **access token**, not the ID token (Part 22's critical rule).
-5. Perform every row of Part 22.4's negative-test table for real, and observe the actual result — do not merely assert it "should" work.
+5. Confirm the same token's `tid` claim equals `8f9e2dee-5a5b-4b33-9044-4d11691899de` and is a *different* value from the business-tenant claim in item 3 — proving `tid` and the Noetva business tenant are genuinely distinct and the backend is not accidentally reading `tid`.
+6. Confirm the running backend's `CTEC_OIDC_TENANT_CLAIM` environment value equals exactly `noetva_tenant_id`.
+7. Perform every row of Part 22.4's negative-test table for real, and observe the actual result — do not merely assert it "should" work.
 
 ---
 
@@ -1546,8 +1560,8 @@ Track, over at least one full 24-hour active period and one full 24-hour dormant
 | Backend unhealthy | Wrong image digest, missing Key Vault access, DB unreachable | Container App logs, Key Vault RBAC | Roll back to the last known-good digest via `az containerapp update --image` | | |
 | Frontend blank/broken | Wrong `NEXT_PUBLIC_OIDC_*` baked into this build | Re-check Part 27's build args against Part 24's real captured values | Rebuild — this cannot be fixed by an env var change post-build | | |
 | CORS error in browser console | Origin mismatch | Confirm `CTEC_CORS_ORIGINS` exactly matches the frontend FQDN, no trailing slash mismatch | | | |
-| Login redirects but `tenant_id` missing | Attributes & Claims not saved, or `acceptMappedClaims` not set | Decode the token (Part 34) | Redo Part 22.2 exactly | | |
-| `tenant_id` present but wrong value | Wrong test user, or attribute set on the wrong user | Re-check Part 22.3 | | | |
+| Login redirects but the configured tenant claim is missing | Attributes & Claims not saved, `acceptMappedClaims` not set, or `CTEC_OIDC_TENANT_CLAIM` doesn't exactly match the real emitted claim string | Decode the token (Part 34) | Redo Part 22.2 exactly | | |
+| Tenant claim present but wrong value | Wrong test user, or attribute set on the wrong user | Re-check Part 22.3 | | | |
 | Start workflow fails at Postgres step | Postgres didn't reach `Ready` in time | Workflow run logs | Persisted `FAILED_START` with a specific reason (Part 39) — read it | | |
 | Stop workflow refuses | An active precondition (migration/deploy/Hold/unsafe session) | The refusal reason printed in the workflow log | Address the specific blocking condition, don't force it | | Never bypass a stop refusal |
 | Status shows disagreement (e.g. DORMANT but Postgres Ready) | Genuine reconciliation anomaly (Part 40) | Re-run restart monitor manually | | | If it recurs after re-running, escalate — don't ignore it |
@@ -1626,7 +1640,7 @@ Never run this to "save cost" — Stop DEV (Part 43) already achieves the real c
 
 **O. External ID:** [ ] Tenant created, type "External" confirmed [ ] Frontend app registered [ ] Backend API app registered
 
-**P. `tenant_id`:** [ ] Custom attribute created [ ] Mapped into the access token (not just ID token) [ ] DEV test user has a value set
+**P. Business-tenant claim (CDD-065):** [ ] Custom attribute `tenant_id` created [ ] Claim `noetva_tenant_id` (no Namespace) mapped into the access token on the backend's own Enterprise Application entry (not just ID token) [ ] Save confirmed to succeed (not "This claim type is restricted") [ ] All four `oidcTenantClaim` environment parameters already set to `noetva_tenant_id` in source [ ] DEV test user has a value set
 
 **Q. Pass 1:** [ ] `main.bicep` deployment succeeded
 

@@ -13,6 +13,7 @@
     "oidcAudience": { "value": "REPLACE_WITH_API_APPLICATION_ID_URI" },
     "oidcJwksUrl": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_JWKS_URL" },
     "oidcScopeClaim": { "value": "scp" },
+    "oidcTenantClaim": { "value": "noetva_tenant_id" },
     "corsOrigins": { "value": "[\"REPLACE_WITH_STAGING_FRONTEND_ORIGIN\"]" },
     "acrSku": { "value": "Premium" },
     "postgresSkuName": { "value": "Standard_D2ds_v5" },

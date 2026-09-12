@@ -23,13 +23,16 @@ class _Client:
         return _Key(self.key)
 
 
-def _verifier(*, oidc_scope_claim: str = "scope") -> tuple[OidcJwtVerifier, object]:
+def _verifier(
+    *, oidc_scope_claim: str = "scope", oidc_tenant_claim: str = "tenant_id"
+) -> tuple[OidcJwtVerifier, object]:
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     settings = Settings(
         oidc_issuer="https://issuer.example/",
         oidc_audience="ctec",
         oidc_jwks_url="https://issuer.example/jwks",
         oidc_scope_claim=oidc_scope_claim,
+        oidc_tenant_claim=oidc_tenant_claim,
     )
     verifier = OidcJwtVerifier(settings)
     verifier._client = _Client(private.public_key())  # type: ignore[assignment]
@@ -148,3 +151,99 @@ def test_configured_scp_claim_does_not_fall_back_to_scope() -> None:
     token = _token(private)
     principal = verifier.verify(token)
     assert principal.scopes == ()
+
+
+# CDD-065: the frozen Azure outgoing claim name. CDD-064 originally assumed
+# a namespaced claim (e.g. "https://noetva.ai/claims/tenant_id") would
+# escape Entra's restricted-claim-set rejection of a bare "tenant_id" name;
+# real Entra portal evidence disproved that -- Namespace does not bypass
+# the restriction, since the check is against the literal Name field
+# itself. CDD-065 instead freezes a plain, non-restricted, Noetva-chosen
+# claim name with no Namespace. Unlike the invalidated namespaced attempt,
+# this exact string IS the real Azure-bound value (no unpredictable
+# concatenation to await) -- independently verified absent from Microsoft's
+# full JWT restricted-claim-set list. Real Entra portal acceptance and
+# token emission are still confirmed only at Stage 2, not by this test.
+AZURE_TENANT_CLAIM = "noetva_tenant_id"
+
+
+def test_configured_azure_tenant_claim_is_accepted() -> None:
+    """CDD-065: configuring oidc_tenant_claim to the governed Azure claim
+    name must extract the Noetva business-tenant identifier from it."""
+    verifier, private = _verifier(oidc_tenant_claim=AZURE_TENANT_CLAIM)
+    token = _token(
+        private,
+        omit=("tenant_id",),
+        **{AZURE_TENANT_CLAIM: "noetva-dev-tenant"},
+    )
+    principal = verifier.verify(token)
+    assert principal.tenant_id == "noetva-dev-tenant"
+
+
+def test_configured_azure_tenant_claim_does_not_fall_back_to_bare_tenant_id() -> None:
+    """CDD-065: when the Azure claim is configured (the governed
+    Azure/Entra setting), a token carrying only the bare "tenant_id" claim
+    (Entra's restricted/unusable shape) must be rejected -- never a silent
+    fallback to "tenant_id"."""
+    verifier, private = _verifier(oidc_tenant_claim=AZURE_TENANT_CLAIM)
+    token = _token(private)
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(token)
+    assert error.value.code == "AUTH_TENANT_MISSING_OR_AMBIGUOUS"
+
+
+def test_entra_tid_never_becomes_trusted_tenant() -> None:
+    """CDD-065: Microsoft Entra's own directory-tenant GUID claim, "tid", is
+    never the Noetva business tenant. A token carrying "tid" but not the
+    configured Azure claim must fail closed."""
+    verifier, private = _verifier(oidc_tenant_claim=AZURE_TENANT_CLAIM)
+    token = _token(
+        private,
+        omit=("tenant_id",),
+        tid="8f9e2dee-5a5b-4b33-9044-4d11691899de",
+    )
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(token)
+    assert error.value.code == "AUTH_TENANT_MISSING_OR_AMBIGUOUS"
+
+
+def test_entra_tid_is_ignored_even_when_azure_tenant_claim_also_present() -> None:
+    """CDD-065: when both Entra's "tid" and the configured Azure
+    business-tenant claim are present (as a real Entra token would carry),
+    only the configured claim's value is trusted -- "tid" is never
+    consulted, even as a secondary source."""
+    verifier, private = _verifier(oidc_tenant_claim=AZURE_TENANT_CLAIM)
+    token = _token(
+        private,
+        omit=("tenant_id",),
+        tid="8f9e2dee-5a5b-4b33-9044-4d11691899de",
+        **{AZURE_TENANT_CLAIM: "noetva-dev-tenant"},
+    )
+    principal = verifier.verify(token)
+    assert principal.tenant_id == "noetva-dev-tenant"
+    assert principal.tenant_id != "8f9e2dee-5a5b-4b33-9044-4d11691899de"
+
+
+def test_configured_azure_tenant_claim_missing_entirely_fails_closed() -> None:
+    """CDD-065: if the configured Azure claim is absent altogether (and no
+    bare "tenant_id" either), authentication must fail closed."""
+    verifier, private = _verifier(oidc_tenant_claim=AZURE_TENANT_CLAIM)
+    token = _token(private, omit=("tenant_id",))
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(token)
+    assert error.value.code == "AUTH_TENANT_MISSING_OR_AMBIGUOUS"
+
+
+def test_configured_azure_tenant_claim_list_value_fails_closed() -> None:
+    """CDD-065: an ambiguous (list-valued) Azure tenant claim must be
+    rejected exactly like an ambiguous bare "tenant_id", never accepted as,
+    e.g., its first element."""
+    verifier, private = _verifier(oidc_tenant_claim=AZURE_TENANT_CLAIM)
+    token = _token(
+        private,
+        omit=("tenant_id",),
+        **{AZURE_TENANT_CLAIM: ["tenant-a", "tenant-b"]},
+    )
+    with pytest.raises(AuthenticationError) as error:
+        verifier.verify(token)
+    assert error.value.code == "AUTH_TENANT_MISSING_OR_AMBIGUOUS"
