@@ -55,7 +55,7 @@ def resolve(
     ],
 ) -> ResolveResponse:
     _authorize(
-        authenticated, "information-element-evidence-fitness:read", dependencies, correlation
+        authenticated, "evidence-fitness:read", dependencies, correlation
     )
     result = service.resolve(
         principal=authenticated,
