@@ -263,7 +263,7 @@ test("browser auth configuration fails closed", () => {
   expect(() => browserAuthConfig()).toThrow("configuration is incomplete");
 });
 
-test("canonical default scope is exactly the least-privilege demo-persona set plus openid/profile, with no write/decide scope beyond the two frozen OQI remediation capabilities", () => {
+test("canonical default scope is exactly the least-privilege live-capability set plus openid/profile, with no write/decide scope beyond the three frozen action capabilities (CDD-066)", () => {
   process.env.NEXT_PUBLIC_OIDC_AUTHORITY = "http://localhost:8081/realms/CTEC";
   process.env.NEXT_PUBLIC_OIDC_CLIENT_ID = "ctec-frontend";
   process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI =
@@ -276,8 +276,14 @@ test("canonical default scope is exactly the least-privilege demo-persona set pl
   const config = browserAuthConfig();
 
   expect(config.scope).toBe(
-    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution",
+    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution oqi:read information-element-context:read evidence-fitness:read supply-chain-impact:evaluate",
   );
+  // Token-exact check (not substring): "supply-chain-impact:read" is not a
+  // substring of any requested token, but CDD-066 requires this be proven
+  // by parsing the scope string into discrete tokens, not by inference.
+  const tokens = config.scope.split(" ");
+  expect(tokens).toContain("supply-chain-impact:evaluate");
+  expect(tokens).not.toContain("supply-chain-impact:read");
   expect(config.scope).not.toContain("entity-resolution:decide");
   expect(config.scope).not.toContain("supplier-risk:submit");
   expect(config.scope).not.toContain("supplier-risk:retry");
@@ -285,6 +291,9 @@ test("canonical default scope is exactly the least-privilege demo-persona set pl
   expect(config.scope).not.toContain("ontology-modeling:propose");
   expect(config.scope).not.toContain("ontology-modeling:approve");
   expect(config.scope).not.toContain("ontology-modeling:publish");
+  expect(config.scope).not.toContain(
+    "information-element-evidence-fitness:read",
+  );
 });
 
 test("an empty-string NEXT_PUBLIC_OIDC_SCOPE (e.g. an unset Docker build arg passed through) falls back to the canonical default, not an empty scope", () => {
@@ -300,7 +309,7 @@ test("an empty-string NEXT_PUBLIC_OIDC_SCOPE (e.g. an unset Docker build arg pas
   const config = browserAuthConfig();
 
   expect(config.scope).toBe(
-    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution",
+    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution oqi:read information-element-context:read evidence-fitness:read supply-chain-impact:evaluate",
   );
 });
 
