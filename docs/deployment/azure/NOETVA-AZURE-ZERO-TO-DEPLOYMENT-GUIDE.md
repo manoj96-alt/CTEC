@@ -719,31 +719,45 @@ Used later in: Part 26 (image build/push), Part 30/31 (deployment).
 
 ---
 
-# PART 17 — Key Vault
+# PART 17 — Key Vault (CDD-067 corrected)
 
 **What a secret is, for a beginner:** any value that would cause harm if leaked — a database password, a signing key. Never in source control, never in a chat message, never in a plain environment file that gets committed.
 
 **Key Vault** is Azure's managed secret store — access is granted per-identity via RBAC, and every read/write is logged.
 
-**Created automatically by Pass 1.** Its access model: **RBAC-based** (`enableRbacAuthorization: true`), soft-delete on, purge-protection currently off for DEV (source-confirmed — this is a real, disclosed tradeoff, not an oversight: purge protection prevents *permanent* deletion for a set retention window, which is a stronger guarantee staging/prod carry and DEV currently does not).
+**Created by the foundation stage of Pass 1** (`deployApplicationTier=false`, Part 23). Its access model: **RBAC-based** (`enableRbacAuthorization: true`), soft-delete on, purge-protection currently off for DEV (source-confirmed — this is a real, disclosed tradeoff, not an oversight).
 
-**Every Noetva DEV secret — names only, no values, ever, in this guide:**
+**Real-Azure finding (CDD-067):** subscription **Owner** does **not** itself grant Key Vault *data-plane* access under `enableRbacAuthorization: true` — an operator with Owner will get `Forbidden`/`ForbiddenByRbac` attempting to read or write secrets here. Before running the commands below, self-assign the data-plane role:
+
+```bash
+# [AZURE MUTATION] -- scoped to this one vault only, never subscription-wide
+az role assignment create \
+  --assignee <your-own-object-id-or-upn> \
+  --role "Key Vault Secrets Officer" \
+  --scope $(az keyvault show --name <DEV_KEY_VAULT_NAME> --query id -o tsv)
+```
+
+RBAC assignments can take up to a few minutes to propagate — if the next command still returns `Forbidden` immediately after this, wait a short bounded interval and retry before escalating; this is expected Azure eventual consistency, not a defect.
+
+**Every Noetva DEV secret — names only, no values, ever, in this guide. Six secrets are required, not five** (CDD-067 Defect 3: the migration Job needs its own full connection string, previously undocumented):
 
 | Secret name | Purpose | Created by | Consumed by |
 |---|---|---|---|
-| `postgres-admin-password` | Flexible Server admin credential | You, Part 13 | Human operator only (bootstrap) |
-| `postgres-app-password` | `noetva_app` DB credential | You, Part 15 | Backend Container App |
-| `postgres-migrate-password` | `noetva_migrate` DB credential | You, Part 15 | Migration Container Apps Job |
-| `ctec-database-url` | Full backend connection string, built from the above | You, this Part | Backend Container App (secret reference) |
+| `postgres-admin-password` | Flexible Server admin credential | You, Part 13 (or reset per Part 23's recovery note, if this environment's original value is not safely recoverable) | Human operator only (bootstrap) |
+| `postgres-app-password` | `noetva_app` DB credential | You, Part 15 | Assembled into `ctec-database-url` below |
+| `postgres-migrate-password` | `noetva_migrate` DB credential | You, Part 15 | Assembled into `ctec-migration-database-url` below |
+| `ctec-database-url` | Full backend connection string, built from `postgres-app-password` | You, this Part | Backend Container App (secret reference) |
+| **`ctec-migration-database-url`** | Full **migration-role** connection string, built from `postgres-migrate-password` — a *different* value from `ctec-database-url`, never the same credential | You, this Part | Migration Container Apps Job (secret reference) |
 | `ctec-runtime-handoff-key` | Backend's internal signing key | You, this Part | Backend Container App |
 
-**Store them now (`[AZURE MUTATION]`, requires you to already have Key Vault Secrets Officer on this vault):**
+**Store all six now (`[AZURE MUTATION]`, requires the Key Vault Secrets Officer role above), strictly AFTER Part 15's database roles exist and BEFORE running Pass 1's application stage (`deployApplicationTier=true`, Part 23):**
 
 ```bash
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name postgres-admin-password --value "<value>"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name postgres-app-password --value "<value>"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name postgres-migrate-password --value "<value>"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-database-url --value "postgresql+psycopg://noetva_app:<postgres-app-password>@noetva-dev-eus2-pg.postgres.database.azure.com/ctec"
+az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-migration-database-url --value "postgresql+psycopg://noetva_migrate:<postgres-migrate-password>@noetva-dev-eus2-pg.postgres.database.azure.com/ctec"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-runtime-handoff-key --value "$(python3 -c 'import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())')"
 ```
 
@@ -752,6 +766,8 @@ az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-runtime-han
 ```bash
 az keyvault secret list --vault-name <DEV_KEY_VAULT_NAME> -o table
 ```
+
+Expected: exactly these six names present before proceeding to Part 23's application-stage deployment. A missing `ctec-migration-database-url` will make the migration Job fail to provision, exactly as it did on the first real DEV deployment attempt (CDD-067).
 
 **Never do this:** run `az keyvault secret show` in a shared terminal session, screen-share, or paste output into a ticket. If you must confirm a value exists and is non-empty, check the `list` output's presence only.
 
@@ -1000,13 +1016,86 @@ No email-derived fallback tenant exists anywhere in the backend. No header-suppl
 
 ---
 
-# PART 23 — Deployment Pass 1
+# PART 22a — Private database bootstrap Job (CDD-068)
 
-### Why two passes are unavoidable
+### Why this exists
 
-The frontend's `NEXT_PUBLIC_OIDC_REDIRECT_URI` is *baked into the compiled JavaScript at build time* (confirmed in `frontend/Dockerfile`) — it cannot be an environment variable read at runtime. But the redirect URI has to point at the frontend's own real URL, which Azure only generates **after** the frontend Container App exists. This is why Pass 1 creates infrastructure with placeholder images first, and Pass 2 (Part 26 onward) builds the real, environment-specific images second.
+PostgreSQL is intentionally VNet-private (`publicNetworkAccess: Disabled`, Part 13) — this must never be weakened. A real bootstrap attempt confirmed that neither your own machine nor any operator-facing tool outside Azure's own network can resolve or reach `noetva-dev-eus2-pg.postgres.database.azure.com` at all. Part 15's `db-bootstrap/001_create_roles_and_grants.sql` (which creates the `noetva_app`/`noetva_migrate` roles) genuinely requires a real `psql` connection to that private server — so it must run from **inside** the same private network the server lives in.
 
-### Running Pass 1
+**The correction:** a small, one-time (or credential-rotation-time), ADMIN-authority Azure Container Apps Job, deployed into the *same* Container Apps Environment your application will eventually run in. It gains PostgreSQL reachability solely because it executes inside that already-private environment — no VPN, no Bastion, no VM, no firewall exception, no public database access of any kind is introduced. It is structurally distinct from the normal migration Job (Part 18/23) — it authenticates as the PostgreSQL *administrator*, never as `noetva_app`/`noetva_migrate`, and it is never given application runtime authority.
+
+**It never reads Key Vault.** All the credentials it needs (the admin password, and the two passwords you're choosing for `noetva_app`/`noetva_migrate`) are delivered directly as secure Bicep deployment parameters — the same mechanism `postgresAdminPassword` already uses for the PostgreSQL server resource itself. This is what breaks the circular dependency: the six Key Vault secrets (Part 17) do not need to exist yet for this Job to run.
+
+### Step 22a.1 — Build and push the bootstrap image
+
+**Which Azure service:** the same ACR created in Stage 1a (`noetvadeveus2acr`) — no new registry.
+
+```bash
+# [LOCAL — SAFE], then [AZURE MUTATION] for the push
+az acr login --name <DEV_ACR_NAME>
+docker build -f infra/azure/db-bootstrap/Dockerfile -t <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap:bootstrap infra/azure
+docker push <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap:bootstrap
+az acr repository show-manifests --name <DEV_ACR_NAME> --repository noetva/db-bootstrap -o table
+```
+
+**SAVE THIS VALUE** (the immutable digest reference — never the mutable tag — is what you deploy with):
+```
+DB_BOOTSTRAP_IMAGE_DIGEST = <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap@sha256:______________________
+```
+
+### Step 22a.2 — Choose the bootstrap credentials
+
+Generate three passwords now (the same secure method as Part 13's admin password): the PostgreSQL admin password (or reuse the one from Part 13a if you just reset it in this same session), and passwords for `noetva_app` and `noetva_migrate`. **Do not generate different values for these two later** — you will use the exact same `noetva_app`/`noetva_migrate` passwords again in Part 17 when populating Key Vault.
+
+### Step 22a.3 — Deploy and trigger the bootstrap Job
+
+**Action, `[AZURE MUTATION]`:**
+
+```bash
+az deployment sub create --location eastus2 \
+  --template-file infra/azure/main.bicep \
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=false \
+               deployDbBootstrapJob=true \
+               postgresAdminPassword="<from Part 13/13a>" \
+               dbBootstrapImageReference="<DB_BOOTSTRAP_IMAGE_DIGEST>" \
+               dbBootstrapAdminPassword="<same admin password>" \
+               dbBootstrapAppPassword="<the noetva_app password you just chose>" \
+               dbBootstrapMigratePassword="<the noetva_migrate password you just chose>"
+```
+
+Then trigger it once:
+
+```bash
+az containerapp job start --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev
+```
+
+**Verify (`[AZURE READ-ONLY]`, never prints a secret):**
+
+```bash
+az containerapp job execution list --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev -o table
+az containerapp job logs show --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev
+```
+
+**Expected:** the execution succeeds, and the log's final line reads `[run_db_bootstrap] roles and grants applied (no secret values were printed above)` — with no password value appearing anywhere in the log. This single successful run is what performs Part 15's database role creation — you do not separately connect with `psql` yourself.
+
+**STOP IF:** the Job fails, or any secret value appears in its logs. Do not weaken PostgreSQL's private networking to work around a connectivity failure — the Job runs inside the same VNet and should not have one; report the exact evidence instead.
+
+This Job resource may remain declared (`deployDbBootstrapJob=true`) at effectively zero ongoing cost for future credential-rotation events — it is manually triggered only, never scheduled, never run automatically.
+
+---
+
+# PART 23 — Deployment Pass 1 (CDD-067 two-stage correction)
+
+### Why two passes are unavoidable, and why Pass 1 itself is now two stages
+
+The frontend's `NEXT_PUBLIC_OIDC_REDIRECT_URI` is *baked into the compiled JavaScript at build time* (confirmed in `frontend/Dockerfile`) — it cannot be an environment variable read at runtime. But the redirect URI has to point at the frontend's own real URL, which Azure only generates **after** the frontend Container App exists. This is why Pass 1 creates infrastructure first, and Pass 2 (Part 26 onward) builds the real, environment-specific frontend image second.
+
+**Real-Azure finding (CDD-067):** an earlier version of this guide claimed Pass 1 could create the frontend/backend Container Apps and migration Job pointed at the placeholder image string `REPLACE_AT_DEPLOY_TIME_WITH_DIGEST_REFERENCE`, and that they simply "would not run correctly yet." **A real deployment attempt disproved this.** Azure Container Apps validates that `image` is a syntactically parseable reference **at provisioning time** — a literal placeholder string is rejected outright (`InvalidParameterValueInContainerTemplate`), and the resource never provisions at all. The same real attempt also showed the backend Container App and migration Job cannot provision until the Key Vault secrets they reference (Part 17) already exist — but Key Vault is itself created in this same deployment, empty.
+
+**The correction:** Pass 1 is now explicitly **two stages**, both run by the same command with one parameter changed, never two different templates:
+
+### Stage 1a — Foundation (`deployApplicationTier=false`)
 
 **Which Azure service:** Azure Resource Manager, driven by Bicep — `infra/azure/main.bicep` (subscription-scoped).
 
@@ -1017,14 +1106,53 @@ The frontend's `NEXT_PUBLIC_OIDC_REDIRECT_URI` is *baked into the compiled JavaS
 ```bash
 az deployment sub create --location eastus2 \
   --template-file infra/azure/main.bicep \
-  --parameters infra/azure/environments/dev/main.parameters.json
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=false
 ```
 
-**What this creates:** the resource group, VNet/subnets/private DNS, PostgreSQL Flexible Server, ACR, Key Vault, all five managed identities, the Container Apps Environment, both Container Apps (pointed at `REPLACE_AT_DEPLOY_TIME_WITH_DIGEST_REFERENCE` placeholders — they will not actually run correctly yet, and that's expected), the migration Job, Log Analytics, and the three Azure Monitor alerts.
+(`deployApplicationTier` already defaults to `false` in the committed parameter file — the explicit override above is for clarity and is safe to omit.)
 
-**Expected result:** the command completes with `provisioningState: Succeeded`.
+**What this creates:** the resource group, VNet/subnets/private DNS, PostgreSQL Flexible Server, ACR, Key Vault, all four Pass-1 managed identities, the Container Apps Environment, and foundation RBAC. **It does not create the frontend/backend Container Apps, the migration Job, or the monitoring alerts** — those are gated behind `deployApplicationTier` and are created only in Stage 1c below.
+
+**Expected result:** the command completes with `provisioningState: Succeeded`. This stage is safe and idempotent to re-run at any time (e.g. if you are recovering from a prior failed attempt) — it will converge existing foundation resources unchanged and will not delete or replace anything.
 
 **STOP IF:** the deployment fails. Read the specific error — `az deployment operation group list --resource-group rg-noetva-dev` shows exactly which resource failed and why. Do not hand-edit the failed resource in the Portal; fix the underlying parameter/quota issue and redeploy.
+
+### Stage 1b — Operator bootstrap (between the two Bicep invocations)
+
+Perform, in order, now that the foundation exists: **reset the PostgreSQL admin password** (Part 13a below) if this is a recovery from a prior attempt, **run the private database bootstrap Job** (Part 22a — CDD-068; this is what actually performs Part 15's database role creation, since PostgreSQL is intentionally VNet-private and cannot be reached directly from your own machine), **populate Key Vault** (Part 17 — all six secrets, using the exact same application/migration passwords you just supplied to the bootstrap Job), and finally **build and push the real application images** (Parts 26/27) to the now-existing ACR.
+
+#### Part 13a — PostgreSQL admin-password recovery (recovery scenarios only)
+
+If a prior Stage-1a attempt already created `noetva-dev-eus2-pg` and the admin password used then is no longer known (it is never logged, printed, or committed — by design), reset it in place. This is a safe, non-destructive operation; it does not recreate the server or affect existing data:
+
+```bash
+# [AZURE MUTATION] -- rotates the admin credential only, no data loss
+az postgres flexible-server update \
+  --name noetva-dev-eus2-pg --resource-group rg-noetva-dev \
+  --admin-password "<newly generated value, never printed/logged>"
+```
+
+### Stage 1c — Application tier (`deployApplicationTier=true`)
+
+**Prerequisites (verify all before running):** all six Key Vault secrets from Part 17 exist; a real, digest-pinned backend image and a real, digest-pinned frontend image have been pushed to the ACR created in Stage 1a (Parts 26/27); `deployApplicationTier=true` is the only Bicep-parameter difference from Stage 1a.
+
+**Action, `[AZURE MUTATION]`:**
+
+```bash
+az deployment sub create --location eastus2 \
+  --template-file infra/azure/main.bicep \
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=true \
+               backendImageReference="<real digest reference>" \
+               frontendImageReference="<real digest reference>"
+```
+
+**What this creates:** the backend and frontend Container Apps (now with real images and now-resolvable Key Vault secrets), the migration Job, and the three Azure Monitor alerts.
+
+**Expected result:** the command completes with `provisioningState: Succeeded`, and the frontend/backend Container Apps reach a healthy revision (subject to Part 30/31's separate image-deploy verification).
+
+**STOP IF:** the deployment fails for any reason other than a known, already-governed cause — do not hand-edit resources in the Portal; determine the root cause and, if it represents a new defect, treat it exactly as CDD-067 treated the original two.
 
 ---
 
@@ -1642,7 +1770,7 @@ Never run this to "save cost" — Stop DEV (Part 43) already achieves the real c
 
 **P. Business-tenant claim (CDD-065):** [ ] Custom attribute `tenant_id` created [ ] Claim `noetva_tenant_id` (no Namespace) mapped into the access token on the backend's own Enterprise Application entry (not just ID token) [ ] Save confirmed to succeed (not "This claim type is restricted") [ ] All four `oidcTenantClaim` environment parameters already set to `noetva_tenant_id` in source [ ] DEV test user has a value set
 
-**Q. Pass 1:** [ ] `main.bicep` deployment succeeded
+**Q. Pass 1 (CDD-067 two-stage):** [ ] Stage 1a foundation deployment succeeded (`deployApplicationTier=false`) [ ] Key Vault Secrets Officer self-assigned [ ] all six Key Vault secrets populated, including `ctec-migration-database-url` [ ] database roles created (Part 15) [ ] real digest-pinned backend/frontend images pushed [ ] Stage 1c application-tier deployment succeeded (`deployApplicationTier=true`)
 
 **R. Generated values:** [ ] Frontend/backend FQDNs captured [ ] Fed back into Entra redirect URIs, GitHub variables
 
