@@ -39,6 +39,9 @@ param oidcAudience string
 @description('OIDC JWKS URL')
 param oidcJwksUrl string
 
+@description('OAuth scope-claim name the backend trusts for delegated authorization (Entra External ID: scp; matches Noetva\'s Keycloak default of scope only if explicitly set otherwise).')
+param oidcScopeClaim string
+
 @description('CORS origin(s) allowed to call the backend')
 param corsOrigins string
 
@@ -93,6 +96,7 @@ module resources 'resources.bicep' = {
     oidcIssuer: oidcIssuer
     oidcAudience: oidcAudience
     oidcJwksUrl: oidcJwksUrl
+    oidcScopeClaim: oidcScopeClaim
     corsOrigins: corsOrigins
     acrSku: acrSku
     postgresSkuName: postgresSkuName

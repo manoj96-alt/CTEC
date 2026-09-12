@@ -44,6 +44,9 @@ param oidcAudience string
 @description('OIDC JWKS URL')
 param oidcJwksUrl string
 
+@description('OAuth scope-claim name the backend trusts for delegated authorization (Entra External ID: scp; matches Noetva\'s Keycloak default of scope only if explicitly set otherwise).')
+param oidcScopeClaim string
+
 @description('CORS origin(s) allowed to call the backend -- must be the exact frontend origin, no wildcard in staging/prod (Noetva I0-R1 Section 29)')
 param corsOrigins string
 
@@ -227,6 +230,7 @@ var backendEnvVars = [
   { name: 'CTEC_OIDC_ISSUER', value: oidcIssuer }
   { name: 'CTEC_OIDC_AUDIENCE', value: oidcAudience }
   { name: 'CTEC_OIDC_JWKS_URL', value: oidcJwksUrl }
+  { name: 'CTEC_OIDC_SCOPE_CLAIM', value: oidcScopeClaim }
   { name: 'CTEC_RUNTIME_HANDOFF_KEY_ID', value: 'primary' }
 ]
 

@@ -23,12 +23,13 @@ class _Client:
         return _Key(self.key)
 
 
-def _verifier() -> tuple[OidcJwtVerifier, object]:
+def _verifier(*, oidc_scope_claim: str = "scope") -> tuple[OidcJwtVerifier, object]:
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     settings = Settings(
         oidc_issuer="https://issuer.example/",
         oidc_audience="ctec",
         oidc_jwks_url="https://issuer.example/jwks",
+        oidc_scope_claim=oidc_scope_claim,
     )
     verifier = OidcJwtVerifier(settings)
     verifier._client = _Client(private.public_key())  # type: ignore[assignment]
@@ -122,3 +123,28 @@ def test_rejects_unsigned_and_algorithm_substitution() -> None:
     unsigned = jwt.encode({"sub": "x"}, key="", algorithm="none")
     with pytest.raises(AuthenticationError, match="AUTH_ALGORITHM_FORBIDDEN"):
         verifier.verify(unsigned)
+
+
+def test_configured_scp_claim_is_extracted_in_entra_delegated_shape() -> None:
+    """CDD-063: Microsoft Entra External ID exposes delegated permissions
+    through the "scp" claim as a space-delimited string -- the same shape
+    Keycloak already uses for "scope". Configuring oidc_scope_claim="scp"
+    must extract scopes from "scp" via the existing, unmodified parser."""
+    verifier, private = _verifier(oidc_scope_claim="scp")
+    token = _token(
+        private,
+        omit=("scope",),
+        scp="supplier-risk:read entity-resolution:read",
+    )
+    principal = verifier.verify(token)
+    assert principal.scopes == ("entity-resolution:read", "supplier-risk:read")
+
+
+def test_configured_scp_claim_does_not_fall_back_to_scope() -> None:
+    """CDD-063: when oidc_scope_claim="scp" is configured (the governed
+    Azure/Entra setting), a token carrying only "scope" (no "scp" at all)
+    must yield zero scopes -- never a silent fallback to "scope"."""
+    verifier, private = _verifier(oidc_scope_claim="scp")
+    token = _token(private)
+    principal = verifier.verify(token)
+    assert principal.scopes == ()
