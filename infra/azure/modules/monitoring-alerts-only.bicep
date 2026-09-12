@@ -3,16 +3,21 @@
 // (monitoring-workspace-only.bicep) because these alerts scope to
 // resources (PostgreSQL, the migration Job) that must already exist.
 //
-// NOTE (disclosed, not hidden): the exact metric names/dimensions below
-// (`storage_percent`, `active_connections`, `JobExecutionCount` +
-// `executionStatus`) are written from current knowledge of the
-// PostgreSQL Flexible Server and Container Apps Jobs metric namespaces but
-// were NOT independently re-verified against `az monitor metrics
-// list-definitions` against a real deployed resource in this phase (no
-// Azure resource exists yet to query). This is flagged as a residual risk
-// (see infra/azure/README.md) to confirm at first real deployment; Bicep's
-// own compiler does not validate that a metric name string is real, only
-// ARM does, at deployment time.
+// NOTE (CDD-069): all metric names/dimensions below are now real-Azure
+// verified, not merely written from documentation knowledge. `storage_percent`
+// (PostgreSQL) and `active_connections` (PostgreSQL) were proven correct by
+// the real AZURE-DEV-APPLICATION-TIER-R7-EXECUTION deployment, which created
+// both of those alerts successfully. The migration Job alert originally used
+// `JobExecutionCount` + `executionStatus`, neither of which exists on
+// `Microsoft.App/jobs` -- that real deployment failed on exactly this
+// resource with `BadRequest: Couldn't find a metric named JobExecutionCount`.
+// CDD-069 (docs/cdd/CDD-069-Azure-DEV-Migration-Job-Monitoring-Correction.md)
+// queried the real deployed resource's own metric definitions
+// (`az monitor metrics list-definitions`) and corrected it to the real
+// metric `Executions` with dimension `state` (values `Running | Processing |
+// Stopped | Degraded | Failed | Unknown | Succeeded`, independently
+// confirmed against Microsoft's published `JobExecutionRunningState` REST
+// API enum) -- see CDD-069 SS4/SS7/SS8 for full evidence and semantics.
 metadata description = 'Initial alert set for Noetva'
 
 @description('Naming prefix, e.g. noetva-prod-eus2')
@@ -130,10 +135,10 @@ resource migrationJobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' =
       allOf: [
         {
           name: 'job-execution-failed'
-          metricName: 'JobExecutionCount'
+          metricName: 'Executions'
           dimensions: [
             {
-              name: 'executionStatus'
+              name: 'state'
               operator: 'Include'
               values: [
                 'Failed'
