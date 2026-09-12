@@ -83,6 +83,24 @@ param postgresAdminPassword string
 @description('CDD-067: false = foundation stage only; true = also deploy the application tier (backend/frontend Container Apps, migration Job, monitoring alerts). Foundation stage must converge safely without any application-tier prerequisite (real image digests, populated Key Vault secrets) existing yet.')
 param deployApplicationTier bool = false
 
+@description('CDD-068: false (default, safe) = do not deploy the one-time ADMIN-authority database bootstrap Job; true = deploy it. Requires the bootstrap image reference and the three secure password parameters below to be supplied. Never appears in a normal deployment unless explicitly enabled.')
+param deployDbBootstrapJob bool = false
+
+@description('CDD-068: full db-bootstrap image reference (registry/repo@sha256:digest). Required only when deployDbBootstrapJob=true.')
+param dbBootstrapImageReference string = ''
+
+@secure()
+@description('CDD-068: PostgreSQL administrator password for the one-time bootstrap Job only -- delivered exclusively via this secure parameter, never Key Vault. Required only when deployDbBootstrapJob=true.')
+param dbBootstrapAdminPassword string = ''
+
+@secure()
+@description('CDD-068: password to (re)set for the noetva_app role during bootstrap -- the operator uses this same value when later populating the ctec-database-url Key Vault secret. Required only when deployDbBootstrapJob=true.')
+param dbBootstrapAppPassword string = ''
+
+@secure()
+@description('CDD-068: password to (re)set for the noetva_migrate role during bootstrap -- the operator uses this same value when later populating the ctec-migration-database-url Key Vault secret. Required only when deployDbBootstrapJob=true.')
+param dbBootstrapMigratePassword string = ''
+
 @description('Whether to provision a NAT Gateway for deterministic egress (required staging/prod, optional dev)')
 param enableNatGateway bool = true
 
@@ -332,6 +350,29 @@ module monitoringAlerts 'modules/monitoring-alerts-only.bicep' = if (deployAppli
   }
 }
 
+// CDD-068: one-time (or credential-rotation-time) ADMIN-authority database
+// bootstrap Job, gated entirely independently of deployApplicationTier --
+// it must be usable to establish DB roles BEFORE the application tier's
+// prerequisites (populated Key Vault secrets) can exist at all. Contains
+// zero Key Vault reference of any kind; its own self-contained identity
+// receives AcrPull only. See modules/container-apps-job-db-bootstrap.bicep.
+module dbBootstrapJob 'modules/container-apps-job-db-bootstrap.bicep' = if (deployDbBootstrapJob) {
+  name: 'db-bootstrap-job'
+  params: {
+    name: '${namePrefix}-db-bootstrap'
+    location: location
+    tags: tags
+    environmentId: containerAppsEnvironment.outputs.environmentId
+    acrId: acr.outputs.registryId
+    acrLoginServer: acr.outputs.registryLoginServer
+    imageReference: dbBootstrapImageReference
+    postgresHost: postgres.outputs.serverFqdn
+    postgresAdminPassword: dbBootstrapAdminPassword
+    postgresAppPassword: dbBootstrapAppPassword
+    postgresMigratePassword: dbBootstrapMigratePassword
+  }
+}
+
 // Lifecycle-aware alert suppression (Noetva G-R3 Section 10/11) -- only
 // for lifecycle-managed environments. `prod` never receives this
 // resource: it has no lifecycle workflows to toggle it, and its
@@ -356,6 +397,9 @@ output acrLoginServer string = acr.outputs.registryLoginServer
 output keyVaultUri string = keyVault.outputs.keyVaultUri
 output postgresServerFqdn string = postgres.outputs.serverFqdn
 output cicdIdentityClientId string = identities.outputs.cicdIdentityClientId
+// CDD-068: empty string when the bootstrap Job is not deployed. Never a
+// secret -- the Job's name is not sensitive.
+output dbBootstrapJobName string = deployDbBootstrapJob ? dbBootstrapJob!.outputs.jobName : ''
 // Informational only (Noetva I0-R1 Section 33): no DNS/certificate resource
 // is created against these hostnames since no real domain is authorized yet
 // (D0 Section AU/T -- do not invent a production domain). Surfaced here so
