@@ -18,6 +18,7 @@ from pathlib import Path
 INFRA = Path(__file__).resolve().parents[1]
 MODULES = INFRA / "modules"
 ENVIRONMENTS = INFRA / "environments"
+REPO_ROOT = INFRA.parents[1]
 
 results: list[tuple[str, bool, str]] = []
 
@@ -208,6 +209,88 @@ def check_migration_job_alert_uses_real_metric() -> None:
     )
 
 
+def _backend_settings_fields() -> set[str]:
+    src = read(REPO_ROOT / "backend" / "app" / "core" / "config.py")
+    return {
+        m.group(1)
+        for m in re.finditer(r"^    ([a-z][a-z0-9_]*):\s", src, re.MULTILINE)
+        if m.group(1) != "model_config"
+    }
+
+
+# ---- 17. Secret/env contract (CDD-070): every Key-Vault-backed secret
+# reference in resources.bicep must carry an explicit `envName`, distinct
+# from its Key Vault/Container-Apps secret `name`, and that envName must
+# correspond to a real field on backend/app/core/config.py's Settings class
+# under its real env_prefix ("CTEC_"). This is a structural, cross-file
+# check -- not a fixed-string grep -- so it fails on a REGRESSION even if
+# the specific secret/env names involved change in the future.
+def check_secret_env_contract_explicit_and_valid() -> None:
+    resources_src = read(INFRA / "resources.bicep")
+    # Each secret-ref entry is authored as one line, e.g.
+    # { name: 'x', envName: 'CTEC_X', keyVaultUrl: '${...}secrets/x' } --
+    # matched per-line (not brace-balanced) because the keyVaultUrl value
+    # itself legitimately contains Bicep string-interpolation braces.
+    entries = [line for line in resources_src.splitlines() if "keyVaultUrl:" in line]
+    backend_fields = _backend_settings_fields()
+    problems: list[str] = []
+    if not entries:
+        problems.append("no keyVaultUrl-bearing secret-ref entries found")
+    for entry in entries:
+        name_m = re.search(r"name:\s*'([^']+)'", entry)
+        env_m = re.search(r"envName:\s*'([^']+)'", entry)
+        if not env_m:
+            problems.append(f"entry missing envName (CDD-070 regression): {entry.strip()}")
+            continue
+        env_name = env_m.group(1)
+        if name_m and env_name == name_m.group(1):
+            problems.append(f"envName equals raw secret name, original defect reintroduced: {env_name}")
+            continue
+        if not re.fullmatch(r"CTEC_[A-Z0-9_]+", env_name):
+            problems.append(f"envName not CTEC_-prefixed uppercase: {env_name}")
+            continue
+        field = env_name[len("CTEC_"):].lower()
+        if field not in backend_fields:
+            problems.append(f"envName {env_name} has no matching Settings field ({field}) in backend/app/core/config.py")
+    check(
+        "secret-env-contract-explicit-and-valid",
+        not problems,
+        "; ".join(problems) or f"{len(entries)} secret-ref entries all carry an explicit envName, distinct from name, matching a real backend Settings field",
+    )
+
+
+# ---- 18. Health probe contract (CDD-070): container-app.bicep must not
+# hardcode any consumer's health path -- healthProbePath must be an
+# explicit, required parameter, and every module call site (backendApp,
+# frontendApp) in resources.bicep must supply it explicitly. This fails if
+# a shared module again silently assumes one workload's route is correct
+# for every consumer, regardless of what the actual path strings are.
+def check_health_probe_path_parameterized() -> None:
+    module_src = read(MODULES / "container-app.bicep")
+    no_hardcoded_path = not re.search(r"path:\s*'/[^']*'", module_src)
+    has_required_param = bool(re.search(r"^param healthProbePath string\s*$", module_src, re.MULTILINE))
+    resources_src = read(INFRA / "resources.bicep")
+    backend_block_m = re.search(r"module backendApp[\s\S]*?\n\}\n", resources_src)
+    frontend_block_m = re.search(r"module frontendApp[\s\S]*?\n\}\n", resources_src)
+    backend_ok = bool(backend_block_m) and "healthProbePath:" in backend_block_m.group(0)
+    frontend_ok = bool(frontend_block_m) and "healthProbePath:" in frontend_block_m.group(0)
+    ok = no_hardcoded_path and has_required_param and backend_ok and frontend_ok
+    problems = []
+    if not no_hardcoded_path:
+        problems.append("container-app.bicep still hardcodes a literal path in a probe")
+    if not has_required_param:
+        problems.append("container-app.bicep missing required healthProbePath parameter")
+    if not backend_ok:
+        problems.append("backendApp call site does not explicitly pass healthProbePath")
+    if not frontend_ok:
+        problems.append("frontendApp call site does not explicitly pass healthProbePath")
+    check(
+        "health-probe-path-explicit-per-consumer",
+        ok,
+        "; ".join(problems) or "container-app.bicep has no hardcoded probe path; backendApp and frontendApp each explicitly declare healthProbePath",
+    )
+
+
 def main() -> int:
     check_bicep_compiles()
     check_no_secret_leakage()
@@ -224,6 +307,8 @@ def main() -> int:
     check_backup_retention()
     check_distinct_name_prefixes()
     check_migration_job_alert_uses_real_metric()
+    check_secret_env_contract_explicit_and_valid()
+    check_health_probe_path_parameterized()
 
     failed = 0
     for name, passed, detail in results:

@@ -259,9 +259,13 @@ var backendEnvVars = [
   { name: 'CTEC_RUNTIME_HANDOFF_KEY_ID', value: 'primary' }
 ]
 
+// CDD-070: envName is the container environment-variable name the backend's
+// pydantic-settings (env_prefix="CTEC_") actually reads -- distinct from the
+// Key Vault secret / Container Apps secret name (`name`), never derived from
+// it algorithmically.
 var backendSecretRefs = [
-  { name: 'ctec-database-url', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-database-url' }
-  { name: 'ctec-runtime-handoff-key', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-runtime-handoff-key' }
+  { name: 'ctec-database-url', envName: 'CTEC_DATABASE_URL', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-database-url' }
+  { name: 'ctec-runtime-handoff-key', envName: 'CTEC_RUNTIME_HANDOFF_KEY', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-runtime-handoff-key' }
 ]
 
 module backendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
@@ -287,6 +291,7 @@ module backendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
     ]
     envVars: backendEnvVars
     keyVaultSecretRefs: backendSecretRefs
+    healthProbePath: '/health'
     minReplicas: backendMinReplicas
     maxReplicas: backendMaxReplicas
   }
@@ -309,7 +314,7 @@ module migrationJob 'modules/container-apps-job-migration.bicep' = if (deployApp
     // name the original source referenced -- ctec-migration-database-url is
     // the exact name the governed bootstrap runbook populates.
     keyVaultSecretRefs: [
-      { name: 'ctec-database-url', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-migration-database-url' }
+      { name: 'ctec-database-url', envName: 'CTEC_DATABASE_URL', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-migration-database-url' }
     ]
   }
 }
@@ -328,6 +333,10 @@ module frontendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
     commandOverride: []
     envVars: []
     keyVaultSecretRefs: []
+    // CDD-070: the frontend owns its own truthful, dependency-free health
+    // route (frontend/app/health/route.ts) -- it must never inherit
+    // backend's /health via a shared module default.
+    healthProbePath: '/health'
     minReplicas: frontendMinReplicas
     maxReplicas: frontendMaxReplicas
   }
