@@ -291,6 +291,39 @@ def check_health_probe_path_parameterized() -> None:
     )
 
 
+# ---- 19. Azure PostgreSQL DSN producer contract (CDD-071): the deployment
+# guide's own example `az keyvault secret set` commands for
+# `ctec-database-url`/`ctec-migration-database-url` must instruct operators
+# to use the canonical, driver-qualified `postgresql+psycopg://` scheme,
+# never a bare `postgresql://` -- a real Azure migration execution proved
+# SQLAlchemy resolves the bare scheme to the legacy, not-installed
+# `psycopg2` DBAPI. This is a documentation-content check (the "producer"
+# here is text, not executable logic, per CDD-071 SS25) -- it prevents a
+# future edit of the guide from reintroducing the exact defect this
+# artifact corrects.
+def check_azure_dsn_guide_uses_canonical_driver_scheme() -> None:
+    guide = read(REPO_ROOT / "docs" / "deployment" / "azure" / "NOETVA-AZURE-ZERO-TO-DEPLOYMENT-GUIDE.md")
+    problems: list[str] = []
+    found_any = False
+    for line in guide.splitlines():
+        if "keyvault secret set" not in line:
+            continue
+        if "--name ctec-database-url" not in line and "--name ctec-migration-database-url" not in line:
+            continue
+        found_any = True
+        if "postgresql+psycopg://" not in line:
+            problems.append(f"guide command missing canonical scheme: {line.strip()}")
+        if re.search(r"postgresql://(?!\S*\+psycopg)", line) and "postgresql+psycopg://" not in line:
+            problems.append(f"guide command uses bare scheme: {line.strip()}")
+    if not found_any:
+        problems.append("no ctec-database-url/ctec-migration-database-url keyvault secret set example found in the guide")
+    check(
+        "azure-dsn-guide-uses-canonical-driver-scheme",
+        not problems,
+        "; ".join(problems) or "deployment guide's ctec-database-url/ctec-migration-database-url examples both use postgresql+psycopg://",
+    )
+
+
 def main() -> int:
     check_bicep_compiles()
     check_no_secret_leakage()
@@ -309,6 +342,7 @@ def main() -> int:
     check_migration_job_alert_uses_real_metric()
     check_secret_env_contract_explicit_and_valid()
     check_health_probe_path_parameterized()
+    check_azure_dsn_guide_uses_canonical_driver_scheme()
 
     failed = 0
     for name, passed, detail in results:
