@@ -22,6 +22,7 @@
     "postgresBackupRetentionDays": { "value": 14 },
     "postgresHaMode": { "value": "ZoneRedundant" },
     "postgresAdminPassword": { "value": "REPLACE_AT_DEPLOY_TIME_FROM_KEY_VAULT_NEVER_COMMIT" },
+    "deployApplicationTier": { "value": false },
     "enableNatGateway": { "value": true },
     "backendMinReplicas": { "value": 2 },
     "backendMaxReplicas": { "value": 4 },
