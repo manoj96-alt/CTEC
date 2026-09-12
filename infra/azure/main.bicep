@@ -42,6 +42,9 @@ param oidcJwksUrl string
 @description('OAuth scope-claim name the backend trusts for delegated authorization (Entra External ID: scp; matches Noetva\'s Keycloak default of scope only if explicitly set otherwise).')
 param oidcScopeClaim string
 
+@description('JWT claim name carrying the Noetva business-tenant identifier (Entra External ID: a namespaced custom claim, since the bare name "tenant_id" is a Microsoft-reserved JWT claim; local Keycloak: tenant_id).')
+param oidcTenantClaim string
+
 @description('CORS origin(s) allowed to call the backend')
 param corsOrigins string
 
@@ -97,6 +100,7 @@ module resources 'resources.bicep' = {
     oidcAudience: oidcAudience
     oidcJwksUrl: oidcJwksUrl
     oidcScopeClaim: oidcScopeClaim
+    oidcTenantClaim: oidcTenantClaim
     corsOrigins: corsOrigins
     acrSku: acrSku
     postgresSkuName: postgresSkuName

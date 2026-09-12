@@ -13,6 +13,7 @@
     "oidcAudience": { "value": "REPLACE_WITH_API_APPLICATION_ID_URI" },
     "oidcJwksUrl": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_JWKS_URL" },
     "oidcScopeClaim": { "value": "scp" },
+    "oidcTenantClaim": { "value": "REPLACE_WITH_ENTRA_TENANT_CLAIM_NAME" },
     "corsOrigins": { "value": "[\"REPLACE_WITH_DEMO_FRONTEND_ORIGIN\"]" },
     "acrSku": { "value": "Basic" },
     "postgresSkuName": { "value": "Standard_B1ms" },
