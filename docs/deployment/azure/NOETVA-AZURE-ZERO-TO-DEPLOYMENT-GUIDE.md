@@ -1170,7 +1170,7 @@ az containerapp update --name noetva-dev-eus2-backend --resource-group rg-noetva
   --image <DEV_ACR_LOGIN_SERVER>/noetva/backend@<BACKEND_IMAGE_DIGEST>
 ```
 
-**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`; Key Vault secret references `ctec-database-url`, `ctec-runtime-handoff-key`. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
+**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); Key Vault secret references `ctec-database-url`, `ctec-runtime-handoff-key`. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
 
 **Verify (`[AZURE READ-ONLY]`):**
 

@@ -12,6 +12,7 @@
     "oidcIssuer": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_ISSUER_URL" },
     "oidcAudience": { "value": "REPLACE_WITH_API_APPLICATION_ID_URI" },
     "oidcJwksUrl": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_JWKS_URL" },
+    "oidcScopeClaim": { "value": "scp" },
     "corsOrigins": { "value": "[\"REPLACE_WITH_STAGING_FRONTEND_ORIGIN\"]" },
     "acrSku": { "value": "Premium" },
     "postgresSkuName": { "value": "Standard_D2ds_v5" },
