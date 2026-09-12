@@ -1422,18 +1422,18 @@ Three metric alerts exist, all routed to one action group (`noetva-dev-eus2-ag-o
 |---|---|---|---|
 | `noetva-dev-eus2-alert-pg-storage` | `storage_percent` | `>80`, 15-min window | 1 |
 | `noetva-dev-eus2-alert-pg-connections` | `active_connections` | `>80`, 15-min window | 2 |
-| `noetva-dev-eus2-alert-migration-job-failed` | `JobExecutionCount` (`executionStatus=Failed`) | `>0`, 5-min window | 0 |
+| `noetva-dev-eus2-alert-migration-job-failed` | `Executions` (`state=Failed`) | `>0`, 5-min window | 0 |
 
-**Do not treat these metric names as guaranteed correct without checking.** They were written from Azure Monitor namespace knowledge, not independently re-verified against a real deployed resource before now — Bicep's compiler cannot validate a metric-name string.
+**CDD-069 correction, real-Azure verified.** The migration-Job alert originally used `JobExecutionCount`/`executionStatus`, neither of which exists on `Microsoft.App/jobs` — a real deployment attempt failed outright (`BadRequest: Couldn't find a metric named JobExecutionCount`). All three metric names in the table above are now real-Azure verified: the PostgreSQL metrics (`storage_percent`, `active_connections`) by that same deployment's success on those two alerts, and the migration-Job metric (`Executions`/`state`) by directly querying the real deployed resource's own metric definitions (below) and independently corroborating the `state` dimension's values against Microsoft's published `JobExecutionRunningState` REST API enum (`Running | Processing | Stopped | Degraded | Failed | Unknown | Succeeded`). This alert means exactly one thing: a real migration Job execution reached the `Failed` terminal state — it stays silent while the Job is merely dormant (no executions), and it does not fire on a `Succeeded` execution. See `docs/cdd/CDD-069-Azure-DEV-Migration-Job-Monitoring-Correction.md` for full evidence.
 
-**Verify (`[AZURE READ-ONLY]`), mandatory, once resources exist:**
+**Verify (`[AZURE READ-ONLY]`), mandatory, before every real deployment that touches this module — this is a real-provider precondition, not a one-time check:**
 
 ```bash
 az monitor metrics list-definitions --resource "<postgres server resource ID>" -o table
 az monitor metrics list-definitions --resource "<migration job resource ID>" -o table
 ```
 
-Compare the returned names against the table above. **If any name doesn't match: stop treating that alert as authoritative.** Do not hot-fix `monitoring-alerts-only.bicep` directly against DEV in the Portal — route any correction through the normal commit/PR/merge process (Part 74 explains why).
+Compare the returned names against the table above. **If any name doesn't match: stop treating that alert as authoritative.** Do not hot-fix `monitoring-alerts-only.bicep` directly against DEV in the Portal — route any correction through the normal commit/PR/merge process (Part 74 explains why). After deployment, also independently read back the deployed alert resource itself (`az resource show --ids <alert resource ID>`) and confirm its `properties.criteria.allOf[0].metricName`/`dimensions[0].name` match this table exactly — the goal is proving what Azure actually accepted, not merely what the Bicep source says.
 
 ---
 

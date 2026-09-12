@@ -180,6 +180,34 @@ def check_distinct_name_prefixes() -> None:
     check("distinct-name-prefix-per-environment", ok, str(prefixes))
 
 
+# ---- 16. Migration-Job metric alert uses the real Microsoft.App/jobs
+# metric surface (CDD-069), never the invalid guessed pair it replaces.
+#
+# NOTE (disclosed, not hidden, matching connector_security_check.py's own
+# local-vs-real-Azure split): this check ONLY proves the literal string
+# pair committed here is the CDD-069-governed one. It CANNOT prove Azure
+# itself still accepts `Executions`/`state` -- that is exactly the class
+# of defect that shipped originally (Bicep's compiler does not validate
+# metric-name strings, only ARM does, at deployment time). Real-Azure
+# re-verification (`az monitor metrics list-definitions` against the real
+# deployed migration Job, then a real deployment succeeding with the
+# alert created) remains mandatory before any PASS -- see CDD-069 SS13/SS14.
+def check_migration_job_alert_uses_real_metric() -> None:
+    src = read(MODULES / "monitoring-alerts-only.bicep")
+    m = re.search(r"resource migrationJobFailureAlert[\s\S]*?^\}", src, re.MULTILINE)
+    block = m.group(0) if m else ""
+    no_invalid = "JobExecutionCount" not in block and "executionStatus" not in block
+    has_valid = "metricName: 'Executions'" in block and "name: 'state'" in block and "'Failed'" in block
+    ok = bool(m) and no_invalid and has_valid
+    check(
+        "migration-job-alert-uses-real-azure-metric",
+        ok,
+        "migrationJobFailureAlert uses the CDD-069-governed real metric (Executions/state=Failed), not the invalid JobExecutionCount/executionStatus pair"
+        if ok
+        else "MISSING or still references the invalid JobExecutionCount/executionStatus pair -- this is a literal-string check only, real-Azure re-verification is separately mandatory (CDD-069 SS13)",
+    )
+
+
 def main() -> int:
     check_bicep_compiles()
     check_no_secret_leakage()
@@ -195,6 +223,7 @@ def main() -> int:
     check_diagnostics_wired()
     check_backup_retention()
     check_distinct_name_prefixes()
+    check_migration_job_alert_uses_real_metric()
 
     failed = 0
     for name, passed, detail in results:
