@@ -983,11 +983,48 @@ Then, on the backend app registration's **Manifest**: set `acceptMappedClaims: t
 
 **Why no Azure Function is required here** (unlike some Microsoft tutorials you may find): for a static, per-user value at Noetva's current scale, the native Attributes & Claims path is sufficient — confirmed directly against current Microsoft Learn documentation, and structurally identical to what Noetva's own local `keycloak/ctec-realm.json` already does for local development.
 
-### Step 22.3 — Create your first DEV test user and set their `tenant_id` (unchanged)
+### Step 22.3 — Create your first DEV test user and set their `tenant_id` (CDD-075 correction)
 
-**Where:** External ID tenant → **Users** → **New user**.
+**Real-Azure finding (CDD-075):** an earlier version of this guide instructed **Where: External ID tenant → Users → New user** — the ordinary Entra admin-center workforce/member-user creation path. **A real login attempt disproved this.** That path creates a user whose only directory identity has `signInType: userPrincipalName` — but the configured `noetva-dev-signup-signin` user flow's **Email with password** identity provider validates credentials against a **local-account** identity of `signInType: emailAddress`, which the admin-center "New user" flow never creates. Every sign-in attempt against such a user fails with `AADSTS50126` ("invalid username or password") regardless of the actual password — the identity being checked doesn't exist, not because any password is wrong.
 
-**Action:** create a user, then on their profile's custom-attribute section, set `tenant_id` to a value matching a real Noetva tenant your DEV database will actually have (Part 39's Start step doesn't seed tenants — you'll create this alongside your first real login test, Part 33). **This value is set by the administrator here, on the user's directory profile — it is never collected from the user during the `noetva-dev-signup-signin` self-service sign-up flow.** A public/signup user must never be able to choose, edit, forge, or self-assert this value.
+**The correction:** create the DEV test user via Microsoft Graph, supplying the local-account identity shape explicitly (`[AZURE MUTATION]`, i.e. an Entra directory mutation — requires Graph `User.ReadWrite.All` or equivalent):
+
+```bash
+# [ENTRA MUTATION] -- do not put the password in shell history/logs/this file.
+# Read it interactively; the exact mechanism is left to the operator (e.g. a
+# hidden-input shell prompt), never a literal in a saved script.
+TOKEN=$(az account get-access-token --tenant <EXTERNAL_ID_TENANT_ID> --resource https://graph.microsoft.com --query accessToken -o tsv)
+
+python3 -c '
+import json, os, sys
+password = os.environ["NEW_DEV_USER_PASSWORD"]
+body = {
+    "displayName": "Noetva DEV Test User",
+    "identities": [
+        {"signInType": "emailAddress", "issuer": "<EXTERNAL_ID_DEFAULT_DOMAIN>", "issuerAssignedId": "<NEW_DEV_USER_EMAIL>"}
+    ],
+    "mail": "<NEW_DEV_USER_EMAIL>",
+    "passwordProfile": {"password": password, "forceChangePasswordNextSignIn": True},
+    "passwordPolicies": "DisablePasswordExpiration",
+}
+sys.stdout.write(json.dumps(body))
+' | curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data-binary @- \
+  https://graph.microsoft.com/v1.0/users | python3 -m json.tool
+```
+
+`<EXTERNAL_ID_DEFAULT_DOMAIN>` is the tenant's own default `*.onmicrosoft.com` domain (e.g. `noetvaexternal.onmicrosoft.com`) — this is the required `issuer` value for a local-account identity in this tenant, confirmed directly against Microsoft's own "Create a customer account in external tenants" Graph API example. `<NEW_DEV_USER_EMAIL>` need not be a real, routable mailbox for password-based sign-in to work — only the self-service "forgot password" email link requires a deliverable inbox, which this DEV identity is not expected to use (an administrator resets it via Graph instead, if ever needed). `passwordPolicies: "DisablePasswordExpiration"` is **required** for local-account identities per Microsoft's own documentation — omitting it risks the account's password expiring and reproducing an unrelated `AADSTS50055` failure later.
+
+**Verify the identity shape before attempting any login (`[AZURE READ-ONLY]`):**
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://graph.microsoft.com/v1.0/users/<NEW_USER_OBJECT_ID>?\$select=id,accountEnabled,identities,passwordPolicies" | python3 -m json.tool
+```
+
+Require `accountEnabled: true` and an `identities` entry with exactly `signInType: emailAddress`, `issuer: <EXTERNAL_ID_DEFAULT_DOMAIN>`, `issuerAssignedId: <NEW_DEV_USER_EMAIL>` — Microsoft may also add a second, companion `userPrincipalName`-type identity automatically; this is expected and does not replace the primary `emailAddress` identity the sign-in flow validates against.
+
+**Then set their `tenant_id`** to a value matching a real Noetva tenant your DEV database will actually have (Part 39's Start step doesn't seed tenants — you'll create this alongside your first real login test, Part 33), via the same Graph session (`PATCH` the user with `{"extension_<b2c-extensions-app-appid-no-dashes>_tenant_id": "<value>"}`, or the Entra admin-center's own custom-attribute UI on the user's profile — both write the identical directory property). **This value is set by the administrator here — it is never collected from the user during the `noetva-dev-signup-signin` self-service sign-up flow.** A public/signup user must never be able to choose, edit, forge, or self-assert this value.
 
 **SAVE THIS VALUE:**
 ```
