@@ -38,7 +38,7 @@ param backendHostname string = ''
 @description('OIDC issuer the backend trusts (Entra External ID tenant issuer URL once provisioned)')
 param oidcIssuer string
 
-@description('OIDC audience (API application ID URI)')
+@description('OIDC audience: the backend API app registration\'s bare Application (client) ID GUID -- NOT its Application ID URI. Microsoft Entra v2.0 access tokens always set aud to the client ID GUID for a custom API (CDD-076); the App ID URI is used only to qualify scope requests (CDD-074) and to route claims mapping onto the access token (CDD-073), never as the token audience.')
 param oidcAudience string
 
 @description('OIDC JWKS URL')
@@ -79,6 +79,27 @@ param postgresHaMode string = 'Disabled'
 @secure()
 @description('PostgreSQL administrator (break-glass ADMIN authority) password, supplied at deploy time only, never committed')
 param postgresAdminPassword string
+
+@description('CDD-067: false = foundation stage only; true = also deploy the application tier (backend/frontend Container Apps, migration Job, monitoring alerts). Foundation stage must converge safely without any application-tier prerequisite (real image digests, populated Key Vault secrets) existing yet.')
+param deployApplicationTier bool = false
+
+@description('CDD-068: false (default, safe) = do not deploy the one-time ADMIN-authority database bootstrap Job; true = deploy it. Requires the bootstrap image reference and the three secure password parameters below to be supplied. Never appears in a normal deployment unless explicitly enabled.')
+param deployDbBootstrapJob bool = false
+
+@description('CDD-068: full db-bootstrap image reference (registry/repo@sha256:digest). Required only when deployDbBootstrapJob=true.')
+param dbBootstrapImageReference string = ''
+
+@secure()
+@description('CDD-068: PostgreSQL administrator password for the one-time bootstrap Job only -- delivered exclusively via this secure parameter, never Key Vault. Required only when deployDbBootstrapJob=true.')
+param dbBootstrapAdminPassword string = ''
+
+@secure()
+@description('CDD-068: password to (re)set for the noetva_app role during bootstrap -- the operator uses this same value when later populating the ctec-database-url Key Vault secret. Required only when deployDbBootstrapJob=true.')
+param dbBootstrapAppPassword string = ''
+
+@secure()
+@description('CDD-068: password to (re)set for the noetva_migrate role during bootstrap -- the operator uses this same value when later populating the ctec-migration-database-url Key Vault secret. Required only when deployDbBootstrapJob=true.')
+param dbBootstrapMigratePassword string = ''
 
 @description('Whether to provision a NAT Gateway for deterministic egress (required staging/prod, optional dev)')
 param enableNatGateway bool = true
@@ -238,12 +259,16 @@ var backendEnvVars = [
   { name: 'CTEC_RUNTIME_HANDOFF_KEY_ID', value: 'primary' }
 ]
 
+// CDD-070: envName is the container environment-variable name the backend's
+// pydantic-settings (env_prefix="CTEC_") actually reads -- distinct from the
+// Key Vault secret / Container Apps secret name (`name`), never derived from
+// it algorithmically.
 var backendSecretRefs = [
-  { name: 'ctec-database-url', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-database-url' }
-  { name: 'ctec-runtime-handoff-key', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-runtime-handoff-key' }
+  { name: 'ctec-database-url', envName: 'CTEC_DATABASE_URL', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-database-url' }
+  { name: 'ctec-runtime-handoff-key', envName: 'CTEC_RUNTIME_HANDOFF_KEY', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-runtime-handoff-key' }
 ]
 
-module backendApp 'modules/container-app.bicep' = {
+module backendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
   name: 'backend-app'
   params: {
     name: '${namePrefix}-backend'
@@ -266,12 +291,13 @@ module backendApp 'modules/container-app.bicep' = {
     ]
     envVars: backendEnvVars
     keyVaultSecretRefs: backendSecretRefs
+    healthProbePath: '/health'
     minReplicas: backendMinReplicas
     maxReplicas: backendMaxReplicas
   }
 }
 
-module migrationJob 'modules/container-apps-job-migration.bicep' = {
+module migrationJob 'modules/container-apps-job-migration.bicep' = if (deployApplicationTier) {
   name: 'migration-job'
   params: {
     name: '${namePrefix}-migrate'
@@ -282,13 +308,18 @@ module migrationJob 'modules/container-apps-job-migration.bicep' = {
     managedIdentityId: identities.outputs.migrationIdentityId
     acrLoginServer: acr.outputs.registryLoginServer
     envVars: []
+    // CDD-067 Defect 3 correction: this secret must be the migration role's
+    // OWN full connection string (postgresql+psycopg://noetva_migrate:...),
+    // never the mismatched/undocumented "postgres-migration-role-password"
+    // name the original source referenced -- ctec-migration-database-url is
+    // the exact name the governed bootstrap runbook populates.
     keyVaultSecretRefs: [
-      { name: 'ctec-database-url', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-migration-role-password' }
+      { name: 'ctec-database-url', envName: 'CTEC_DATABASE_URL', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-migration-database-url' }
     ]
   }
 }
 
-module frontendApp 'modules/container-app.bicep' = {
+module frontendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
   name: 'frontend-app'
   params: {
     name: '${namePrefix}-frontend'
@@ -302,19 +333,52 @@ module frontendApp 'modules/container-app.bicep' = {
     commandOverride: []
     envVars: []
     keyVaultSecretRefs: []
+    // CDD-070: the frontend owns its own truthful, dependency-free health
+    // route (frontend/app/health/route.ts) -- it must never inherit
+    // backend's /health via a shared module default.
+    healthProbePath: '/health'
     minReplicas: frontendMinReplicas
     maxReplicas: frontendMaxReplicas
   }
 }
 
-module monitoringAlerts 'modules/monitoring-alerts-only.bicep' = {
+// CDD-067: alerts reference the migration Job's resource ID, so they can
+// only be created once the application tier (which creates that Job) is
+// itself being deployed -- gated identically, not a new/independent condition.
+module monitoringAlerts 'modules/monitoring-alerts-only.bicep' = if (deployApplicationTier) {
   name: 'monitoring-alerts-only'
   params: {
     namePrefix: namePrefix
     tags: tags
     alertEmail: alertEmail
     postgresServerId: postgres.outputs.serverId
-    migrationJobId: migrationJob.outputs.jobId
+    // Null-forgiving: this module is gated by the identical deployApplicationTier
+    // condition that gates migrationJob, so if this module deploys at all,
+    // migrationJob is guaranteed non-null.
+    migrationJobId: migrationJob!.outputs.jobId
+  }
+}
+
+// CDD-068: one-time (or credential-rotation-time) ADMIN-authority database
+// bootstrap Job, gated entirely independently of deployApplicationTier --
+// it must be usable to establish DB roles BEFORE the application tier's
+// prerequisites (populated Key Vault secrets) can exist at all. Contains
+// zero Key Vault reference of any kind; its own self-contained identity
+// receives AcrPull only. See modules/container-apps-job-db-bootstrap.bicep.
+module dbBootstrapJob 'modules/container-apps-job-db-bootstrap.bicep' = if (deployDbBootstrapJob) {
+  name: 'db-bootstrap-job'
+  params: {
+    name: '${namePrefix}-db-bootstrap'
+    location: location
+    tags: tags
+    environmentId: containerAppsEnvironment.outputs.environmentId
+    acrId: acr.outputs.registryId
+    acrLoginServer: acr.outputs.registryLoginServer
+    imageReference: dbBootstrapImageReference
+    postgresHost: postgres.outputs.serverFqdn
+    postgresAdminPassword: dbBootstrapAdminPassword
+    postgresAppPassword: dbBootstrapAppPassword
+    postgresMigratePassword: dbBootstrapMigratePassword
   }
 }
 
@@ -332,13 +396,19 @@ module lifecycleAlertSuppression 'modules/lifecycle-alert-suppression.bicep' = i
 }
 
 output resourceGroupName string = resourceGroup().name
-output backendFqdn string = backendApp.outputs.fqdn
-output frontendFqdn string = frontendApp.outputs.fqdn
+// CDD-067: empty string when the application tier is not deployed yet --
+// these outputs are only meaningful once deployApplicationTier=true creates
+// the Container Apps that produce a real FQDN.
+output backendFqdn string = deployApplicationTier ? backendApp!.outputs.fqdn : ''
+output frontendFqdn string = deployApplicationTier ? frontendApp!.outputs.fqdn : ''
 output natGatewayEgressIp string = network.outputs.natGatewayEgressIp
 output acrLoginServer string = acr.outputs.registryLoginServer
 output keyVaultUri string = keyVault.outputs.keyVaultUri
 output postgresServerFqdn string = postgres.outputs.serverFqdn
 output cicdIdentityClientId string = identities.outputs.cicdIdentityClientId
+// CDD-068: empty string when the bootstrap Job is not deployed. Never a
+// secret -- the Job's name is not sensitive.
+output dbBootstrapJobName string = deployDbBootstrapJob ? dbBootstrapJob!.outputs.jobName : ''
 // Informational only (Noetva I0-R1 Section 33): no DNS/certificate resource
 // is created against these hostnames since no real domain is authorized yet
 // (D0 Section AU/T -- do not invent a production domain). Surfaced here so

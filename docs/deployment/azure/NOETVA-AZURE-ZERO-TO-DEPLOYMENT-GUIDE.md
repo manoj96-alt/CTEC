@@ -719,31 +719,45 @@ Used later in: Part 26 (image build/push), Part 30/31 (deployment).
 
 ---
 
-# PART 17 — Key Vault
+# PART 17 — Key Vault (CDD-067 corrected)
 
 **What a secret is, for a beginner:** any value that would cause harm if leaked — a database password, a signing key. Never in source control, never in a chat message, never in a plain environment file that gets committed.
 
 **Key Vault** is Azure's managed secret store — access is granted per-identity via RBAC, and every read/write is logged.
 
-**Created automatically by Pass 1.** Its access model: **RBAC-based** (`enableRbacAuthorization: true`), soft-delete on, purge-protection currently off for DEV (source-confirmed — this is a real, disclosed tradeoff, not an oversight: purge protection prevents *permanent* deletion for a set retention window, which is a stronger guarantee staging/prod carry and DEV currently does not).
+**Created by the foundation stage of Pass 1** (`deployApplicationTier=false`, Part 23). Its access model: **RBAC-based** (`enableRbacAuthorization: true`), soft-delete on, purge-protection currently off for DEV (source-confirmed — this is a real, disclosed tradeoff, not an oversight).
 
-**Every Noetva DEV secret — names only, no values, ever, in this guide:**
+**Real-Azure finding (CDD-067):** subscription **Owner** does **not** itself grant Key Vault *data-plane* access under `enableRbacAuthorization: true` — an operator with Owner will get `Forbidden`/`ForbiddenByRbac` attempting to read or write secrets here. Before running the commands below, self-assign the data-plane role:
+
+```bash
+# [AZURE MUTATION] -- scoped to this one vault only, never subscription-wide
+az role assignment create \
+  --assignee <your-own-object-id-or-upn> \
+  --role "Key Vault Secrets Officer" \
+  --scope $(az keyvault show --name <DEV_KEY_VAULT_NAME> --query id -o tsv)
+```
+
+RBAC assignments can take up to a few minutes to propagate — if the next command still returns `Forbidden` immediately after this, wait a short bounded interval and retry before escalating; this is expected Azure eventual consistency, not a defect.
+
+**Every Noetva DEV secret — names only, no values, ever, in this guide. Six secrets are required, not five** (CDD-067 Defect 3: the migration Job needs its own full connection string, previously undocumented):
 
 | Secret name | Purpose | Created by | Consumed by |
 |---|---|---|---|
-| `postgres-admin-password` | Flexible Server admin credential | You, Part 13 | Human operator only (bootstrap) |
-| `postgres-app-password` | `noetva_app` DB credential | You, Part 15 | Backend Container App |
-| `postgres-migrate-password` | `noetva_migrate` DB credential | You, Part 15 | Migration Container Apps Job |
-| `ctec-database-url` | Full backend connection string, built from the above | You, this Part | Backend Container App (secret reference) |
+| `postgres-admin-password` | Flexible Server admin credential | You, Part 13 (or reset per Part 23's recovery note, if this environment's original value is not safely recoverable) | Human operator only (bootstrap) |
+| `postgres-app-password` | `noetva_app` DB credential | You, Part 15 | Assembled into `ctec-database-url` below |
+| `postgres-migrate-password` | `noetva_migrate` DB credential | You, Part 15 | Assembled into `ctec-migration-database-url` below |
+| `ctec-database-url` | Full backend connection string, built from `postgres-app-password` | You, this Part | Backend Container App (secret reference) |
+| **`ctec-migration-database-url`** | Full **migration-role** connection string, built from `postgres-migrate-password` — a *different* value from `ctec-database-url`, never the same credential | You, this Part | Migration Container Apps Job (secret reference) |
 | `ctec-runtime-handoff-key` | Backend's internal signing key | You, this Part | Backend Container App |
 
-**Store them now (`[AZURE MUTATION]`, requires you to already have Key Vault Secrets Officer on this vault):**
+**Store all six now (`[AZURE MUTATION]`, requires the Key Vault Secrets Officer role above), strictly AFTER Part 15's database roles exist and BEFORE running Pass 1's application stage (`deployApplicationTier=true`, Part 23):**
 
 ```bash
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name postgres-admin-password --value "<value>"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name postgres-app-password --value "<value>"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name postgres-migrate-password --value "<value>"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-database-url --value "postgresql+psycopg://noetva_app:<postgres-app-password>@noetva-dev-eus2-pg.postgres.database.azure.com/ctec"
+az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-migration-database-url --value "postgresql+psycopg://noetva_migrate:<postgres-migrate-password>@noetva-dev-eus2-pg.postgres.database.azure.com/ctec"
 az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-runtime-handoff-key --value "$(python3 -c 'import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())')"
 ```
 
@@ -752,6 +766,8 @@ az keyvault secret set --vault-name <DEV_KEY_VAULT_NAME> --name ctec-runtime-han
 ```bash
 az keyvault secret list --vault-name <DEV_KEY_VAULT_NAME> -o table
 ```
+
+Expected: exactly these six names present before proceeding to Part 23's application-stage deployment. A missing `ctec-migration-database-url` will make the migration Job fail to provision, exactly as it did on the first real DEV deployment attempt (CDD-067).
 
 **Never do this:** run `az keyvault secret show` in a shared terminal session, screen-share, or paste output into a ticket. If you must confirm a value exists and is non-empty, check the `list` output's presence only.
 
@@ -922,12 +938,21 @@ FRONTEND_APP_CLIENT_ID = ______________________
 
 **Where:** same tenant → **App registrations** → **New registration**, name it `noetva-dev-backend-api`.
 
+This registration's **Overview** page shows two distinct values you need for two distinct purposes — do not conflate them:
+
+**SAVE THIS VALUE:**
+```
+BACKEND_API_APPLICATION_CLIENT_ID = ______________________
+```
+This is the plain **Application (client) ID** GUID shown at the top of the Overview page. **This is the value `CTEC_OIDC_AUDIENCE` / the Bicep `oidcAudience` parameter needs (CDD-076).** Microsoft Entra's v2.0 access tokens always set the `aud` claim to this bare client-ID GUID for a custom API — never to the Application ID URI below — regardless of how the authorization request itself was qualified.
+
 Then: this registration's **Overview** → **Expose an API** → set the Application ID URI.
 
 **SAVE THIS VALUE:**
 ```
 BACKEND_API_APPLICATION_ID_URI = ______________________
 ```
+This is used only to *qualify the frontend's scope requests* (`api://<client-id>/<scope>`, CDD-074) and to *route the claims-mapping policy onto the access token* (CDD-073) — it is never the token audience. Do not paste this value into `oidcAudience`/`CTEC_OIDC_AUDIENCE`.
 
 Read `frontend/lib/auth/config.ts` yourself before adding scopes here — do not invent scopes the frontend doesn't actually request.
 
@@ -967,11 +992,48 @@ Then, on the backend app registration's **Manifest**: set `acceptMappedClaims: t
 
 **Why no Azure Function is required here** (unlike some Microsoft tutorials you may find): for a static, per-user value at Noetva's current scale, the native Attributes & Claims path is sufficient — confirmed directly against current Microsoft Learn documentation, and structurally identical to what Noetva's own local `keycloak/ctec-realm.json` already does for local development.
 
-### Step 22.3 — Create your first DEV test user and set their `tenant_id` (unchanged)
+### Step 22.3 — Create your first DEV test user and set their `tenant_id` (CDD-075 correction)
 
-**Where:** External ID tenant → **Users** → **New user**.
+**Real-Azure finding (CDD-075):** an earlier version of this guide instructed **Where: External ID tenant → Users → New user** — the ordinary Entra admin-center workforce/member-user creation path. **A real login attempt disproved this.** That path creates a user whose only directory identity has `signInType: userPrincipalName` — but the configured `noetva-dev-signup-signin` user flow's **Email with password** identity provider validates credentials against a **local-account** identity of `signInType: emailAddress`, which the admin-center "New user" flow never creates. Every sign-in attempt against such a user fails with `AADSTS50126` ("invalid username or password") regardless of the actual password — the identity being checked doesn't exist, not because any password is wrong.
 
-**Action:** create a user, then on their profile's custom-attribute section, set `tenant_id` to a value matching a real Noetva tenant your DEV database will actually have (Part 39's Start step doesn't seed tenants — you'll create this alongside your first real login test, Part 33). **This value is set by the administrator here, on the user's directory profile — it is never collected from the user during the `noetva-dev-signup-signin` self-service sign-up flow.** A public/signup user must never be able to choose, edit, forge, or self-assert this value.
+**The correction:** create the DEV test user via Microsoft Graph, supplying the local-account identity shape explicitly (`[AZURE MUTATION]`, i.e. an Entra directory mutation — requires Graph `User.ReadWrite.All` or equivalent):
+
+```bash
+# [ENTRA MUTATION] -- do not put the password in shell history/logs/this file.
+# Read it interactively; the exact mechanism is left to the operator (e.g. a
+# hidden-input shell prompt), never a literal in a saved script.
+TOKEN=$(az account get-access-token --tenant <EXTERNAL_ID_TENANT_ID> --resource https://graph.microsoft.com --query accessToken -o tsv)
+
+python3 -c '
+import json, os, sys
+password = os.environ["NEW_DEV_USER_PASSWORD"]
+body = {
+    "displayName": "Noetva DEV Test User",
+    "identities": [
+        {"signInType": "emailAddress", "issuer": "<EXTERNAL_ID_DEFAULT_DOMAIN>", "issuerAssignedId": "<NEW_DEV_USER_EMAIL>"}
+    ],
+    "mail": "<NEW_DEV_USER_EMAIL>",
+    "passwordProfile": {"password": password, "forceChangePasswordNextSignIn": True},
+    "passwordPolicies": "DisablePasswordExpiration",
+}
+sys.stdout.write(json.dumps(body))
+' | curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data-binary @- \
+  https://graph.microsoft.com/v1.0/users | python3 -m json.tool
+```
+
+`<EXTERNAL_ID_DEFAULT_DOMAIN>` is the tenant's own default `*.onmicrosoft.com` domain (e.g. `noetvaexternal.onmicrosoft.com`) — this is the required `issuer` value for a local-account identity in this tenant, confirmed directly against Microsoft's own "Create a customer account in external tenants" Graph API example. `<NEW_DEV_USER_EMAIL>` need not be a real, routable mailbox for password-based sign-in to work — only the self-service "forgot password" email link requires a deliverable inbox, which this DEV identity is not expected to use (an administrator resets it via Graph instead, if ever needed). `passwordPolicies: "DisablePasswordExpiration"` is **required** for local-account identities per Microsoft's own documentation — omitting it risks the account's password expiring and reproducing an unrelated `AADSTS50055` failure later.
+
+**Verify the identity shape before attempting any login (`[AZURE READ-ONLY]`):**
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://graph.microsoft.com/v1.0/users/<NEW_USER_OBJECT_ID>?\$select=id,accountEnabled,identities,passwordPolicies" | python3 -m json.tool
+```
+
+Require `accountEnabled: true` and an `identities` entry with exactly `signInType: emailAddress`, `issuer: <EXTERNAL_ID_DEFAULT_DOMAIN>`, `issuerAssignedId: <NEW_DEV_USER_EMAIL>` — Microsoft may also add a second, companion `userPrincipalName`-type identity automatically; this is expected and does not replace the primary `emailAddress` identity the sign-in flow validates against.
+
+**Then set their `tenant_id`** to a value matching a real Noetva tenant your DEV database will actually have (Part 39's Start step doesn't seed tenants — you'll create this alongside your first real login test, Part 33), via the same Graph session (`PATCH` the user with `{"extension_<b2c-extensions-app-appid-no-dashes>_tenant_id": "<value>"}`, or the Entra admin-center's own custom-attribute UI on the user's profile — both write the identical directory property). **This value is set by the administrator here — it is never collected from the user during the `noetva-dev-signup-signin` self-service sign-up flow.** A public/signup user must never be able to choose, edit, forge, or self-assert this value.
 
 **SAVE THIS VALUE:**
 ```
@@ -1000,13 +1062,86 @@ No email-derived fallback tenant exists anywhere in the backend. No header-suppl
 
 ---
 
-# PART 23 — Deployment Pass 1
+# PART 22a — Private database bootstrap Job (CDD-068)
 
-### Why two passes are unavoidable
+### Why this exists
 
-The frontend's `NEXT_PUBLIC_OIDC_REDIRECT_URI` is *baked into the compiled JavaScript at build time* (confirmed in `frontend/Dockerfile`) — it cannot be an environment variable read at runtime. But the redirect URI has to point at the frontend's own real URL, which Azure only generates **after** the frontend Container App exists. This is why Pass 1 creates infrastructure with placeholder images first, and Pass 2 (Part 26 onward) builds the real, environment-specific images second.
+PostgreSQL is intentionally VNet-private (`publicNetworkAccess: Disabled`, Part 13) — this must never be weakened. A real bootstrap attempt confirmed that neither your own machine nor any operator-facing tool outside Azure's own network can resolve or reach `noetva-dev-eus2-pg.postgres.database.azure.com` at all. Part 15's `db-bootstrap/001_create_roles_and_grants.sql` (which creates the `noetva_app`/`noetva_migrate` roles) genuinely requires a real `psql` connection to that private server — so it must run from **inside** the same private network the server lives in.
 
-### Running Pass 1
+**The correction:** a small, one-time (or credential-rotation-time), ADMIN-authority Azure Container Apps Job, deployed into the *same* Container Apps Environment your application will eventually run in. It gains PostgreSQL reachability solely because it executes inside that already-private environment — no VPN, no Bastion, no VM, no firewall exception, no public database access of any kind is introduced. It is structurally distinct from the normal migration Job (Part 18/23) — it authenticates as the PostgreSQL *administrator*, never as `noetva_app`/`noetva_migrate`, and it is never given application runtime authority.
+
+**It never reads Key Vault.** All the credentials it needs (the admin password, and the two passwords you're choosing for `noetva_app`/`noetva_migrate`) are delivered directly as secure Bicep deployment parameters — the same mechanism `postgresAdminPassword` already uses for the PostgreSQL server resource itself. This is what breaks the circular dependency: the six Key Vault secrets (Part 17) do not need to exist yet for this Job to run.
+
+### Step 22a.1 — Build and push the bootstrap image
+
+**Which Azure service:** the same ACR created in Stage 1a (`noetvadeveus2acr`) — no new registry.
+
+```bash
+# [LOCAL — SAFE], then [AZURE MUTATION] for the push
+az acr login --name <DEV_ACR_NAME>
+docker build -f infra/azure/db-bootstrap/Dockerfile -t <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap:bootstrap infra/azure
+docker push <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap:bootstrap
+az acr repository show-manifests --name <DEV_ACR_NAME> --repository noetva/db-bootstrap -o table
+```
+
+**SAVE THIS VALUE** (the immutable digest reference — never the mutable tag — is what you deploy with):
+```
+DB_BOOTSTRAP_IMAGE_DIGEST = <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap@sha256:______________________
+```
+
+### Step 22a.2 — Choose the bootstrap credentials
+
+Generate three passwords now (the same secure method as Part 13's admin password): the PostgreSQL admin password (or reuse the one from Part 13a if you just reset it in this same session), and passwords for `noetva_app` and `noetva_migrate`. **Do not generate different values for these two later** — you will use the exact same `noetva_app`/`noetva_migrate` passwords again in Part 17 when populating Key Vault.
+
+### Step 22a.3 — Deploy and trigger the bootstrap Job
+
+**Action, `[AZURE MUTATION]`:**
+
+```bash
+az deployment sub create --location eastus2 \
+  --template-file infra/azure/main.bicep \
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=false \
+               deployDbBootstrapJob=true \
+               postgresAdminPassword="<from Part 13/13a>" \
+               dbBootstrapImageReference="<DB_BOOTSTRAP_IMAGE_DIGEST>" \
+               dbBootstrapAdminPassword="<same admin password>" \
+               dbBootstrapAppPassword="<the noetva_app password you just chose>" \
+               dbBootstrapMigratePassword="<the noetva_migrate password you just chose>"
+```
+
+Then trigger it once:
+
+```bash
+az containerapp job start --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev
+```
+
+**Verify (`[AZURE READ-ONLY]`, never prints a secret):**
+
+```bash
+az containerapp job execution list --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev -o table
+az containerapp job logs show --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev
+```
+
+**Expected:** the execution succeeds, and the log's final line reads `[run_db_bootstrap] roles and grants applied (no secret values were printed above)` — with no password value appearing anywhere in the log. This single successful run is what performs Part 15's database role creation — you do not separately connect with `psql` yourself.
+
+**STOP IF:** the Job fails, or any secret value appears in its logs. Do not weaken PostgreSQL's private networking to work around a connectivity failure — the Job runs inside the same VNet and should not have one; report the exact evidence instead.
+
+This Job resource may remain declared (`deployDbBootstrapJob=true`) at effectively zero ongoing cost for future credential-rotation events — it is manually triggered only, never scheduled, never run automatically.
+
+---
+
+# PART 23 — Deployment Pass 1 (CDD-067 two-stage correction)
+
+### Why two passes are unavoidable, and why Pass 1 itself is now two stages
+
+The frontend's `NEXT_PUBLIC_OIDC_REDIRECT_URI` is *baked into the compiled JavaScript at build time* (confirmed in `frontend/Dockerfile`) — it cannot be an environment variable read at runtime. But the redirect URI has to point at the frontend's own real URL, which Azure only generates **after** the frontend Container App exists. This is why Pass 1 creates infrastructure first, and Pass 2 (Part 26 onward) builds the real, environment-specific frontend image second.
+
+**Real-Azure finding (CDD-067):** an earlier version of this guide claimed Pass 1 could create the frontend/backend Container Apps and migration Job pointed at the placeholder image string `REPLACE_AT_DEPLOY_TIME_WITH_DIGEST_REFERENCE`, and that they simply "would not run correctly yet." **A real deployment attempt disproved this.** Azure Container Apps validates that `image` is a syntactically parseable reference **at provisioning time** — a literal placeholder string is rejected outright (`InvalidParameterValueInContainerTemplate`), and the resource never provisions at all. The same real attempt also showed the backend Container App and migration Job cannot provision until the Key Vault secrets they reference (Part 17) already exist — but Key Vault is itself created in this same deployment, empty.
+
+**The correction:** Pass 1 is now explicitly **two stages**, both run by the same command with one parameter changed, never two different templates:
+
+### Stage 1a — Foundation (`deployApplicationTier=false`)
 
 **Which Azure service:** Azure Resource Manager, driven by Bicep — `infra/azure/main.bicep` (subscription-scoped).
 
@@ -1017,14 +1152,53 @@ The frontend's `NEXT_PUBLIC_OIDC_REDIRECT_URI` is *baked into the compiled JavaS
 ```bash
 az deployment sub create --location eastus2 \
   --template-file infra/azure/main.bicep \
-  --parameters infra/azure/environments/dev/main.parameters.json
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=false
 ```
 
-**What this creates:** the resource group, VNet/subnets/private DNS, PostgreSQL Flexible Server, ACR, Key Vault, all five managed identities, the Container Apps Environment, both Container Apps (pointed at `REPLACE_AT_DEPLOY_TIME_WITH_DIGEST_REFERENCE` placeholders — they will not actually run correctly yet, and that's expected), the migration Job, Log Analytics, and the three Azure Monitor alerts.
+(`deployApplicationTier` already defaults to `false` in the committed parameter file — the explicit override above is for clarity and is safe to omit.)
 
-**Expected result:** the command completes with `provisioningState: Succeeded`.
+**What this creates:** the resource group, VNet/subnets/private DNS, PostgreSQL Flexible Server, ACR, Key Vault, all four Pass-1 managed identities, the Container Apps Environment, and foundation RBAC. **It does not create the frontend/backend Container Apps, the migration Job, or the monitoring alerts** — those are gated behind `deployApplicationTier` and are created only in Stage 1c below.
+
+**Expected result:** the command completes with `provisioningState: Succeeded`. This stage is safe and idempotent to re-run at any time (e.g. if you are recovering from a prior failed attempt) — it will converge existing foundation resources unchanged and will not delete or replace anything.
 
 **STOP IF:** the deployment fails. Read the specific error — `az deployment operation group list --resource-group rg-noetva-dev` shows exactly which resource failed and why. Do not hand-edit the failed resource in the Portal; fix the underlying parameter/quota issue and redeploy.
+
+### Stage 1b — Operator bootstrap (between the two Bicep invocations)
+
+Perform, in order, now that the foundation exists: **reset the PostgreSQL admin password** (Part 13a below) if this is a recovery from a prior attempt, **run the private database bootstrap Job** (Part 22a — CDD-068; this is what actually performs Part 15's database role creation, since PostgreSQL is intentionally VNet-private and cannot be reached directly from your own machine), **populate Key Vault** (Part 17 — all six secrets, using the exact same application/migration passwords you just supplied to the bootstrap Job), and finally **build and push the real application images** (Parts 26/27) to the now-existing ACR.
+
+#### Part 13a — PostgreSQL admin-password recovery (recovery scenarios only)
+
+If a prior Stage-1a attempt already created `noetva-dev-eus2-pg` and the admin password used then is no longer known (it is never logged, printed, or committed — by design), reset it in place. This is a safe, non-destructive operation; it does not recreate the server or affect existing data:
+
+```bash
+# [AZURE MUTATION] -- rotates the admin credential only, no data loss
+az postgres flexible-server update \
+  --name noetva-dev-eus2-pg --resource-group rg-noetva-dev \
+  --admin-password "<newly generated value, never printed/logged>"
+```
+
+### Stage 1c — Application tier (`deployApplicationTier=true`)
+
+**Prerequisites (verify all before running):** all six Key Vault secrets from Part 17 exist; a real, digest-pinned backend image and a real, digest-pinned frontend image have been pushed to the ACR created in Stage 1a (Parts 26/27); `deployApplicationTier=true` is the only Bicep-parameter difference from Stage 1a.
+
+**Action, `[AZURE MUTATION]`:**
+
+```bash
+az deployment sub create --location eastus2 \
+  --template-file infra/azure/main.bicep \
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=true \
+               backendImageReference="<real digest reference>" \
+               frontendImageReference="<real digest reference>"
+```
+
+**What this creates:** the backend and frontend Container Apps (now with real images and now-resolvable Key Vault secrets), the migration Job, and the three Azure Monitor alerts.
+
+**Expected result:** the command completes with `provisioningState: Succeeded`, and the frontend/backend Container Apps reach a healthy revision (subject to Part 30/31's separate image-deploy verification).
+
+**STOP IF:** the deployment fails for any reason other than a known, already-governed cause — do not hand-edit resources in the Portal; determine the root cause and, if it represents a new defect, treat it exactly as CDD-067 treated the original two.
 
 ---
 
@@ -1097,11 +1271,14 @@ docker build \
   --build-arg NEXT_PUBLIC_OIDC_CLIENT_ID="<FRONTEND_APP_CLIENT_ID>" \
   --build-arg NEXT_PUBLIC_OIDC_REDIRECT_URI="https://<DEV_FRONTEND_FQDN>/auth/callback" \
   --build-arg NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI="https://<DEV_FRONTEND_FQDN>" \
+  --build-arg NEXT_PUBLIC_OIDC_API_RESOURCE_URI="api://3a880f13-985d-4a71-be05-20f97b9bcfa3" \
   -t <DEV_ACR_LOGIN_SERVER>/noetva/frontend:<git-sha>-dev ./frontend
 docker push <DEV_ACR_LOGIN_SERVER>/noetva/frontend:<git-sha>-dev
 ```
 
 **Why this specific image can never be reused for another environment:** every one of those `NEXT_PUBLIC_*` values is baked into the compiled JavaScript. A staging deployment needs its own build with staging's own values.
+
+**Why `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` (CDD-074):** Microsoft Entra External ID requires every custom-API scope requested at sign-in to be qualified with the backend's own Application ID URI (`api://<backend-client-id>`) — an unqualified scope like `oqi:read` is resolved against Microsoft Graph instead, which has no such permission (`AADSTS650053`). Local Keycloak has no such requirement and continues to receive the bare capability names unchanged; this build arg is required for every real Azure/Entra build and must never be omitted — its value is the backend's own public Application ID URI, never a secret.
 
 **SAVE THIS VALUE (same pattern as Part 26):**
 ```
@@ -1182,17 +1359,26 @@ az containerapp update --name noetva-dev-eus2-backend --resource-group rg-noetva
   --image <DEV_ACR_LOGIN_SERVER>/noetva/backend@<BACKEND_IMAGE_DIGEST>
 ```
 
-**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); `CTEC_OIDC_TENANT_CLAIM=noetva_tenant_id` (CDD-064/CDD-065: the bare `tenant_id` claim name is Microsoft-reserved and cannot be used as an outgoing Entra claim, even with a Namespace -- local/Docker Keycloak is unaffected and continues using the backend's own `tenant_id` default); Key Vault secret references `ctec-database-url`, `ctec-runtime-handoff-key`. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
+**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); `CTEC_OIDC_TENANT_CLAIM=noetva_tenant_id` (CDD-064/CDD-065: the bare `tenant_id` claim name is Microsoft-reserved and cannot be used as an outgoing Entra claim, even with a Namespace -- local/Docker Keycloak is unaffected and continues using the backend's own `tenant_id` default). **CDD-070 correction:** the Key Vault secret references are named `ctec-database-url`/`ctec-runtime-handoff-key`, but the container environment-variable names the backend's `pydantic-settings` (`env_prefix="CTEC_"`) actually reads are the distinct, explicitly-mapped `CTEC_DATABASE_URL`/`CTEC_RUNTIME_HANDOFF_KEY` -- these are two different namespaces, never algorithmically derived from one another. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
 
-**Verify (`[AZURE READ-ONLY]`):**
+**Verify (`[AZURE READ-ONLY]`), mandatory, real-provider precondition (CDD-070) -- names only, never values:**
+
+```bash
+az containerapp show --name noetva-dev-eus2-backend --resource-group rg-noetva-dev \
+  --query "properties.template.containers[0].env[].name" -o tsv
+```
+
+Expected to include `CTEC_DATABASE_URL` and `CTEC_RUNTIME_HANDOFF_KEY` -- **not** the raw `ctec-database-url`/`ctec-runtime-handoff-key` strings. If either raw name appears as an active env-var name instead of its `CTEC_`-prefixed counterpart, the secret-reference mapping has regressed; stop and treat it as a defect, do not proceed.
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' "https://<DEV_BACKEND_FQDN>/health"
+az containerapp revision list --name noetva-dev-eus2-backend --resource-group rg-noetva-dev \
+  --query "[].{active:properties.active, healthState:properties.healthState, runningState:properties.runningState}" -o table
 ```
 
-Expected: `200`.
+Expected: HTTP `200`, and the active revision's `healthState`/`runningState` genuinely healthy/running -- **`provisioningState: Succeeded` on the Container App resource itself does not imply this**; a revision can be provisioned yet never become routable (this is exactly what happened to the frontend before CDD-070, Part 31).
 
-**Do not treat this as proof the database is reachable** — `/health` returns `{"status": "healthy"}` unconditionally, confirmed directly from `backend/app/api/health/router.py`. It checks nothing else. There is deliberately no `/ready` endpoint yet.
+**Do not treat `/health` as proof the database is reachable** — `/health` returns `{"status": "healthy"}` unconditionally, confirmed directly from `backend/app/api/health/router.py`. It checks nothing else. There is deliberately no `/ready` endpoint yet.
 
 ---
 
@@ -1206,13 +1392,17 @@ az containerapp update --name noetva-dev-eus2-frontend --resource-group rg-noetv
 
 Target port `3000`. No server-side environment variables — every OIDC value was baked in at build time (Part 27).
 
-**Verify:**
+**CDD-070 correction:** the frontend Container App now has its own truthful, dependency-free health route (`frontend/app/health/route.ts`) and its probe path is passed explicitly (`healthProbePath: '/health'` at its own `frontendApp` call site in `resources.bicep`) — it no longer inherits the backend's `/health` assumption via the shared module's (formerly hardcoded) default. Before this correction, the revision could report `provisioningState: Succeeded` while never leaving `Activating`/`healthState: None`, because the platform's probe targeted a route that only existed on the backend.
+
+**Verify (`[AZURE READ-ONLY]`), mandatory, real-provider precondition (CDD-070):**
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' "https://<DEV_FRONTEND_FQDN>/"
+az containerapp revision list --name noetva-dev-eus2-frontend --resource-group rg-noetva-dev \
+  --query "[].{active:properties.active, healthState:properties.healthState, runningState:properties.runningState}" -o table
+curl -s -o /dev/null -w '%{http_code}\n' "https://<DEV_FRONTEND_FQDN>/health"
 ```
 
-Expected: `200`.
+Expected: the active revision's `healthState`/`runningState` genuinely healthy/running (not indefinitely `Activating`), and HTTP `200` from `/health` — reachable with no login, no access token, no final custom domain, and no backend call (confirm this by inspecting `frontend/app/health/route.ts` itself: it must never call the backend, `/administration`, the OIDC authority, Key Vault, or a database). Do not use `/administration` as this proof — it deliberately calls the *backend's* `/health`, which would make frontend liveness depend on backend availability.
 
 ---
 
@@ -1294,18 +1484,18 @@ Three metric alerts exist, all routed to one action group (`noetva-dev-eus2-ag-o
 |---|---|---|---|
 | `noetva-dev-eus2-alert-pg-storage` | `storage_percent` | `>80`, 15-min window | 1 |
 | `noetva-dev-eus2-alert-pg-connections` | `active_connections` | `>80`, 15-min window | 2 |
-| `noetva-dev-eus2-alert-migration-job-failed` | `JobExecutionCount` (`executionStatus=Failed`) | `>0`, 5-min window | 0 |
+| `noetva-dev-eus2-alert-migration-job-failed` | `Executions` (`state=Failed`) | `>0`, 5-min window | 0 |
 
-**Do not treat these metric names as guaranteed correct without checking.** They were written from Azure Monitor namespace knowledge, not independently re-verified against a real deployed resource before now — Bicep's compiler cannot validate a metric-name string.
+**CDD-069 correction, real-Azure verified.** The migration-Job alert originally used `JobExecutionCount`/`executionStatus`, neither of which exists on `Microsoft.App/jobs` — a real deployment attempt failed outright (`BadRequest: Couldn't find a metric named JobExecutionCount`). All three metric names in the table above are now real-Azure verified: the PostgreSQL metrics (`storage_percent`, `active_connections`) by that same deployment's success on those two alerts, and the migration-Job metric (`Executions`/`state`) by directly querying the real deployed resource's own metric definitions (below) and independently corroborating the `state` dimension's values against Microsoft's published `JobExecutionRunningState` REST API enum (`Running | Processing | Stopped | Degraded | Failed | Unknown | Succeeded`). This alert means exactly one thing: a real migration Job execution reached the `Failed` terminal state — it stays silent while the Job is merely dormant (no executions), and it does not fire on a `Succeeded` execution. See `docs/cdd/CDD-069-Azure-DEV-Migration-Job-Monitoring-Correction.md` for full evidence.
 
-**Verify (`[AZURE READ-ONLY]`), mandatory, once resources exist:**
+**Verify (`[AZURE READ-ONLY]`), mandatory, before every real deployment that touches this module — this is a real-provider precondition, not a one-time check:**
 
 ```bash
 az monitor metrics list-definitions --resource "<postgres server resource ID>" -o table
 az monitor metrics list-definitions --resource "<migration job resource ID>" -o table
 ```
 
-Compare the returned names against the table above. **If any name doesn't match: stop treating that alert as authoritative.** Do not hot-fix `monitoring-alerts-only.bicep` directly against DEV in the Portal — route any correction through the normal commit/PR/merge process (Part 74 explains why).
+Compare the returned names against the table above. **If any name doesn't match: stop treating that alert as authoritative.** Do not hot-fix `monitoring-alerts-only.bicep` directly against DEV in the Portal — route any correction through the normal commit/PR/merge process (Part 74 explains why). After deployment, also independently read back the deployed alert resource itself (`az resource show --ids <alert resource ID>`) and confirm its `properties.criteria.allOf[0].metricName`/`dimensions[0].name` match this table exactly — the goal is proving what Azure actually accepted, not merely what the Bicep source says.
 
 ---
 
@@ -1642,7 +1832,7 @@ Never run this to "save cost" — Stop DEV (Part 43) already achieves the real c
 
 **P. Business-tenant claim (CDD-065):** [ ] Custom attribute `tenant_id` created [ ] Claim `noetva_tenant_id` (no Namespace) mapped into the access token on the backend's own Enterprise Application entry (not just ID token) [ ] Save confirmed to succeed (not "This claim type is restricted") [ ] All four `oidcTenantClaim` environment parameters already set to `noetva_tenant_id` in source [ ] DEV test user has a value set
 
-**Q. Pass 1:** [ ] `main.bicep` deployment succeeded
+**Q. Pass 1 (CDD-067 two-stage):** [ ] Stage 1a foundation deployment succeeded (`deployApplicationTier=false`) [ ] Key Vault Secrets Officer self-assigned [ ] all six Key Vault secrets populated, including `ctec-migration-database-url` [ ] database roles created (Part 15) [ ] real digest-pinned backend/frontend images pushed [ ] Stage 1c application-tier deployment succeeded (`deployApplicationTier=true`)
 
 **R. Generated values:** [ ] Frontend/backend FQDNs captured [ ] Fed back into Entra redirect URIs, GitHub variables
 

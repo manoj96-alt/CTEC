@@ -155,6 +155,9 @@ services:
         # default remains the single canonical scope authority (PAD-002
         # SS15). Empty when unset; do not add a value here.
         NEXT_PUBLIC_OIDC_SCOPE: ${NEXT_PUBLIC_OIDC_SCOPE:-}
+        # CDD-074: unset for local Keycloak, which needs no resource-URI
+        # qualification -- do not set this for the local/CI path.
+        NEXT_PUBLIC_OIDC_API_RESOURCE_URI: ${NEXT_PUBLIC_OIDC_API_RESOURCE_URI:-}
     ports: ["3000:3000"]
     depends_on:
       backend:
