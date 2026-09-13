@@ -324,6 +324,33 @@ def check_azure_dsn_guide_uses_canonical_driver_scheme() -> None:
     )
 
 
+# ---- 20. Azure frontend build guide includes the resource-qualified scope
+# build arg (CDD-074): the deployment guide's frontend `docker build`
+# example must pass NEXT_PUBLIC_OIDC_API_RESOURCE_URI set to the real,
+# governed backend Application ID URI -- omitting it reproduces the real
+# AADSTS650053 defect this artifact closed (bare custom scopes resolve
+# against Microsoft Graph instead of the Noetva backend resource).
+def check_azure_frontend_guide_includes_resource_scope_arg() -> None:
+    guide = read(REPO_ROOT / "docs" / "deployment" / "azure" / "NOETVA-AZURE-ZERO-TO-DEPLOYMENT-GUIDE.md")
+    # The frontend build example spans multiple backslash-continued lines;
+    # match the whole block between "docker build \" and the final
+    # "./frontend" invocation target.
+    block_m = re.search(r"docker build \\[\s\S]*?\./frontend\n", guide)
+    block = block_m.group(0) if block_m else ""
+    problems: list[str] = []
+    if not block_m:
+        problems.append("no frontend docker build example found in the guide")
+    elif "NEXT_PUBLIC_OIDC_API_RESOURCE_URI" not in block:
+        problems.append("frontend docker build example is missing --build-arg NEXT_PUBLIC_OIDC_API_RESOURCE_URI")
+    elif "api://3a880f13-985d-4a71-be05-20f97b9bcfa3" not in block:
+        problems.append("frontend docker build example's NEXT_PUBLIC_OIDC_API_RESOURCE_URI is not set to the real governed backend Application ID URI")
+    check(
+        "azure-frontend-guide-includes-resource-scope-arg",
+        not problems,
+        "; ".join(problems) or "frontend build example passes NEXT_PUBLIC_OIDC_API_RESOURCE_URI=api://3a880f13-985d-4a71-be05-20f97b9bcfa3",
+    )
+
+
 def main() -> int:
     check_bicep_compiles()
     check_no_secret_leakage()
@@ -343,6 +370,7 @@ def main() -> int:
     check_secret_env_contract_explicit_and_valid()
     check_health_probe_path_parameterized()
     check_azure_dsn_guide_uses_canonical_driver_scheme()
+    check_azure_frontend_guide_includes_resource_scope_arg()
 
     failed = 0
     for name, passed, detail in results:

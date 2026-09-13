@@ -1225,11 +1225,14 @@ docker build \
   --build-arg NEXT_PUBLIC_OIDC_CLIENT_ID="<FRONTEND_APP_CLIENT_ID>" \
   --build-arg NEXT_PUBLIC_OIDC_REDIRECT_URI="https://<DEV_FRONTEND_FQDN>/auth/callback" \
   --build-arg NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI="https://<DEV_FRONTEND_FQDN>" \
+  --build-arg NEXT_PUBLIC_OIDC_API_RESOURCE_URI="api://3a880f13-985d-4a71-be05-20f97b9bcfa3" \
   -t <DEV_ACR_LOGIN_SERVER>/noetva/frontend:<git-sha>-dev ./frontend
 docker push <DEV_ACR_LOGIN_SERVER>/noetva/frontend:<git-sha>-dev
 ```
 
 **Why this specific image can never be reused for another environment:** every one of those `NEXT_PUBLIC_*` values is baked into the compiled JavaScript. A staging deployment needs its own build with staging's own values.
+
+**Why `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` (CDD-074):** Microsoft Entra External ID requires every custom-API scope requested at sign-in to be qualified with the backend's own Application ID URI (`api://<backend-client-id>`) — an unqualified scope like `oqi:read` is resolved against Microsoft Graph instead, which has no such permission (`AADSTS650053`). Local Keycloak has no such requirement and continues to receive the bare capability names unchanged; this build arg is required for every real Azure/Entra build and must never be omitted — its value is the backend's own public Application ID URI, never a secret.
 
 **SAVE THIS VALUE (same pattern as Part 26):**
 ```
