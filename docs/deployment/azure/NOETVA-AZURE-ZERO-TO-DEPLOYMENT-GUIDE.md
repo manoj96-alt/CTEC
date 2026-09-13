@@ -938,12 +938,21 @@ FRONTEND_APP_CLIENT_ID = ______________________
 
 **Where:** same tenant → **App registrations** → **New registration**, name it `noetva-dev-backend-api`.
 
+This registration's **Overview** page shows two distinct values you need for two distinct purposes — do not conflate them:
+
+**SAVE THIS VALUE:**
+```
+BACKEND_API_APPLICATION_CLIENT_ID = ______________________
+```
+This is the plain **Application (client) ID** GUID shown at the top of the Overview page. **This is the value `CTEC_OIDC_AUDIENCE` / the Bicep `oidcAudience` parameter needs (CDD-076).** Microsoft Entra's v2.0 access tokens always set the `aud` claim to this bare client-ID GUID for a custom API — never to the Application ID URI below — regardless of how the authorization request itself was qualified.
+
 Then: this registration's **Overview** → **Expose an API** → set the Application ID URI.
 
 **SAVE THIS VALUE:**
 ```
 BACKEND_API_APPLICATION_ID_URI = ______________________
 ```
+This is used only to *qualify the frontend's scope requests* (`api://<client-id>/<scope>`, CDD-074) and to *route the claims-mapping policy onto the access token* (CDD-073) — it is never the token audience. Do not paste this value into `oidcAudience`/`CTEC_OIDC_AUDIENCE`.
 
 Read `frontend/lib/auth/config.ts` yourself before adding scopes here — do not invent scopes the frontend doesn't actually request.
 
