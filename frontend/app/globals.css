@@ -673,17 +673,106 @@ dialog textarea {
 .observatory-nav-secondary a:hover {
   color: var(--obs-text-secondary);
 }
+/* WOW-I1-R2: the corrected two-surface semantic contract. R1 set
+   `.observatory-main`'s ambient color to `var(--ink)` (dark), which
+   fixed text *inside* `.panel`/`.table-wrap`/etc. -- but a great deal of
+   real content (every `PageHeader` title/subtitle, and the entire
+   Findings page: filters, the bare `<table>`, pagination) renders
+   directly under `.observatory-main` with NO `.panel` wrapper, sitting
+   straight on the dark canvas. Forcing dark ink as the ambient default
+   made all of that dark-on-dark. The real Azure walkthrough on revision
+   --0000006 confirmed this precisely (Quality/Intelligence/Supplier
+   Risk/Supply-Chain Impact titles, and the entire Findings page).
+
+   Correct model: the ambient default should match the surface it's
+   actually sitting on. `.observatory-main`'s own background is dark
+   (inherited from `.observatory-shell`), so its ambient text is light.
+   Each light "island" (`.panel` and the other pre-existing light-surface
+   classes below) explicitly overrides back to the original dark ink --
+   exactly the reverse of R1's fix, and the one that actually matches
+   the real DOM structure. */
 .observatory-main {
   flex: 1;
   width: 100%;
   max-width: 72rem;
   margin: 0 auto;
   padding: 2.5rem 1.5rem 4rem;
-  /* Light-panel compatibility contract: every un-migrated legacy page
-     interior (.panel, tables, code, muted/eyebrow text, etc.) gets the
-     original light-mode ink color explicitly here, not merely by
-     accident of inheritance. */
+  color: var(--obs-text-primary);
+}
+.observatory-main .panel,
+.observatory-main .table-wrap,
+.observatory-main .dataset-table-wrap,
+.observatory-main .status-grid,
+.observatory-main .assessment-form fieldset,
+.observatory-main dialog {
   color: var(--ink);
+}
+/* PageHeader's description (a bare <p>, no explicit color of its own)
+   used to correctly inherit the pre-WOW `--muted` gray -- readable on a
+   light background, unreadable on the dark canvas it actually sits on
+   post-WOW. `.page-heading` is PageHeader's own real wrapper class (and
+   the two pages that replicate its exact markup), so this is still a
+   systemic rule, not a per-page one. */
+.observatory-main .page-heading p {
+  color: var(--obs-text-secondary);
+}
+
+/* Bare, unwrapped tables/selects rendered directly on the dark canvas
+   (e.g. the Findings page: filters + <table>, no .table-wrap). Wrapped
+   in :where(...) so `.observatory-main` itself contributes ZERO
+   specificity here -- these rules are deliberately LOW-priority
+   fallback defaults (specificity equal to the bare element alone) that
+   apply only to a genuinely bare table/select, and can never override
+   the existing, more specific `.table-wrap`/`.dataset-table-wrap`/
+   `.form-grid` rules for anything actually wrapped in one of those
+   (each of which is at least one real class more specific). This is
+   foundation compatibility, not a Findings-specific redesign -- the
+   same pattern `.form-grid input` already establishes for panels,
+   applied the same way to the canvas side. */
+:where(.observatory-main) table {
+  width: 100%;
+  border-collapse: collapse;
+}
+:where(.observatory-main) table th,
+:where(.observatory-main) table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--obs-border);
+  text-align: left;
+}
+:where(.observatory-main) table thead th {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--obs-text-secondary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+:where(.observatory-main) table tbody a {
+  color: var(--obs-intelligence);
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+/* Bare <label> text (e.g. Findings' "Quality family"/"Status") needs no
+   extra rule at all: it has no explicit color of its own, so it already
+   correctly inherits the new light ambient default outside any `.panel`,
+   and the panel's own dark override (above) still correctly applies to
+   `.form-grid label` inside a panel -- pure inheritance handles both
+   cases without a third selector that could conflict with either. Only
+   `<select>` genuinely needs an explicit rule, because Tailwind's
+   Preflight strips its native chrome entirely (border/background), which
+   inheritance alone can never restore. */
+:where(.observatory-main) select {
+  display: inline-block;
+  margin-left: 0.4rem;
+  border: 1px solid var(--obs-border-strong);
+  border-radius: var(--obs-radius);
+  padding: 0.35rem 0.5rem;
+  background: var(--obs-surface);
+  color: var(--obs-text-primary);
+  font: inherit;
+}
+:where(.observatory-main) select:focus-visible {
+  outline: 3px solid var(--obs-intelligence);
+  outline-offset: 1px;
 }
 @media (max-width: 760px) {
   .observatory-header-inner {
