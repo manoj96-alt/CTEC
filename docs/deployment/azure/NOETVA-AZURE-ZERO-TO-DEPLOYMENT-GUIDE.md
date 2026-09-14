@@ -1323,6 +1323,41 @@ CUSTOM_DOMAIN_CERTIFICATE_NAME = ______________________
 
 **Step 5 — represent the binding in source** (so a future full redeploy doesn't drift from what you just created live): set `frontendHostname` and the new `customDomainCertificateName` parameter to the real values in your environment's `main.parameters.json`, and append the new origin to `corsOrigins`. The next `az deployment group create` run will then declare exactly the binding you already created — it does not (and cannot) recreate the certificate itself, since certificate issuance is validation-gated and not a plain Bicep `create`.
 
+**Step 6 — verify HTTPS before touching identity/CORS (`[AZURE READ-ONLY]`):**
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://app.noetva.ai/
+echo | openssl s_client -connect app.noetva.ai:443 -servername app.noetva.ai 2>/dev/null | openssl x509 -noout -subject -issuer -dates
+```
+Expected: `200`, and a valid certificate with `subject=CN = app.noetva.ai` issued by DigiCert. **Do not proceed to Step 7 until this passes** — an Entra redirect URI or CORS change pointed at a domain that doesn't yet serve HTTPS correctly will only make the next login attempt fail for a second, unrelated reason, muddying diagnosis.
+
+**Step 7 — add the new SPA redirect URI, additively (`[ENTRA MUTATION]`, `OPERATOR APPROVAL REQUIRED` — this changes the live identity provider's accepted redirect surface):**
+```bash
+TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --tenant <EXTERNAL_ID_TENANT_ID> --query accessToken -o tsv)
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://graph.microsoft.com/v1.0/applications/<FRONTEND_APP_OBJECT_ID>" \
+  -d '{"spa":{"redirectUris":["https://<DEV_FRONTEND_FQDN>/auth/callback","https://app.noetva.ai/auth/callback"]}}'
+```
+`spa.redirectUris` is a **list** — this call must include the *existing* Container Apps FQDN callback alongside the new one, never only the new one, or you silently revoke the fallback callback every future rebuild still needs to keep working. Read the app back (`GET` the same URL with `?$select=spa,web`) and confirm both URIs are present before continuing.
+
+**Step 8 — update the logout URL (`[ENTRA MUTATION]`, `OPERATOR APPROVAL REQUIRED`):**
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://graph.microsoft.com/v1.0/applications/<FRONTEND_APP_OBJECT_ID>" \
+  -d '{"web":{"logoutUrl":"https://app.noetva.ai"}}'
+```
+**`web.logoutUrl` is single-valued in this Graph schema, not a list.** Setting it to the custom domain necessarily *replaces* the old Container Apps FQDN logout value — this is expected, not a mistake, and is not something you can avoid by wrapping it in an array. Confirm your Graph API version still shows a single-string `logoutUrl` (not an array) before assuming this; if a future Graph version changes this to a list, prefer keeping both values additively instead.
+
+**Step 9 — rebuild the frontend image pointed at the custom domain** (Part 27's build args, with `NEXT_PUBLIC_OIDC_REDIRECT_URI="https://app.noetva.ai/auth/callback"` and `NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI="https://app.noetva.ai"`; every other build arg unchanged) and deploy it (Part 31's command, new digest).
+
+**Step 10 — add the custom domain to CORS, additively (`[AZURE MUTATION]`):**
+```bash
+az containerapp update --name noetva-dev-eus2-backend --resource-group rg-noetva-dev \
+  --set-env-vars 'CTEC_CORS_ORIGINS=["https://<DEV_FRONTEND_FQDN>", "https://app.noetva.ai"]'
+```
+Same additive principle as Step 7 — keep the old origin present unless you have a specific reason to remove it. No wildcard, ever, under any circumstance.
+
+**Idempotency:** Steps 1–4 (hostname add, certificate create, hostname bind) are safe to re-run — Azure recognizes an already-bound hostname/certificate and returns the existing state rather than erroring or duplicating. Steps 7/8/10 are `VERIFY BEFORE RE-RUN` — always read the current value back first, since a blind re-run of Step 7 without including the existing URI would silently drop it.
+
 ---
 
 # PART 28 — Database bootstrap
@@ -1375,7 +1410,7 @@ SELECT version_num FROM alembic_version;
 SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
-**Expected migration head, confirmed directly from source:** `0046_oqi5_remediation_tenancy`.
+**Expected migration head, confirmed directly from source:** `0046_oqi5_remediation_tenant_integrity`.
 
 **Expected table count:** **126 application/governed tables, plus the `alembic_version` bookkeeping table Alembic itself creates — 127 total rows from the query above.** This is not a discrepancy to investigate; it's simply whether your count includes Alembic's own tracking table.
 
@@ -1480,6 +1515,172 @@ curl -s -D - -o /dev/null -H "Origin: https://<DEV_FRONTEND_FQDN>" "https://<DEV
 
 ---
 
+# PART 34a — Effective scope contract: request ≠ consent ≠ token content (CDD-074/CDD-077)
+
+**Three different things are easy to conflate here. Keep them separate:**
+
+1. **Configured runtime request scopes** — `frontend/lib/auth/config.ts`'s `BACKEND_CAPABILITY_SCOPES` constant, the exact list the frontend asks for at sign-in. Read it yourself; do not hardcode a count into your worksheet from this guide, since it changes as capability grows.
+2. **Effective consent grant** — the real `oauth2PermissionGrant` recorded once an administrator consents, tenant-wide (`consentType: AllPrincipals`), for the frontend app against the backend resource. This grant can, and in the reference deployment does, cover **every** scope the backend API registration exposes — not only the subset the frontend's own request list asks for.
+3. **Effective token `scp` content** — what actually lands in a real access token. In the reference deployment this is the **full 11-scope grant**, not the frontend's smaller ~10-scope request list, because Microsoft returns the full tenant-wide consented set for this grant shape regardless of the narrower runtime request.
+
+**This is expected, not a defect.** The backend's own per-endpoint `authorize()` check is scope-based and fail-closed — a wider `scp` than the frontend happens to ask for does not grant access to anything the tenant administrator didn't already consent to, and does not bypass any endpoint's own required-scope check.
+
+**Inspect the real grant yourself (`[AZURE READ-ONLY]`):**
+```bash
+TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --tenant <EXTERNAL_ID_TENANT_ID> --query accessToken -o tsv)
+FRONTEND_SP_ID=$(curl -s -H "Authorization: Bearer $TOKEN" "https://graph.microsoft.com/v1.0/servicePrincipals?\$filter=appId eq '<FRONTEND_APP_CLIENT_ID>'&\$select=id" | python3 -c "import json,sys;print(json.load(sys.stdin)['value'][0]['id'])")
+curl -s -H "Authorization: Bearer $TOKEN" "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?\$filter=clientId eq '$FRONTEND_SP_ID'" | python3 -m json.tool
+```
+Find the grant whose `resourceId` is the backend's service principal — its `scope` field is the real, space-delimited consented set. Do not guess this from the frontend's own source list.
+
+---
+
+# PART 34b — Demo data: tenant-correct seeding (CDD-077 R13) — read fully before running anything here
+
+### Why the seeder defaults are never changed
+
+`backend/app/infrastructure/persistence/demo_gate_f_seeder.py` and `demo_oqi_seeder.py` each expose `seed(tenant_id=...)`, whose default is `BOOTSTRAP_DEMO_TENANT_ID` (`"ctec-demo-tenant"`, defined in `backend/app/core/bootstrap.py`). **This default is never changed for Azure.** A second, explicit constant, `AZURE_DEV_DEMO_TENANT_ID = "noetva-dev-tenant"`, is additionally accepted by both seeders' guard — but only when a caller explicitly passes `tenant_id="noetva-dev-tenant"`. There is no environment detection, no implicit fallback, anywhere in this mechanism. If you ever see a proposal to make either seeder "auto-detect" its target tenant, reject it — that is exactly the kind of implicit behavior CDD-077 deliberately avoided.
+
+### CRITICAL SAFETY LESSON — read before your first seed run, on any environment
+
+**Every entity ID these seeders create is deterministic from a fixed label string (`uuid5`), never from `tenant_id`.** For example, the Gate F "recommended" scenario's supplier entity always gets ID `5d98f421-ef60-5463-9c4e-f81b8bc63da1`, regardless of which tenant you pass. Each seeder's own idempotency check looks up that exact ID by primary key — if a row with that ID already exists under **a different tenant**, the check finds it, returns `created=False`, and creates **nothing** under your new tenant. The seed command exits with no error and looks successful. Nothing appears under the tenant you actually wanted.
+
+**Before ever seeding a tenant for the first time — including re-running this guide against a fresh environment — do a read-only inventory first:**
+
+```bash
+# [AZURE READ-ONLY] -- run this from wherever you can reach the backend's own
+# DB credential (see the exact mechanism below); never print CTEC_DATABASE_URL itself.
+python3 -c "
+import os, sqlalchemy
+url = os.environ['CTEC_DATABASE_URL']
+engine = sqlalchemy.create_engine(url)
+with engine.connect() as conn:
+    for r in conn.execute(sqlalchemy.text('SELECT tenant_id, count(*) FROM enterprise_entities GROUP BY tenant_id ORDER BY tenant_id')).fetchall():
+        print(r[0], r[1])
+"
+```
+
+If this shows any tenant other than the one you're about to seed already holding rows, **stop and think before proceeding** — specifically, check whether that other tenant's rows share any of the deterministic labels your target seed run would also produce (read the seeder source's `label_id()`/`_uid()` calls to know the exact labels). If you suspect a collision, do not delete, re-key, or migrate the existing rows to "fix" it — that requires its own separate governance decision, not an ad hoc fix during a deployment run.
+
+### Execution mechanism (real, used in the reference deployment)
+
+There is no HTTP endpoint or CLI wrapper for this — it is a direct Python invocation inside the already-running backend container, using the container's own already-injected `CTEC_DATABASE_URL` so the credential is never typed, echoed, or logged by you:
+
+```bash
+# [DATABASE MUTATION] -- OPERATOR APPROVAL REQUIRED
+az containerapp exec --name noetva-dev-eus2-backend --resource-group rg-noetva-dev --command "python3 -c \"
+import os, sqlalchemy
+from sqlalchemy.orm import sessionmaker
+from app.infrastructure.persistence.demo_gate_f_seeder import DemoGateFSeeder
+from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+url = os.environ['CTEC_DATABASE_URL']
+engine = sqlalchemy.create_engine(url)
+Session = sessionmaker(bind=engine)
+session = Session()
+r1 = DemoGateFSeeder(session).seed(tenant_id='<DEV_NOETVA_TENANT_ID>')
+session.commit()
+print('gate_f relationships_created:', r1.relationships_created, 'assertions_created:', r1.assertions_created)
+r2 = DemoOqiSeeder(session).seed(tenant_id='<DEV_NOETVA_TENANT_ID>')
+session.commit()
+print('oqi supplier:', r2.supplier_entity_id)
+\""
+```
+
+**Idempotency:** `SAFE TO RE-RUN` against the *same* tenant — running it a second time creates zero new rows (confirm this yourself by re-running and checking `relationships_created`/`assertions_created` are both `0` the second time). It is **not** safe to assume this about seeding a *second, different* tenant without the read-only inventory above.
+
+**Reference result** (this exact deployment's real counts — a verification example, not a universal constant to assert against a different environment): `noetva-dev-tenant` ended with 31 enterprise entities, 7 source systems, 24 institutional relationships, 9 assertions; `ctec-demo-tenant` remained unaffected at its pre-existing 1 row (an unrelated bootstrap system-actor entity — not seeder output; do not expect this row to disappear or change).
+
+**Runtime database authority used:** exactly `noetva_app`'s existing DML privileges (Part 15/28's role) — the same credential the backend already uses for every ordinary request. Nothing elevated, no schema change, no different role.
+
+**Label this data exactly what it is, always:** REPRESENTATIVE DEMO DATA. Not customer data, not enterprise production data, not evidence of customer validation or traction, not live SAP/PLM data, not a vendor-certified integration.
+
+---
+
+# PART 34c — Golden Thread verification: Country of Origin (CDD-077 R13)
+
+**The certified, truthful scenario — say exactly this, never more:**
+
+> A Country-of-Origin disagreement for one demo supplier: **SAP asserts `"US"`** (source record `SUP-DEMO-001`), **PLM asserts `"MX"`** (source record `P-DEMO-001`). Rule `CROSS_SOURCE_VALUE_CONFLICT`, dimension `CONSISTENCY`, finding `oqi-demo-supplier-country-of-origin`, status **OPEN**, criticality **HIGH**, reliance **RELIANCE_AT_RISK**.
+
+**Do not say "Supplier Portal = MX" or "Specification = missing" for this finding.** Those were part of an earlier, broader historical narrative that is not what the actual seeded scenario contains — confirmed by direct source read of `demo_oqi_seeder.py`, which models exactly two sources (SAP, PLM) for this finding and nothing else.
+
+**Verify through the real, authenticated application:**
+1. Sign in at your custom domain (or the bare Container Apps FQDN, if you haven't done Part 27.1 yet).
+2. Navigate: **Quality → Findings**, filter to **Cross-Source Consistency**.
+3. Open **`oqi-demo-supplier-country-of-origin`**.
+4. Open the **Evidence** tab — confirm it shows PLM = `MX` and SAP = `US`, both marked Conflicting.
+
+**Why the rest of the OQI lifecycle looks the way it does, on purpose — do not read any of this as broken:**
+
+The seeder itself never directly persists a Finding, an ontology-impact row, a business-impact row, or a Reliance state — it seeds only *input and context* (the raw evidence, the governed `QualityRule`/`ComparisonSubjectCorrespondence` configuration, the entity and its resolution records, the `BusinessProcess`/`BusinessDependency`), then calls the real, unmodified production evaluators (`OqiCrossSourceEvaluationService`, `OqiOntologyImpactEvaluationService`, `OqiBusinessImpactService`). Every Finding/ontology-impact/business-impact/Reliance value you see is genuine evaluator output against real seeded evidence — never a canned conclusion.
+
+| Stage | Status | Evidence |
+|---|---|---|
+| Detect | **PROVEN IN AZURE UI/API** | Real finding visible, real `QualityRule` |
+| Evidence | **PROVEN IN AZURE UI** | SAP=US / PLM=MX, both visible on the Evidence tab |
+| Assess | **PROVEN IN AZURE UI/API** | Real `CONSISTENCY`/`CROSS_SOURCE_VALUE_CONFLICT` classification |
+| Ontology Impact | **PROVEN IN AZURE API/DB** | Real evaluator row persisted |
+| Recommendation (OQI5, agent) | **NOT INVOKED** | Deliberately never seeded — zero rows |
+| Human Authorization | **NOT EXERCISED** | No authorization ever recorded for this finding |
+| Remediation | **NOT INVOKED** | Deliberately never seeded — zero rows |
+| Re-evaluation | **NOT APPLICABLE** | Nothing to re-evaluate against; finding untouched |
+| Resolution | **NOT RESOLVED** | Finding remains OPEN |
+
+**Live agent reasoning for this finding: `NOT_INVOKED`.** Noetva's deterministic rule-based recommendation infrastructure exists and is tested in isolation — this finding simply hasn't had it run against it. Never describe this finding, or any part of this reference deployment, as involving autonomous AI action.
+
+Do not force Recommendation, Authorization, Remediation, or Resolution merely to "complete" this table — an untouched, correctly-classified OPEN finding *is* the correct, truthful state to certify.
+
+---
+
+# PART 34d — Supply-Chain Impact verification (Gate F, CDD-077 R13)
+
+**The real navigation path — it is nested, not top-level:**
+
+**Intelligence** (top nav) → the **Supplier Risk** card on that page → the **Supply-Chain Impact** button on that page.
+
+There is no direct top-level "Supply-Chain Impact" nav item — `frontend/components/site-shell.tsx`'s `primaryNavItems` does not list it. This is a known, deferred discoverability item (Part 34f), not a sign that the page is missing or broken.
+
+**Reference scenario:** click **"High-risk supplier, qualified alternative"** (uses the seeded supplier ID `5d98f421-ef60-5463-9c4e-f81b8bc63da1` from Part 34b).
+
+**Expected real, seeded content:** high severity, single-sourced dependency, revenue exposure **$12,000,000** (above the governed materiality threshold), dependency chain Demo Supplier → Demo Material → Demo Product → Demo Facility, evidence from **"Gate F Demo Risk Platform"**, **"Gate F Demo Finance/BI"**, and **"Gate F Demo Supplier Portal"** (three source systems seeded by `demo_gate_f_seeder.py`), an alternate supplier with `qualification=true`, `capacity=true`, `leadTimeDays=21`, `costUsd=185000`, recommendation **"Recommended: all four governed conditions are satisfied,"** Confidence **High**, Policy **`CDD-015-GATE-F-MITIGATION-POLICY V2.0`**, and a human-authority banner: **"Human approval required... A human decides. No action is taken automatically."**
+
+**Correlate with the real API (`[AZURE READ-ONLY]`, DevTools Network or backend logs):** the button click issues `POST /api/v1/supply-chain-impact/evaluations` → expect `201 Created`.
+
+**Do not confuse this evidence chain with Part 34c's.** "Gate F Demo Supplier Portal" here is a real source system — but it belongs to *this* Supply-Chain Impact scenario, seeded by a different seeder, for a different purpose. It does **not** mean the Country-of-Origin finding (Part 34c) has a "Supplier Portal" source — that finding has exactly two sources, SAP and PLM, full stop. Keep these two scenarios' evidence separate in your own head and in anything you show someone else.
+
+---
+
+# PART 34e — Security negative acceptance (final baseline)
+
+Perform every row below for real against the reference deployment (a bare `curl`, no browser needed for most):
+
+| Test | Command shape | Expected |
+|---|---|---|
+| No token | `curl -s -o /dev/null -w '%{http_code}' https://<BACKEND_FQDN>/api/v1/oqi/findings` | `401`, body `{"detail":{"code":"AUTH_TOKEN_MISSING"}}` |
+| Malformed token | same, `-H "Authorization: Bearer not-a-real-token"` | `401`, `AUTH_TOKEN_MALFORMED` |
+| Wrong audience | controlled/automated test (`backend/app/tests/test_oidc_authentication.py`) — do not attempt to forge a real Microsoft-signed token | `AUTH_AUDIENCE_INVALID` |
+| Wrong issuer | same test suite | `AUTH_ISSUER_INVALID` |
+| Missing/wrong business tenant | same test suite | `AUTH_TENANT_MISSING_OR_AMBIGUOUS` |
+| Missing required scope | same test suite / `test_oqi_api_router.py` | `403 AUTHORIZATION_SCOPE_REQUIRED` |
+| Unapproved CORS origin | `curl -s -D - -o /dev/null -X OPTIONS https://<BACKEND_FQDN>/api/v1/oqi/findings -H "Origin: https://evil-example.com" -H "Access-Control-Request-Method: GET"` | `400`, **no** `Access-Control-Allow-Origin` header |
+| Approved CORS origin | same, `-H "Origin: https://<your real frontend origin>"` | `200`, correct `Access-Control-Allow-Origin` |
+
+**No result here may ever be "accepted with a fallback," "accepted from any audience," or "accepted with a wildcard origin."** If any row doesn't match, treat it as a live regression of a previously-closed defect (CDD-073 through CDD-076) — do not weaken a check to make this table pass.
+
+---
+
+# PART 34f — Known Product Experience / UX items (NOT deployment failures)
+
+These are real, already-identified frontend defects. **Do not fix them here** — they belong to a separate, later product-experience initiative. Do not mistake any of them for a broken deployment.
+
+1. **`/context`'s text inputs are visually imperceptible.** Root cause: `frontend/app/globals.css`'s `@import "tailwindcss"` strips default browser input styling (Tailwind Preflight), and `frontend/app/context/_components/context-lookup.tsx`'s two `<input>` elements have no explicit class and no `.form-grid` wrapper to restore it. The inputs are present and functional — click where the label is and type; you just can't see the input box.
+2. **`/quality/evidence-fitness` has the identical defect**, same root cause, in `frontend/app/quality/evidence-fitness/page.tsx`.
+3. **Supply-Chain Impact's nested navigation position** (Part 34d) — real and reachable, just not top-level.
+
+If you find yourself deciding whether one of these should block sign-off: it should not. It is a labeled, deferred UX item, not an Azure deployment defect.
+
+---
+
 # PART 35 — Log Analytics
 
 **Where:** the Log Analytics workspace `noetva-dev-eus2-log` → **Logs** blade.
@@ -1575,6 +1776,10 @@ FAILED_STOP:  reachable from DRAIN_REQUESTED/STOPPING_APPLICATION/STOPPING_DATAB
 Every transition is validated against an explicit allow-list — nothing not listed is ever silently permitted.
 
 **Why this exists at all, and why you should trust it now:** an earlier version of this exact automation had a real defect — it computed the correct next state but never actually saved it, so none of Start/Stop/Extend/Hold/the nightly sweep/the restart monitor could reliably track reality. That defect is fixed and merged into the source you are deploying from (commit `4567164`, PR #197) — every transition below is now genuinely written to the Storage Table, proven end-to-end against a simulated Azure backend before merge. What remains **unproven until you do it for real in this Part**: the exact live behavior against a real Azure Storage Table (Part 19 of the register below).
+
+**Truthful status of this mechanism in the reference deployment: PROVEN IN SOURCE ONLY — NOT LIVE-VERIFIED.** The lifecycle mechanism above is real, tested source. But `id-lifecycle`'s federated identity was never deployed live to Azure in the reference deployment (confirm for yourself: `az identity list --resource-group rg-noetva-dev -o table` — if `id-lifecycle` is absent, it hasn't been applied), and the GitHub Actions variables the lifecycle workflows read (`NOETVA_LIFECYCLE_CLIENT_ID`, `NOETVA_LIFECYCLE_STORAGE_ACCOUNT`) are correspondingly unset. **Do not assume `gh workflow run azure-lifecycle-stop.yml` works out of the box in a freshly reproduced environment** — Parts 39–45 below describe the real, designed behavior, but you must deploy `id-lifecycle` (its own Bicep module, `lifecycle-main.bicep`, plus the GitHub Environment variables in Part 20's table) before any of Parts 39–45 can actually run. Treat this as an optional, deferred step — the main path of this guide (a manually-operated environment you start/stop yourself via direct `az` commands, e.g. `az postgres flexible-server stop`/`start` and `az containerapp revision deactivate`/`activate`) works standalone without it.
+
+**Never describe DEV as automated, self-managing, or "set it and forget it" unless you have personally deployed `id-lifecycle` and run each workflow below for real.**
 
 ---
 
@@ -1710,7 +1915,7 @@ Configured automatically: 7-day retention, automated, geo-redundant backup **dis
      --restore-time "<ISO8601 timestamp>"
    ```
 3. Attach the temporary server to a throwaway subnet in the same VNet pattern — acceptable for a rehearsal.
-4. Connect and verify: migration head = `0046_oqi5_remediation_tenancy`; table count = 127 (126 + `alembic_version`); a handful of sample canonical (not customer, not demo) rows are present.
+4. Connect and verify: migration head = `0046_oqi5_remediation_tenant_integrity`; table count = 127 (126 + `alembic_version`); a handful of sample canonical (not customer, not demo) rows are present.
 5. **Record what you observed:** how long the restore actually took (your real RTO), and how far back the backup point was from "now" (your real RPO).
 6. **`[DESTRUCTIVE — APPROVAL REQUIRED]`** — cleanup, only after verification is complete:
    ```bash
@@ -1797,8 +2002,41 @@ Track, over at least one full 24-hour active period and one full 24-hour dormant
 | Metric-name check (Part 36) shows a mismatch | Alert was written from assumed metric names, never live-confirmed before now | `az monitor metrics list-definitions` | Stop treating that alert as authoritative; route a fix through source control | | Never hot-fix Bicep alerts directly against a live resource |
 | Restore never reaches `Ready` | Wrong restore timestamp, or backup corrupted | `az postgres flexible-server show` on the restored server | Retry with a different restore point before escalating | | Don't conclude "restore works" from a partial or ambiguous result |
 | Budget doesn't appear | `budget.bicep` was never deployed separately (it's not part of Pass 1) | `az consumption budget list` | Run Part 37's command | | |
+| `AADSTS650053` at login | An unqualified custom-API scope was requested and resolved against Microsoft Graph instead of the backend | Decode the failed sign-in event / check `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` was actually set at build time | Rebuild the frontend with `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` set (Part 27, CDD-074) | |
+| `AUTH_AUDIENCE_INVALID` after a successful login | Backend `CTEC_OIDC_AUDIENCE` is set to the App ID URI (`api://...`) instead of the bare client ID | `az containerapp show ... --query "...env[?name=='CTEC_OIDC_AUDIENCE']"` | Set it to the bare backend client-ID GUID (Part 21.3, CDD-076) — **never** the App ID URI | Always — this is the single most safety-critical value in this guide |
+| Demo seed "succeeded" but nothing appears for your tenant | Deterministic-ID collision with a different tenant's existing row (Part 34b) | Read-only tenant-count inventory (Part 34b) | Do not delete/re-key existing rows; investigate before any further seeding | Always — do not blindly rerun |
+| Supply-Chain Impact returns `404` | Wrong/no business tenant seeded, or looking at the wrong nested nav path | Confirm Part 34b's seed ran against the correct tenant; confirm the exact path in Part 34d | Reseed correctly (Part 34b) if the tenant is wrong | |
+| `/context` or `/quality/evidence-fitness` input looks missing | Known Tailwind Preflight styling defect (Part 34f) | — | Not a deployment failure — do not attempt to fix it here | Never treat this as a deployment blocker |
+| `az containerapp exec` returns `429 Too Many Requests` | Real Azure rate limit on the exec/SSH-over-websocket endpoint | The error itself states `retry-after` | Wait the stated interval before retrying — do not loop-retry immediately | |
 
 **Before deleting any failed resource:** capture `az deployment operation group list`, the Activity Log, and Container App/Job logs first — an immediate delete destroys the diagnostic trail that would have explained the failure.
+
+---
+
+# PART 52a — If deployment stops halfway: resume, don't restart
+
+**"Delete everything and start over" is never the default response to an interrupted deployment.** Check what actually exists before assuming anything is broken:
+
+```bash
+# [AZURE READ-ONLY] -- run all of these to build a picture of exactly where you are
+az group exists --name rg-noetva-dev
+az identity list --resource-group rg-noetva-dev -o table
+az postgres flexible-server show --resource-group rg-noetva-dev --name noetva-dev-eus2-pg --query state -o tsv 2>&1
+az keyvault secret list --vault-name <DEV_KEY_VAULT_NAME> -o table 2>&1
+az containerapp job execution list --name noetva-dev-eus2-migrate --resource-group rg-noetva-dev -o table 2>&1
+az containerapp show --name noetva-dev-eus2-backend --resource-group rg-noetva-dev --query "properties.latestRevisionName" -o tsv 2>&1
+az network private-dns zone list --resource-group rg-noetva-dev -o table 2>&1
+```
+
+Map what you see back onto this guide's Parts, in order: does the resource group exist (Part 11)? The network (Part 12)? PostgreSQL, and is it `Ready` (Part 13)? Do `noetva_app`/`noetva_migrate` exist (Part 15 — a Stage-1a-only environment will not have these yet)? Are all six Key Vault secrets present (Part 17)? Has the migration Job ever succeeded (Part 29)? Is a real revision active on the backend (Part 30)? Do the Entra apps/claims policy exist (Parts 21–22)? Is DNS/the certificate bound (Part 27.1)? Is demo data present under the right tenant (Part 34b)?
+
+**Resume from the first Part in this list whose expected state is not yet true.** Every mutating step in this guide is explicitly labeled `SAFE TO RE-RUN`, `VERIFY BEFORE RE-RUN`, `ONE-TIME`, or `DESTRUCTIVE` — respect that label. Stage 1a (Part 23) in particular is safe to re-run unconditionally; it converges, it does not duplicate or destroy.
+
+---
+
+# PART 52b — When is this environment ready for a controlled demo?
+
+Use only what this guide has actually certified. Safe category to state: **an Azure-hosted Noetva DEV/demo environment** — never "production," never "customer-validated." Safe Golden Thread to show: the Country-of-Origin disagreement (Part 34c) — SAP=US, PLM=MX, a real cross-source consistency finding, with ontology impact where Part 34c proved it. Supply-Chain Impact (Part 34d) may be shown as its own, separate scenario — do not blend the two into one fabricated narrative just because they happen to coexist in the same environment. Never claim live autonomous agent reasoning; the deterministic recommendation shown is real, and that is exactly what it is — a deterministic, policy-driven recommendation, not an AI acting on its own.
 
 ---
 
@@ -1860,7 +2098,7 @@ Never run this to "save cost" — Stop DEV (Part 43) already achieves the real c
 
 **K. ACR:** [ ] Basic tier [ ] Admin user disabled
 
-**L. Key Vault:** [ ] RBAC-based [ ] All 5 secrets present (names only confirmed)
+**L. Key Vault:** [ ] RBAC-based [ ] All 6 secrets present (names only confirmed)
 
 **M. Managed identities:** [ ] All 5 exist [ ] RBAC matches Part 18's table
 
@@ -1878,13 +2116,15 @@ Never run this to "save cost" — Stop DEV (Part 43) already achieves the real c
 
 **T. Database bootstrap:** [ ] Success message confirmed
 
-**U. Migration:** [ ] Head = `0046_oqi5_remediation_tenancy` [ ] 127 tables (126 + alembic_version) [ ] Idempotency re-run confirmed no-op
+**U. Migration:** [ ] Head = `0046_oqi5_remediation_tenant_integrity` [ ] 127 tables (126 + alembic_version) [ ] Idempotency re-run confirmed no-op
 
 **V. Backend:** [ ] Deployed by digest [ ] `/health` returns 200
 
 **W. Frontend:** [ ] Deployed by digest [ ] Loads, returns 200
 
-**X. Authentication:** [ ] Real login succeeds [ ] All 6 negative tests performed for real
+**X. Authentication:** [ ] Real login succeeds [ ] All 6 negative tests performed for real [ ] Effective `scp`/consent grant inspected and understood (Part 34a) [ ] Custom domain callback + logout verified additively/correctly (Part 27.1)
+
+**X2. Demo data / Golden Thread (CDD-077 R13):** [ ] Deterministic-ID collision inventory performed before seeding (Part 34b) [ ] Seed executed against the correct business tenant [ ] Idempotency re-run confirmed zero new rows [ ] Country-of-Origin finding visible, SAP=US / PLM=MX (Part 34c) [ ] Unsupported "Supplier Portal=MX"/"Specification=missing" claims NOT asserted [ ] Supply-Chain Impact scenario succeeds via the real nested nav path, real `201` (Part 34d) [ ] Human-approval boundary visible [ ] Security negative acceptance table fully performed (Part 34e) [ ] 9/9 primary navigation areas render with no fatal error/401/403 [ ] Known Product Experience items recorded, not "fixed" (Part 34f)
 
 **Y. Tenant isolation:** [ ] Cross-tenant read fails closed, both directions
 
@@ -1892,7 +2132,7 @@ Never run this to "save cost" — Stop DEV (Part 43) already achieves the real c
 
 **AA. Monitoring:** [ ] Metric names live-verified against real resources [ ] Budget deployed
 
-**AB. Lifecycle:** [ ] Start verified [ ] Status shows agreement [ ] Extend verified [ ] Hold verified [ ] Stop verified [ ] DORMANT confirmed
+**AB. Lifecycle:** [ ] `id-lifecycle` deployed live before assuming any of the below works (Part 38 — otherwise mark this section N/A and manage Start/Stop manually) [ ] Start verified [ ] Status shows agreement [ ] Extend verified [ ] Hold verified [ ] Stop verified [ ] DORMANT confirmed [ ] Dormant cost documented as "near-zero compute," never "zero cost" or "free" (Part 8/51)
 
 **AC. Backup:** [ ] Configuration confirmed (7 days)
 
@@ -1922,16 +2162,23 @@ Region:                  eastus2
 Git SHA deployed:        ______________________
 Backend image digest:    ______________________
 Frontend image digest:   ______________________
-Migration head:          0046_oqi5_remediation_tenancy
+Migration head:          0046_oqi5_remediation_tenant_integrity
 Frontend URL:            ______________________
 Backend URL:             ______________________
 Noetva DEV tenant:       ______________________
 Budget:                  ______________________
 Restore test performed:  YES / NO, observed RTO: _____, RPO: _____
-Lifecycle Start verified: YES / NO
-Lifecycle Stop verified:  YES / NO
-Final lifecycle state:    DORMANT
+Custom domain (if used): ______________________, certificate valid: YES / NO
+id-lifecycle deployed live: YES / NO (if NO, mark lifecycle N/A, manage manually)
+Lifecycle Start verified: YES / NO / N/A
+Lifecycle Stop verified:  YES / NO / N/A
+Final lifecycle state:    DORMANT / N/A
 Final Postgres state:     Stopped
+Demo seed tenant:         ______________________ (Part 34b)
+Golden Thread verified:   YES / NO (SAP=US, PLM=MX only -- Part 34c)
+Supply-Chain Impact verified: YES / NO (Part 34d)
+Deployment automation:    MANUALLY REPRODUCIBLE / FULLY CI-AUTOMATED (state which -- do not claim the latter unless id-cicd AND every GitHub Actions variable in Part 20 are confirmed live)
+Environment classification: AZURE DEV/DEMO BASELINE (never "customer production," never "externally security-certified")
 
 Overall: PASS / FAIL
 ```
