@@ -68,15 +68,20 @@ a {
   color: inherit;
   text-decoration: none;
 }
+/* WOW-I1-R1: denser action hierarchy (CDD-079 §9 button/action review).
+   Original 0.7rem/1rem padding + 700 weight made every action button
+   visually dominate operational cards. Kept clearly clickable/primary,
+   sized down so information density can win back the space. */
 button,
 .button {
   border: 0;
-  border-radius: 0.55rem;
+  border-radius: 0.5rem;
   background: var(--accent);
   color: white;
-  padding: 0.7rem 1rem;
+  padding: 0.5rem 0.85rem;
   font: inherit;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -110,10 +115,29 @@ textarea:focus-visible {
   gap: 2rem;
   margin-bottom: 2rem;
 }
+/* WOW-I1-R1: operational page-title scale (CDD-079 §7/§11 typography
+   foundation, completed here). The original clamp(2rem, 5vw, 3.25rem)
+   -- up to 52px -- is marketing-hero scale; every authenticated page
+   used it via PageHeader. Reduced to a compact, still-prominent
+   enterprise scale, and given the Sora display face now that it's
+   loaded (WOW-I1 loaded the font but never applied it to any heading). */
 .page-heading h1 {
-  font-size: clamp(2rem, 5vw, 3.25rem);
-  line-height: 1.05;
-  margin: 0.35rem 0;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.35rem, 1.8vw, 1.75rem);
+  line-height: 1.2;
+  margin: 0.2rem 0;
+}
+.panel h2,
+.panel h3 {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 600;
+}
+.panel h2 {
+  font-size: 1.05rem;
+}
+.panel h3 {
+  font-size: 0.95rem;
 }
 .eyebrow {
   text-transform: uppercase;
@@ -126,8 +150,8 @@ textarea:focus-visible {
   background: white;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  padding: 1.5rem;
-  margin: 1rem 0;
+  padding: 1.15rem 1.35rem;
+  margin: 0.85rem 0;
   box-shadow: 0 12px 35px rgba(20, 33, 61, 0.05);
 }
 .status-grid {
@@ -550,17 +574,30 @@ dialog textarea {
 
 /* Observatory shell (CDD-079 §5 shell contract). Dark, disciplined,
    scoped to the shell/header only -- page interiors are untouched. */
+/* WOW-I1-R1: the light-panel compatibility contract (CDD-079 addendum).
+   `.observatory-shell` sets the dark canvas *background* behind
+   everything, but must NEVER set `color` here -- `color` is inherited,
+   and `.observatory-shell` is the ancestor of every legacy `.panel`
+   (still on the light-mode tokens, un-migrated). The real Azure
+   walkthrough after the first I1 deploy caught exactly this: a light
+   `color` set at this level cascaded into every legacy white panel,
+   rendering their un-migrated (colorless) text almost invisible.
+   `.observatory-header` is the ONLY place light foreground text is
+   applied -- it's the one piece of chrome that is actually always dark.
+   `.observatory-main` explicitly restores the pre-WOW ink color for
+   everything it wraps, so this contract holds even if a future rule
+   accidentally sets `color` somewhere above it again. */
 .observatory-shell {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--obs-canvas);
-  color: var(--obs-text-primary);
   font-family: var(--font-manrope), Manrope, Arial, sans-serif;
 }
 .observatory-header {
   background: var(--obs-canvas-deep);
   border-bottom: 1px solid var(--obs-border);
+  color: var(--obs-text-primary);
 }
 .observatory-header-inner {
   max-width: 72rem;
@@ -642,6 +679,11 @@ dialog textarea {
   max-width: 72rem;
   margin: 0 auto;
   padding: 2.5rem 1.5rem 4rem;
+  /* Light-panel compatibility contract: every un-migrated legacy page
+     interior (.panel, tables, code, muted/eyebrow text, etc.) gets the
+     original light-mode ink color explicitly here, not merely by
+     accident of inheritance. */
+  color: var(--ink);
 }
 @media (max-width: 760px) {
   .observatory-header-inner {
