@@ -65,6 +65,9 @@ param postgresHaMode string = 'Disabled'
 @secure()
 param postgresAdminPassword string
 
+@description('CDD-067: false = foundation stage only (RG, networking, PostgreSQL, ACR, Key Vault, Container Apps Environment, managed identities, foundation RBAC); true = also deploy the application tier (backend/frontend Container Apps, migration Job, monitoring alerts), which requires real digest-pinned image references and pre-populated Key Vault secrets to already exist.')
+param deployApplicationTier bool = false
+
 param enableNatGateway bool = true
 param backendMinReplicas int = 1
 param backendMaxReplicas int = 3
@@ -109,6 +112,7 @@ module resources 'resources.bicep' = {
     postgresBackupRetentionDays: postgresBackupRetentionDays
     postgresHaMode: postgresHaMode
     postgresAdminPassword: postgresAdminPassword
+    deployApplicationTier: deployApplicationTier
     enableNatGateway: enableNatGateway
     backendMinReplicas: backendMinReplicas
     backendMaxReplicas: backendMaxReplicas
@@ -122,6 +126,9 @@ module resources 'resources.bicep' = {
 }
 
 output resourceGroupName string = resources.outputs.resourceGroupName
+// CDD-067: backendFqdn/frontendFqdn are only meaningful once deployApplicationTier
+// deploys the Container Apps that produce them; resources.bicep itself guards
+// these the same way (empty string when the application tier is not deployed).
 output backendFqdn string = resources.outputs.backendFqdn
 output frontendFqdn string = resources.outputs.frontendFqdn
 output natGatewayEgressIp string = resources.outputs.natGatewayEgressIp
