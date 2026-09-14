@@ -1016,6 +1016,75 @@ No email-derived fallback tenant exists anywhere in the backend. No header-suppl
 
 ---
 
+# PART 22a — Private database bootstrap Job (CDD-068)
+
+### Why this exists
+
+PostgreSQL is intentionally VNet-private (`publicNetworkAccess: Disabled`, Part 13) — this must never be weakened. A real bootstrap attempt confirmed that neither your own machine nor any operator-facing tool outside Azure's own network can resolve or reach `noetva-dev-eus2-pg.postgres.database.azure.com` at all. Part 15's `db-bootstrap/001_create_roles_and_grants.sql` (which creates the `noetva_app`/`noetva_migrate` roles) genuinely requires a real `psql` connection to that private server — so it must run from **inside** the same private network the server lives in.
+
+**The correction:** a small, one-time (or credential-rotation-time), ADMIN-authority Azure Container Apps Job, deployed into the *same* Container Apps Environment your application will eventually run in. It gains PostgreSQL reachability solely because it executes inside that already-private environment — no VPN, no Bastion, no VM, no firewall exception, no public database access of any kind is introduced. It is structurally distinct from the normal migration Job (Part 18/23) — it authenticates as the PostgreSQL *administrator*, never as `noetva_app`/`noetva_migrate`, and it is never given application runtime authority.
+
+**It never reads Key Vault.** All the credentials it needs (the admin password, and the two passwords you're choosing for `noetva_app`/`noetva_migrate`) are delivered directly as secure Bicep deployment parameters — the same mechanism `postgresAdminPassword` already uses for the PostgreSQL server resource itself. This is what breaks the circular dependency: the six Key Vault secrets (Part 17) do not need to exist yet for this Job to run.
+
+### Step 22a.1 — Build and push the bootstrap image
+
+**Which Azure service:** the same ACR created in Stage 1a (`noetvadeveus2acr`) — no new registry.
+
+```bash
+# [LOCAL — SAFE], then [AZURE MUTATION] for the push
+az acr login --name <DEV_ACR_NAME>
+docker build -f infra/azure/db-bootstrap/Dockerfile -t <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap:bootstrap infra/azure
+docker push <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap:bootstrap
+az acr repository show-manifests --name <DEV_ACR_NAME> --repository noetva/db-bootstrap -o table
+```
+
+**SAVE THIS VALUE** (the immutable digest reference — never the mutable tag — is what you deploy with):
+```
+DB_BOOTSTRAP_IMAGE_DIGEST = <DEV_ACR_NAME>.azurecr.io/noetva/db-bootstrap@sha256:______________________
+```
+
+### Step 22a.2 — Choose the bootstrap credentials
+
+Generate three passwords now (the same secure method as Part 13's admin password): the PostgreSQL admin password (or reuse the one from Part 13a if you just reset it in this same session), and passwords for `noetva_app` and `noetva_migrate`. **Do not generate different values for these two later** — you will use the exact same `noetva_app`/`noetva_migrate` passwords again in Part 17 when populating Key Vault.
+
+### Step 22a.3 — Deploy and trigger the bootstrap Job
+
+**Action, `[AZURE MUTATION]`:**
+
+```bash
+az deployment sub create --location eastus2 \
+  --template-file infra/azure/main.bicep \
+  --parameters infra/azure/environments/dev/main.parameters.json \
+  --parameters deployApplicationTier=false \
+               deployDbBootstrapJob=true \
+               postgresAdminPassword="<from Part 13/13a>" \
+               dbBootstrapImageReference="<DB_BOOTSTRAP_IMAGE_DIGEST>" \
+               dbBootstrapAdminPassword="<same admin password>" \
+               dbBootstrapAppPassword="<the noetva_app password you just chose>" \
+               dbBootstrapMigratePassword="<the noetva_migrate password you just chose>"
+```
+
+Then trigger it once:
+
+```bash
+az containerapp job start --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev
+```
+
+**Verify (`[AZURE READ-ONLY]`, never prints a secret):**
+
+```bash
+az containerapp job execution list --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev -o table
+az containerapp job logs show --name noetva-dev-eus2-db-bootstrap --resource-group rg-noetva-dev
+```
+
+**Expected:** the execution succeeds, and the log's final line reads `[run_db_bootstrap] roles and grants applied (no secret values were printed above)` — with no password value appearing anywhere in the log. This single successful run is what performs Part 15's database role creation — you do not separately connect with `psql` yourself.
+
+**STOP IF:** the Job fails, or any secret value appears in its logs. Do not weaken PostgreSQL's private networking to work around a connectivity failure — the Job runs inside the same VNet and should not have one; report the exact evidence instead.
+
+This Job resource may remain declared (`deployDbBootstrapJob=true`) at effectively zero ongoing cost for future credential-rotation events — it is manually triggered only, never scheduled, never run automatically.
+
+---
+
 # PART 23 — Deployment Pass 1 (CDD-067 two-stage correction)
 
 ### Why two passes are unavoidable, and why Pass 1 itself is now two stages
@@ -1051,7 +1120,7 @@ az deployment sub create --location eastus2 \
 
 ### Stage 1b — Operator bootstrap (between the two Bicep invocations)
 
-Perform, in order, now that the foundation exists: Part 17's Key Vault RBAC self-assignment and secret population (all six secrets — do not skip `ctec-migration-database-url`), Part 15's database role creation, and Parts 26/27's real image build-and-push to the now-existing ACR. **If this is a recovery from a prior failed attempt, first reset the PostgreSQL admin password** (Part 13a below) rather than assuming the original value is still known.
+Perform, in order, now that the foundation exists: **reset the PostgreSQL admin password** (Part 13a below) if this is a recovery from a prior attempt, **run the private database bootstrap Job** (Part 22a — CDD-068; this is what actually performs Part 15's database role creation, since PostgreSQL is intentionally VNet-private and cannot be reached directly from your own machine), **populate Key Vault** (Part 17 — all six secrets, using the exact same application/migration passwords you just supplied to the bootstrap Job), and finally **build and push the real application images** (Parts 26/27) to the now-existing ACR.
 
 #### Part 13a — PostgreSQL admin-password recovery (recovery scenarios only)
 
