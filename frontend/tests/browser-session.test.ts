@@ -8,6 +8,7 @@ const OIDC_ENV_KEYS = [
   "NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI",
   "NEXT_PUBLIC_CTEC_API_ORIGIN",
   "NEXT_PUBLIC_OIDC_SCOPE",
+  "NEXT_PUBLIC_OIDC_API_RESOURCE_URI",
 ] as const;
 const originalEnv = Object.fromEntries(
   OIDC_ENV_KEYS.map((key) => [key, process.env[key]]),
@@ -272,6 +273,9 @@ test("canonical default scope is exactly the least-privilege live-capability set
     "http://localhost:3000/";
   process.env.NEXT_PUBLIC_CTEC_API_ORIGIN = "http://localhost:8000";
   delete process.env.NEXT_PUBLIC_OIDC_SCOPE;
+  // CDD-074: unset resource URI is the local-Keycloak case -- must
+  // reproduce this exact bare-scope string byte-for-byte.
+  delete process.env.NEXT_PUBLIC_OIDC_API_RESOURCE_URI;
 
   const config = browserAuthConfig();
 
@@ -291,6 +295,71 @@ test("canonical default scope is exactly the least-privilege live-capability set
   expect(config.scope).not.toContain("ontology-modeling:propose");
   expect(config.scope).not.toContain("ontology-modeling:approve");
   expect(config.scope).not.toContain("ontology-modeling:publish");
+  expect(config.scope).not.toContain(
+    "information-element-evidence-fitness:read",
+  );
+});
+
+test("a configured NEXT_PUBLIC_OIDC_API_RESOURCE_URI qualifies exactly the ten backend capability scopes for Microsoft Entra, leaving openid/profile bare (CDD-074)", () => {
+  process.env.NEXT_PUBLIC_OIDC_AUTHORITY =
+    "https://8f9e2dee-5a5b-4b33-9044-4d11691899de.ciamlogin.com/8f9e2dee-5a5b-4b33-9044-4d11691899de/v2.0";
+  process.env.NEXT_PUBLIC_OIDC_CLIENT_ID =
+    "ee9c1b49-9a28-4293-a312-83743abee1f5";
+  process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI =
+    "https://noetva-dev-eus2-frontend.politeglacier-6315242f.eastus2.azurecontainerapps.io/auth/callback";
+  process.env.NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI =
+    "https://noetva-dev-eus2-frontend.politeglacier-6315242f.eastus2.azurecontainerapps.io";
+  process.env.NEXT_PUBLIC_CTEC_API_ORIGIN =
+    "https://noetva-dev-eus2-backend.politeglacier-6315242f.eastus2.azurecontainerapps.io";
+  delete process.env.NEXT_PUBLIC_OIDC_SCOPE;
+  process.env.NEXT_PUBLIC_OIDC_API_RESOURCE_URI =
+    "api://3a880f13-985d-4a71-be05-20f97b9bcfa3";
+
+  const config = browserAuthConfig();
+  const tokens = config.scope.split(" ");
+
+  // openid/profile remain bare -- OIDC-standard, provider-hosted scopes,
+  // never resource-qualified.
+  expect(tokens).toContain("openid");
+  expect(tokens).toContain("profile");
+  expect(tokens).not.toContain(
+    "api://3a880f13-985d-4a71-be05-20f97b9bcfa3/openid",
+  );
+  expect(tokens).not.toContain(
+    "api://3a880f13-985d-4a71-be05-20f97b9bcfa3/profile",
+  );
+
+  // Exactly the ten backend capability scopes, each qualified with the
+  // resource URI -- not the bare form, not a duplicate, not a different set.
+  const expectedQualified = [
+    "supplier-risk:read",
+    "entity-resolution:read",
+    "ontology-copilot:ask",
+    "ontology-modeling:read",
+    "oqi-remediation:authorize",
+    "oqi-remediation:report-execution",
+    "oqi:read",
+    "information-element-context:read",
+    "evidence-fitness:read",
+    "supply-chain-impact:evaluate",
+  ].map((scope) => `api://3a880f13-985d-4a71-be05-20f97b9bcfa3/${scope}`);
+  for (const qualified of expectedQualified) {
+    expect(tokens).toContain(qualified);
+  }
+  expect(tokens).toHaveLength(2 + expectedQualified.length);
+
+  // Standard OIDC scopes not requested at all.
+  expect(tokens).not.toContain("offline_access");
+  expect(config.scope).not.toContain("User.Read");
+  expect(config.scope).not.toContain("graph.microsoft.com");
+
+  // The bare forms must never appear once qualification is active -- this
+  // is exactly the AADSTS650053 defect this correction closes.
+  expect(tokens).not.toContain("supplier-risk:read");
+  expect(tokens).not.toContain("oqi:read");
+
+  // Excluded/retired scopes remain absent regardless of qualification.
+  expect(config.scope).not.toContain("supply-chain-impact:read");
   expect(config.scope).not.toContain(
     "information-element-evidence-fitness:read",
   );
