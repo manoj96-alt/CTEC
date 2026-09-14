@@ -76,6 +76,9 @@ param memory string = '1Gi'
 @description('HTTP concurrent-request scaling threshold per replica')
 param httpConcurrentRequests int = 50
 
+@description('CDD-077 R12: optional custom-domain bindings, each {name, certificateId} referencing an Azure-managed certificate already provisioned via `az containerapp env certificate create` (the CNAME/TXT domain-control-validation flow is not reproducible as a plain Bicep create -- this only represents an existing binding). Empty by default; every environment other than dev\'s frontend remains unaffected until explicitly onboarded.')
+param customDomains array = []
+
 var keyVaultSecrets = [for ref in keyVaultSecretRefs: {
   name: ref.name
   keyVaultUrl: ref.keyVaultUrl
@@ -85,6 +88,12 @@ var keyVaultSecrets = [for ref in keyVaultSecretRefs: {
 var secretEnvVars = [for ref in keyVaultSecretRefs: {
   name: ref.envName
   secretRef: ref.name
+}]
+
+var customDomainBindings = [for cd in customDomains: {
+  name: cd.name
+  certificateId: cd.certificateId
+  bindingType: 'SniEnabled'
 }]
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
@@ -113,6 +122,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: targetPort
         transport: 'auto'
         allowInsecure: false
+        customDomains: empty(customDomains) ? null : customDomainBindings
       }
     }
     template: {

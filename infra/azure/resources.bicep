@@ -29,8 +29,11 @@ param backendImageReference string
 @description('Full frontend image reference (registry/repo@sha256:digest), built with THIS environments own NEXT_PUBLIC_OIDC_* build args (Noetva I0-R1 Section 28/W: frontend images are environment-specific, never promoted unchanged across environments).')
 param frontendImageReference string
 
-@description('Public hostname the frontend will eventually be reachable on (informational only in R1 -- no DNS/cert resource is created against a domain that does not yet exist, Noetva I0-R1 Section 33)')
+@description('Public custom hostname the frontend is reachable on, e.g. app.noetva.ai. Purely informational (no binding created) unless customDomainCertificateName is also set (CDD-077 R12) -- no DNS/cert resource is ever created against a domain that does not yet exist.')
 param frontendHostname string = ''
+
+@description('CDD-077 R12: name of an Azure-managed certificate already provisioned on this Container Apps Environment (via `az containerapp env certificate create`, which performs the real CNAME/TXT domain-control-validation Bicep cannot reproduce) for frontendHostname. Empty by default -- when empty, frontendHostname remains purely informational and no custom-domain binding is created.')
+param customDomainCertificateName string = ''
 
 @description('Public hostname the backend will eventually be reachable on (informational only in R1)')
 param backendHostname string = ''
@@ -222,6 +225,18 @@ module postgres 'modules/postgresql.bicep' = {
   }
 }
 
+// CDD-077 R12: represents (never creates) an Azure-managed certificate
+// already provisioned via `az containerapp env certificate create` -- the
+// real CNAME/TXT domain-control-validation flow that command performs is
+// not something a plain Bicep `create` can reproduce, so this is an
+// `existing` lookup only, purely so the eventual customDomains binding
+// below is source-represented rather than CLI-only drift. Absent for
+// every environment/parameter file except dev's once customDomainCertificateName
+// is set there.
+resource customDomainCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' existing = if (!empty(customDomainCertificateName)) {
+  name: '${namePrefix}-cae/${customDomainCertificateName}'
+}
+
 module containerAppsEnvironment 'modules/container-apps-environment.bicep' = {
   name: 'container-apps-environment'
   params: {
@@ -339,6 +354,12 @@ module frontendApp 'modules/container-app.bicep' = if (deployApplicationTier) {
     healthProbePath: '/health'
     minReplicas: frontendMinReplicas
     maxReplicas: frontendMaxReplicas
+    // CDD-077 R12: only bound when both frontendHostname and
+    // customDomainCertificateName are set (dev today; every other
+    // environment's parameter file leaves both empty, so this remains []).
+    customDomains: (!empty(frontendHostname) && !empty(customDomainCertificateName)) ? [
+      { name: frontendHostname, certificateId: customDomainCertificate.id }
+    ] : []
   }
 }
 

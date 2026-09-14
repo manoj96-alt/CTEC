@@ -1285,6 +1285,44 @@ docker push <DEV_ACR_LOGIN_SERVER>/noetva/frontend:<git-sha>-dev
 FRONTEND_IMAGE_DIGEST = ______________________
 ```
 
+**Once your environment has a real custom domain (Part 27.1 below), rebuild with `NEXT_PUBLIC_OIDC_REDIRECT_URI`/`NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI` pointing at the custom domain instead of the bare Container Apps FQDN** — `NEXT_PUBLIC_CTEC_API_ORIGIN` and `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` stay unchanged (CDD-077: the backend keeps its own Container Apps FQDN; there is no `api.<domain>`).
+
+---
+
+# PART 27.1 — Custom domain: app.noetva.ai (CDD-077 R12)
+
+This part is additive and optional per environment — it applies once, to DEV's frontend, and is not required for any environment to function on its bare Container Apps FQDN.
+
+**Step 1 — get the domain-verification value (read-only):**
+```bash
+az containerapp show --name <FRONTEND_APP_NAME> --resource-group <RESOURCE_GROUP> \
+  --query "properties.customDomainVerificationId" -o tsv
+```
+
+**Step 2 — add exactly two DNS records at your DNS provider** (Cloudflare, for `noetva.ai`):
+```
+CNAME  app          -> <FRONTEND_CONTAINER_APPS_FQDN>
+TXT    asuid.app    -> <value from Step 1>
+```
+**The CNAME must remain "DNS only" (grey-cloud in Cloudflare), permanently — not just during setup.** Microsoft's own Container Apps documentation names Cloudflare-style proxying as something that blocks certificate issuance *and every future renewal*. Do not touch any other existing record (apex A, MX, or anything else already on the zone). Only add a CAA record permitting `digicert.com` if the zone already has a CAA record — if none exists, don't add one.
+
+**Step 3 — wait for DNS to resolve publicly, then bind the hostname:**
+```bash
+az containerapp hostname add --hostname app.noetva.ai --name <FRONTEND_APP_NAME> --resource-group <RESOURCE_GROUP>
+```
+
+**Step 4 — create the Azure-managed certificate** (this is the real domain-control-validation step; it re-checks the TXT record itself):
+```bash
+az containerapp env certificate create --name <CONTAINER_APPS_ENVIRONMENT_NAME> --resource-group <RESOURCE_GROUP> \
+  --hostname app.noetva.ai --validation-method CNAME
+```
+**SAVE THIS VALUE:**
+```
+CUSTOM_DOMAIN_CERTIFICATE_NAME = ______________________
+```
+
+**Step 5 — represent the binding in source** (so a future full redeploy doesn't drift from what you just created live): set `frontendHostname` and the new `customDomainCertificateName` parameter to the real values in your environment's `main.parameters.json`, and append the new origin to `corsOrigins`. The next `az deployment group create` run will then declare exactly the binding you already created — it does not (and cannot) recreate the certificate itself, since certificate issuance is validation-gated and not a plain Bicep `create`.
+
 ---
 
 # PART 28 — Database bootstrap
