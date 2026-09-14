@@ -1310,17 +1310,26 @@ az containerapp update --name noetva-dev-eus2-backend --resource-group rg-noetva
   --image <DEV_ACR_LOGIN_SERVER>/noetva/backend@<BACKEND_IMAGE_DIGEST>
 ```
 
-**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); `CTEC_OIDC_TENANT_CLAIM=noetva_tenant_id` (CDD-064/CDD-065: the bare `tenant_id` claim name is Microsoft-reserved and cannot be used as an outgoing Entra claim, even with a Namespace -- local/Docker Keycloak is unaffected and continues using the backend's own `tenant_id` default); Key Vault secret references `ctec-database-url`, `ctec-runtime-handoff-key`. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
+**Configuration Azure sets from `resources.bicep`, for your understanding, not something you type:** plain vars `CTEC_ENVIRONMENT=development`, `CTEC_LOG_LEVEL=INFO`, `CTEC_CORS_ORIGINS`, `CTEC_OIDC_ISSUER`, `CTEC_OIDC_AUDIENCE`, `CTEC_OIDC_JWKS_URL`, `CTEC_OIDC_SCOPE_CLAIM=scp` (CDD-063: Microsoft Entra External ID exposes delegated permissions through the `scp` claim, not `scope` -- local/Docker Keycloak is unaffected and continues using the backend's own `scope` default); `CTEC_OIDC_TENANT_CLAIM=noetva_tenant_id` (CDD-064/CDD-065: the bare `tenant_id` claim name is Microsoft-reserved and cannot be used as an outgoing Entra claim, even with a Namespace -- local/Docker Keycloak is unaffected and continues using the backend's own `tenant_id` default). **CDD-070 correction:** the Key Vault secret references are named `ctec-database-url`/`ctec-runtime-handoff-key`, but the container environment-variable names the backend's `pydantic-settings` (`env_prefix="CTEC_"`) actually reads are the distinct, explicitly-mapped `CTEC_DATABASE_URL`/`CTEC_RUNTIME_HANDOFF_KEY` -- these are two different namespaces, never algorithmically derived from one another. Target port `8000`, `minReplicas=0`/`maxReplicas=1` for DEV.
 
-**Verify (`[AZURE READ-ONLY]`):**
+**Verify (`[AZURE READ-ONLY]`), mandatory, real-provider precondition (CDD-070) -- names only, never values:**
+
+```bash
+az containerapp show --name noetva-dev-eus2-backend --resource-group rg-noetva-dev \
+  --query "properties.template.containers[0].env[].name" -o tsv
+```
+
+Expected to include `CTEC_DATABASE_URL` and `CTEC_RUNTIME_HANDOFF_KEY` -- **not** the raw `ctec-database-url`/`ctec-runtime-handoff-key` strings. If either raw name appears as an active env-var name instead of its `CTEC_`-prefixed counterpart, the secret-reference mapping has regressed; stop and treat it as a defect, do not proceed.
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' "https://<DEV_BACKEND_FQDN>/health"
+az containerapp revision list --name noetva-dev-eus2-backend --resource-group rg-noetva-dev \
+  --query "[].{active:properties.active, healthState:properties.healthState, runningState:properties.runningState}" -o table
 ```
 
-Expected: `200`.
+Expected: HTTP `200`, and the active revision's `healthState`/`runningState` genuinely healthy/running -- **`provisioningState: Succeeded` on the Container App resource itself does not imply this**; a revision can be provisioned yet never become routable (this is exactly what happened to the frontend before CDD-070, Part 31).
 
-**Do not treat this as proof the database is reachable** — `/health` returns `{"status": "healthy"}` unconditionally, confirmed directly from `backend/app/api/health/router.py`. It checks nothing else. There is deliberately no `/ready` endpoint yet.
+**Do not treat `/health` as proof the database is reachable** — `/health` returns `{"status": "healthy"}` unconditionally, confirmed directly from `backend/app/api/health/router.py`. It checks nothing else. There is deliberately no `/ready` endpoint yet.
 
 ---
 
@@ -1334,13 +1343,17 @@ az containerapp update --name noetva-dev-eus2-frontend --resource-group rg-noetv
 
 Target port `3000`. No server-side environment variables — every OIDC value was baked in at build time (Part 27).
 
-**Verify:**
+**CDD-070 correction:** the frontend Container App now has its own truthful, dependency-free health route (`frontend/app/health/route.ts`) and its probe path is passed explicitly (`healthProbePath: '/health'` at its own `frontendApp` call site in `resources.bicep`) — it no longer inherits the backend's `/health` assumption via the shared module's (formerly hardcoded) default. Before this correction, the revision could report `provisioningState: Succeeded` while never leaving `Activating`/`healthState: None`, because the platform's probe targeted a route that only existed on the backend.
+
+**Verify (`[AZURE READ-ONLY]`), mandatory, real-provider precondition (CDD-070):**
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' "https://<DEV_FRONTEND_FQDN>/"
+az containerapp revision list --name noetva-dev-eus2-frontend --resource-group rg-noetva-dev \
+  --query "[].{active:properties.active, healthState:properties.healthState, runningState:properties.runningState}" -o table
+curl -s -o /dev/null -w '%{http_code}\n' "https://<DEV_FRONTEND_FQDN>/health"
 ```
 
-Expected: `200`.
+Expected: the active revision's `healthState`/`runningState` genuinely healthy/running (not indefinitely `Activating`), and HTTP `200` from `/health` — reachable with no login, no access token, no final custom domain, and no backend call (confirm this by inspecting `frontend/app/health/route.ts` itself: it must never call the backend, `/administration`, the OIDC authority, Key Vault, or a database). Do not use `/administration` as this proof — it deliberately calls the *backend's* `/health`, which would make frontend liveness depend on backend availability.
 
 ---
 

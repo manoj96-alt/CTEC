@@ -55,8 +55,11 @@ param commandOverride array = []
 @description('Plain (non-secret) environment variables')
 param envVars array = []
 
-@description('Secret environment variables, each {name, keyVaultUrl} -- resolved via this Container App identity, never inlined (Noetva D0 Section W)')
+@description('Secret environment variables, each {name, envName, keyVaultUrl} -- resolved via this Container App identity, never inlined (Noetva D0 Section W). `name` is the Container Apps secret / Key Vault reference identifier; `envName` is the container environment-variable name the application actually reads -- CDD-070: these are two distinct namespaces, never derived from one another algorithmically.')
 param keyVaultSecretRefs array = []
+
+@description('CDD-070: the container HTTP path this workload truthfully answers for Startup/Liveness probing. Required, no default -- every consumer of this shared module must declare its own truthful health path; the module must never assume one workload\'s (originally backend\'s /health) is correct for every consumer.')
+param healthProbePath string
 
 @description('Minimum replica count')
 param minReplicas int = 1
@@ -80,7 +83,7 @@ var keyVaultSecrets = [for ref in keyVaultSecretRefs: {
 }]
 
 var secretEnvVars = [for ref in keyVaultSecretRefs: {
-  name: ref.name
+  name: ref.envName
   secretRef: ref.name
 }]
 
@@ -127,7 +130,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               type: 'Liveness'
               httpGet: {
-                path: '/health'
+                path: healthProbePath
                 port: targetPort
               }
               initialDelaySeconds: 10
@@ -135,14 +138,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               // Startup probe only -- NOT a dependency-aware readiness
-              // check. /health is process-liveness-only (Noetva D0 Section
-              // K / I0-R1 Section 31): it does not verify DB connectivity.
-              // A DB-aware /ready endpoint is documented as NOT IMPLEMENTED
-              // (see infra/azure/README.md) and is intentionally not
-              // fabricated here.
+              // check. CDD-070: healthProbePath is deliberately consumer-
+              // supplied, never hardcoded here -- this module previously
+              // assumed every consumer implements backend's /health, which
+              // broke the frontend (no such route exists there). Each
+              // consumer's own probe path must be shallow/dependency-free
+              // (Noetva D0 Section K / I0-R1 Section 31): process-liveness
+              // only, never a DB-aware or cross-service readiness check.
               type: 'Startup'
               httpGet: {
-                path: '/health'
+                path: healthProbePath
                 port: targetPort
               }
               initialDelaySeconds: 5

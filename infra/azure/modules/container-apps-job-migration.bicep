@@ -31,7 +31,7 @@ param managedIdentityId string
 @description('ACR login server')
 param acrLoginServer string
 
-@description('Secret environment variables, each {name, keyVaultUrl} -- MUST reference the MIGRATION Postgres role credential, never the APPLICATION or ADMIN role (Noetva I0-R1 Section 20/21)')
+@description('Secret environment variables, each {name, envName, keyVaultUrl} -- MUST reference the MIGRATION Postgres role credential, never the APPLICATION or ADMIN role (Noetva I0-R1 Section 20/21). CDD-070: `name` is the Container Apps secret / Key Vault reference identifier; `envName` is the container environment-variable name the application (Alembic/backend Settings) actually reads -- never derived from `name` algorithmically.')
 param keyVaultSecretRefs array = []
 
 @description('Plain (non-secret) environment variables')
@@ -44,7 +44,7 @@ var keyVaultSecrets = [for ref in keyVaultSecretRefs: {
 }]
 
 var secretEnvVars = [for ref in keyVaultSecretRefs: {
-  name: ref.name
+  name: ref.envName
   secretRef: ref.name
 }]
 
