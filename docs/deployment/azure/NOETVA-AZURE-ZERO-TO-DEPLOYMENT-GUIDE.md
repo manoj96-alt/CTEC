@@ -956,9 +956,23 @@ This is used only to *qualify the frontend's scope requests* (`api://<client-id>
 
 Read `frontend/lib/auth/config.ts` yourself before adding scopes here — do not invent scopes the frontend doesn't actually request.
 
----
+**The reference backend exposes exactly 11 delegated scopes** (**Expose an API** → **Add a scope**, `Admin`-consent type, one at a time) — derive this list from `frontend/lib/auth/config.ts` and the backend's own route-level `_authorize(...)` calls for your own deployment rather than trusting this list forever, but as of the certified reference deployment it is exactly:
 
-# PART 22 — business-tenant claim configuration (CDD-065) — critical section, read fully
+```
+supplier-risk:read
+entity-resolution:read
+ontology-copilot:ask
+ontology-modeling:read
+oqi-remediation:authorize
+oqi-remediation:report-execution
+oqi:read
+information-element-context:read
+evidence-fitness:read
+supply-chain-impact:evaluate
+supply-chain-impact:read
+```
+
+**Configured request ≠ effective grant ≠ effective token content — three different things, easy to conflate:** the frontend's own build-time request list (`frontend/lib/auth/config.ts`'s `BACKEND_CAPABILITY_SCOPES`) asks for only 10 of these — it deliberately omits `supply-chain-impact:read`, since no live UI route calls that specific read endpoint (CDD-066: `CODE EXISTS ≠ USER-ACCESSIBLE CAPABILITY`). But once an administrator grants tenant-wide admin consent (**Enterprise Applications** → the frontend's service principal → **Permissions** → **Grant admin consent**), Entra records one `oauth2PermissionGrant` (`consentType: AllPrincipals`) that — in the reference deployment — covers **all 11** scopes, not only the 10 requested. A real token's `scp` claim reflects that full grant, not the narrower request list. This is expected, not a defect — the backend's own per-endpoint `_authorize()` check still fail-closed gates each capability regardless of what else appears in `scp` (Part 34e). See Part 34a below for how to inspect the real grant.
 
 ### Noetva application tenant vs Azure tenant, one more time
 
