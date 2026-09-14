@@ -79,12 +79,15 @@ from app.application.oqi_ontology_impact_evaluation_service import (
 from app.application.oqi_reference_evidence_service import OqiReferenceEvidenceService
 from app.application.oqi_timeliness_evaluation_service import OqiTimelinessEvaluationService
 from app.core.bootstrap import (
+    AZURE_DEV_DEMO_TENANT_ID,
     BOOTSTRAP_BUSINESS_DOMAIN_ID,
     BOOTSTRAP_DEMO_TENANT_ID,
     BOOTSTRAP_ENTITY_TYPE_ID,
     BOOTSTRAP_SEED_NAMESPACE,
     BOOTSTRAP_SYSTEM_ENTITY_ID,
 )
+
+_ALLOWED_SEED_TENANTS = (BOOTSTRAP_DEMO_TENANT_ID, AZURE_DEV_DEMO_TENANT_ID)
 from app.domain.blueprint import (
     Blueprint,
     ConceptRequirement,
@@ -349,10 +352,10 @@ class DemoOqiSeeder:
         self.session = session
 
     def seed(self, *, tenant_id: str = BOOTSTRAP_DEMO_TENANT_ID) -> DemoOqiSeedSummary:
-        if tenant_id != BOOTSTRAP_DEMO_TENANT_ID:
+        if tenant_id not in _ALLOWED_SEED_TENANTS:
             raise DemoTenantRequiredError(
                 f"DemoOqiSeeder refuses to seed tenant {tenant_id!r}; "
-                f"only {BOOTSTRAP_DEMO_TENANT_ID!r} is permitted"
+                f"only one of {_ALLOWED_SEED_TENANTS!r} is permitted"
             )
         dependency_id = self._seed_context(tenant_id)
         return self._evaluate(tenant_id, dependency_id)

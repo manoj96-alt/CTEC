@@ -68,12 +68,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.bootstrap import (
+    AZURE_DEV_DEMO_TENANT_ID,
     BOOTSTRAP_BUSINESS_DOMAIN_ID,
     BOOTSTRAP_DEMO_TENANT_ID,
     BOOTSTRAP_SEED_NAMESPACE,
     BOOTSTRAP_SYSTEM_ENTITY_ID,
     SEED_TIMESTAMP,
 )
+
+_ALLOWED_SEED_TENANTS = (BOOTSTRAP_DEMO_TENANT_ID, AZURE_DEV_DEMO_TENANT_ID)
 from app.infrastructure.persistence.models.assertion import Assertion
 from app.infrastructure.persistence.models.enterprise_entity import EnterpriseEntity
 from app.infrastructure.persistence.models.entity_type import EntityType
@@ -147,10 +150,11 @@ class DemoGateFSeeder:
         self._session = session
 
     def seed(self, tenant_id: str = BOOTSTRAP_DEMO_TENANT_ID) -> DemoGateFSeedSummary:
-        if tenant_id != BOOTSTRAP_DEMO_TENANT_ID:
+        if tenant_id not in _ALLOWED_SEED_TENANTS:
             raise DemoTenantRequiredError(
                 f"The demo Gate F seeder refuses to seed tenant {tenant_id!r}; "
-                f"it only ever seeds the labeled demo tenant {BOOTSTRAP_DEMO_TENANT_ID!r}."
+                f"it only ever seeds one of the explicitly labeled tenants "
+                f"{_ALLOWED_SEED_TENANTS!r}."
             )
 
         OntologySeeder(self._session).load()
