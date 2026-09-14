@@ -10,7 +10,7 @@
     "frontendHostname": { "value": "" },
     "backendHostname": { "value": "" },
     "oidcIssuer": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_ISSUER_URL" },
-    "oidcAudience": { "value": "REPLACE_WITH_API_APPLICATION_ID_URI" },
+    "oidcAudience": { "value": "REPLACE_WITH_BACKEND_APP_CLIENT_ID_GUID_NOT_URI" },
     "oidcJwksUrl": { "value": "REPLACE_WITH_ENTRA_EXTERNAL_ID_JWKS_URL" },
     "oidcScopeClaim": { "value": "scp" },
     "oidcTenantClaim": { "value": "noetva_tenant_id" },

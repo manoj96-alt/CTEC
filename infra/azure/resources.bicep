@@ -38,7 +38,7 @@ param backendHostname string = ''
 @description('OIDC issuer the backend trusts (Entra External ID tenant issuer URL once provisioned)')
 param oidcIssuer string
 
-@description('OIDC audience (API application ID URI)')
+@description('OIDC audience: the backend API app registration\'s bare Application (client) ID GUID -- NOT its Application ID URI. Microsoft Entra v2.0 access tokens always set aud to the client ID GUID for a custom API (CDD-076); the App ID URI is used only to qualify scope requests (CDD-074) and to route claims mapping onto the access token (CDD-073), never as the token audience.')
 param oidcAudience string
 
 @description('OIDC JWKS URL')
