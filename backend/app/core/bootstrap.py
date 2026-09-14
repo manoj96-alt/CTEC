@@ -34,3 +34,12 @@ BOOTSTRAP_SEED_NAMESPACE = UUID("00000000-0000-0000-0000-000000000008")
 # always sourced from the authenticated OIDC tenant claim at the trusted
 # boundary (see app.api.supplier_risk.authentication.TrustedPrincipal).
 BOOTSTRAP_DEMO_TENANT_ID = "ctec-demo-tenant"
+
+# CDD-077 R13: the real, governed Azure DEV business tenant (CDD-075) --
+# the tenant_id a real authenticated Azure DEV session's noetva_tenant_id
+# claim actually carries. Distinct from BOOTSTRAP_DEMO_TENANT_ID above.
+# Demo seeders may be explicitly directed at this tenant so representative
+# demo data is reachable by a real authenticated DEV session -- this is
+# never an implicit default or environment-detected fallback; a caller
+# must pass it explicitly as tenant_id.
+AZURE_DEV_DEMO_TENANT_ID = "noetva-dev-tenant"
