@@ -3,6 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import {
+  Compass,
+  Database,
+  LayoutDashboard,
+  Network,
+  Plug,
+  ScaleIcon,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Telescope,
+} from "lucide-react";
 import { SessionControls } from "./session-controls";
 
 // Grouped enterprise information architecture (CDD-033 §8-§9). Exact
@@ -10,16 +22,21 @@ import { SessionControls } from "./session-controls";
 // .test.tsx. "Ontology" has no dedicated domain landing among the 29
 // authorized Gate X files, so its primary-nav entry links directly to its
 // default sub-route (Ontology Explorer).
+//
+// CDD-079 (WOW-I1) §12: icons are decorative reinforcement only, never a
+// replacement for the text label (icon + label always together), and
+// never the sole carrier of active/inactive state (aria-current + a
+// visible background/underline treatment in globals.css do that).
 const primaryNavItems = [
-  { label: "Overview", href: "/overview" },
-  { label: "Data", href: "/data" },
-  { label: "Ontology", href: "/ontology/explorer" },
-  { label: "Context", href: "/context" },
-  { label: "Quality", href: "/quality" },
-  { label: "Intelligence", href: "/intelligence" },
-  { label: "Integrations", href: "/integrations" },
-  { label: "Governance", href: "/governance" },
-  { label: "Administration", href: "/administration" },
+  { label: "Overview", href: "/overview", icon: LayoutDashboard },
+  { label: "Data", href: "/data", icon: Database },
+  { label: "Ontology", href: "/ontology/explorer", icon: Network },
+  { label: "Context", href: "/context", icon: Compass },
+  { label: "Quality", href: "/quality", icon: ShieldCheck },
+  { label: "Intelligence", href: "/intelligence", icon: Sparkles },
+  { label: "Integrations", href: "/integrations", icon: Plug },
+  { label: "Governance", href: "/governance", icon: ScaleIcon },
+  { label: "Administration", href: "/administration", icon: Settings },
 ];
 
 // Preserved exactly (Artifact Authorization §5 item 1): not part of the
@@ -50,38 +67,37 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-[var(--line)] bg-white">
-        <div className="mx-auto max-w-5xl px-6 py-5 flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <Link className="font-bold tracking-tight text-xl" href="/">
+    <div className="observatory-shell">
+      <header className="observatory-header">
+        <div className="observatory-header-inner">
+          <div className="observatory-brand-row">
+            <Link className="observatory-wordmark" href="/">
+              <Telescope
+                className="observatory-wordmark-mark"
+                size={20}
+                aria-hidden="true"
+              />
               Noetva
             </Link>
             <SessionControls />
           </div>
-          <nav
-            aria-label="Primary"
-            className="flex flex-wrap gap-5 text-sm font-medium"
-          >
-            {primaryNavItems.map(({ label, href }) => {
+          <nav aria-label="Primary" className="observatory-nav">
+            {primaryNavItems.map(({ label, href, icon: Icon }) => {
               const active = isNavItemActive(pathname ?? "", href);
               return (
                 <Link
                   key={label}
                   href={href}
                   aria-current={active ? "page" : undefined}
-                  style={active ? { fontWeight: 800 } : undefined}
-                  className={active ? "nav-link-active" : undefined}
+                  className="observatory-nav-link"
                 >
+                  <Icon size={16} aria-hidden="true" />
                   {label}
                 </Link>
               );
             })}
           </nav>
-          <nav
-            aria-label="Secondary"
-            className="flex flex-wrap gap-5 text-xs text-[var(--muted)]"
-          >
+          <nav aria-label="Secondary" className="observatory-nav-secondary">
             {secondaryNavItems.map(({ label, href }) => (
               <Link key={label} href={href}>
                 {label}
@@ -90,10 +106,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
-        {children}
-      </main>
-      <footer className="border-t border-[var(--line)] bg-white px-6 py-5 text-center text-sm text-[var(--muted)]">
+      <main className="observatory-main">{children}</main>
+      <footer
+        className="observatory-header"
+        style={{
+          borderTop: "1px solid var(--obs-border)",
+          borderBottom: 0,
+          textAlign: "center",
+          padding: "1.1rem 1.5rem",
+          fontSize: "0.85rem",
+          color: "var(--obs-text-muted)",
+        }}
+      >
         Noetva — Governed Enterprise Understanding
       </footer>
     </div>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/design-system/empty-state";
 import { PageHeader } from "@/components/design-system/page-header";
+import { TextField } from "@/components/design-system/text-field";
 import {
   EvidenceFitnessApiError,
   evidenceFitnessApi,
@@ -88,24 +89,22 @@ export default function Page() {
       <section className="panel">
         <span className="eyebrow">Check evidence fitness</span>
         <h2>Resolve evidence fitness</h2>
-        <label style={{ display: "block", marginTop: "0.75rem" }}>
-          Blueprint name
-          <input
-            type="text"
+        <div style={{ marginTop: "0.75rem" }}>
+          <TextField
+            label="Blueprint name"
             value={blueprintName}
             onChange={(e) => setBlueprintName(e.target.value)}
             required
           />
-        </label>
-        <label style={{ display: "block", marginTop: "0.5rem" }}>
-          Information element name
-          <input
-            type="text"
+        </div>
+        <div style={{ marginTop: "0.5rem" }}>
+          <TextField
+            label="Information element name"
             value={informationElementName}
             onChange={(e) => setInformationElementName(e.target.value)}
             required
           />
-        </label>
+        </div>
         <div style={{ marginTop: "0.75rem" }}>
           <button
             type="button"

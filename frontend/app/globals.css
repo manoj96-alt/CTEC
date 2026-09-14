@@ -15,6 +15,45 @@
      --muted's warmer gray and --accent's teal. */
   --attention: #b45309;
   --pending: #64748b;
+
+  /* CDD-079 (WOW-I1): Noetva Intelligence Observatory foundation tokens.
+     Sourced directly from noetva.ai's real, shipped OKLCH design system
+     (CDD-078 §3) -- not invented. Purely additive: nothing above this
+     point is renamed, removed, or reassigned. Scoped to the new shell
+     and new primitives only (site-shell.tsx, TextField, StatusIndicator)
+     -- `body`/`.panel`/existing page interiors are deliberately left on
+     the light tokens above until each page is migrated in a later WOW
+     phase (CDD-079 §14: additive/evolutionary, never a flag-day rename).
+     "obs" = Observatory, to keep this token family visually and
+     grep-ably distinct from the pre-WOW light tokens above. */
+  --obs-canvas-deep: oklch(14.5% 0.033 254);
+  --obs-canvas: oklch(18% 0.032 252);
+  --obs-canvas-alt: oklch(22.5% 0.036 250);
+  --obs-surface: oklch(22.5% 0.036 250);
+  --obs-surface-elevated: oklch(26% 0.038 250);
+  --obs-surface-interactive: oklch(29% 0.04 250);
+  --obs-border: oklch(86% 0.025 230 / 0.16);
+  --obs-border-strong: oklch(86% 0.025 230 / 0.32);
+  --obs-text-primary: oklch(96.5% 0.007 236);
+  --obs-text-secondary: oklch(96.5% 0.007 236 / 0.72);
+  --obs-text-muted: oklch(96.5% 0.007 236 / 0.52);
+
+  /* Noetva semantic concepts (CDD-079 §6). Bound to meaning, never used
+     as a bare color name in component code. */
+  --obs-intelligence: oklch(81% 0.13 199);
+  --obs-ontology: oklch(66% 0.19 258);
+  --obs-evidence: oklch(70% 0.15 294);
+  --obs-verified: oklch(68% 0.15 158);
+  --obs-conflict: oklch(69% 0.19 28);
+  --obs-attention: oklch(78% 0.15 75);
+  --obs-pending: oklch(70% 0.02 250);
+  --obs-unknown: oklch(60% 0.015 250);
+  --obs-deferred: oklch(55% 0.02 250);
+  --obs-authority: oklch(74% 0.12 210);
+  --obs-recommendation: oklch(78% 0.1 260);
+  --obs-remediation: oklch(72% 0.12 230);
+
+  --obs-radius: 0.5rem;
 }
 * {
   box-sizing: border-box;
@@ -457,4 +496,221 @@ dialog textarea {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ============================================================
+   CDD-079 (WOW-I1): Observatory shell, TextField, and
+   StatusIndicator foundation. Scoped entirely to new markup --
+   nothing above this line is modified. The existing global
+   `prefers-reduced-motion` guard above already disables every
+   keyframe below with no further work.
+   ============================================================ */
+
+/* Motion foundation (CDD-079 §9): definitions only in I1. Applied to
+   real state changes by the phase that owns each surface -- never
+   ambient/looping, never applied to something that isn't a real event. */
+@keyframes obs-evidence-travel {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes obs-conflict-ripple {
+  0% {
+    box-shadow: 0 0 0 0
+      color-mix(in oklch, var(--obs-conflict) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px
+      color-mix(in oklch, var(--obs-conflict) 0%, transparent);
+  }
+}
+@keyframes obs-node-halo {
+  from {
+    box-shadow: 0 0 0 0
+      color-mix(in oklch, var(--obs-intelligence) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 6px
+      color-mix(in oklch, var(--obs-intelligence) 0%, transparent);
+  }
+}
+@keyframes obs-signal-flow {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Observatory shell (CDD-079 §5 shell contract). Dark, disciplined,
+   scoped to the shell/header only -- page interiors are untouched. */
+.observatory-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--obs-canvas);
+  color: var(--obs-text-primary);
+  font-family: var(--font-manrope), Manrope, Arial, sans-serif;
+}
+.observatory-header {
+  background: var(--obs-canvas-deep);
+  border-bottom: 1px solid var(--obs-border);
+}
+.observatory-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.observatory-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.observatory-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  color: var(--obs-text-primary);
+}
+.observatory-wordmark-mark {
+  color: var(--obs-intelligence);
+}
+.observatory-context {
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--obs-text-muted);
+  letter-spacing: 0.02em;
+}
+.observatory-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.observatory-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--obs-radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--obs-text-secondary);
+}
+.observatory-nav-link:hover {
+  color: var(--obs-text-primary);
+  background: var(--obs-surface-interactive);
+}
+.observatory-nav-link[aria-current="page"] {
+  color: var(--obs-text-primary);
+  background: var(--obs-surface);
+  box-shadow: inset 0 -2px 0 var(--obs-intelligence);
+}
+.observatory-nav-link:focus-visible {
+  outline: 3px solid var(--obs-intelligence);
+  outline-offset: 2px;
+}
+.observatory-nav-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.observatory-nav-secondary a {
+  font-size: 0.75rem;
+  color: var(--obs-text-muted);
+}
+.observatory-nav-secondary a:hover {
+  color: var(--obs-text-secondary);
+}
+.observatory-main {
+  flex: 1;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+@media (max-width: 760px) {
+  .observatory-header-inner {
+    padding: 0.85rem 1rem;
+  }
+  .observatory-main {
+    padding: 1.5rem 1rem 3rem;
+  }
+}
+
+/* TextField (CDD-079 §8/§12): the systemic fix for the invisible-input
+   defect. Every state below is real -- boundary always visible, never
+   relying on browser-default appearance as the design contract. */
+.obs-text-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: var(--font-manrope), Manrope, Arial, sans-serif;
+}
+.obs-text-field-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.obs-text-field-input {
+  border: 1px solid #94a3b8;
+  border-radius: var(--obs-radius);
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  background: white;
+  color: var(--ink);
+}
+.obs-text-field-input:hover {
+  border-color: #64748b;
+}
+.obs-text-field-input:focus-visible {
+  outline: 3px solid #0ea5e9;
+  outline-offset: 1px;
+  border-color: #0ea5e9;
+}
+.obs-text-field-input:disabled {
+  background: #f1f5f9;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.obs-text-field--error .obs-text-field-input {
+  border-color: var(--danger);
+}
+.obs-text-field-error {
+  font-size: 0.78rem;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* StatusIndicator (CDD-079 §10): a third, distinct semantic vocabulary
+   from CapabilityStatus (capability-status-badge.tsx, unmodified) and
+   the OQI lifecycle stage states -- describes the state of a specific
+   piece of governed data/evidence. Label + shape + color always
+   together, never color alone. */
+.obs-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.obs-status-indicator-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
 }
