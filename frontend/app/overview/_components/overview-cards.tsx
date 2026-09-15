@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/design-system/empty-state";
+import { StatusIndicator } from "@/components/design-system/status-indicator";
 import { entityResolutionApi } from "@/lib/entity-resolution/api-client";
 import { ontologyModelingApi } from "@/lib/ontology-modeling/api-client";
 import { ontologyApi } from "@/lib/ontology-studio/api-client";
@@ -77,37 +78,54 @@ export function OverviewCards() {
   if (!cards) return <EmptyState kind="loading" title="Loading overview" />;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
-        gap: "1rem",
-      }}
-    >
-      {cards.map((card) => (
-        <section key={card.label} className="panel">
-          <span className="eyebrow">Overview</span>
-          <h2>{card.label}</h2>
-          {card.unavailable ? (
-            <p style={{ color: "var(--muted)" }}>Unavailable</p>
-          ) : (
-            <p style={{ fontSize: "2rem", fontWeight: 700 }}>{card.count}</p>
-          )}
-          <Link className="button" href={card.href}>
-            Open
-          </Link>
+    <section aria-label="Explore" style={{ marginTop: "1.5rem" }}>
+      <h2
+        style={{
+          fontFamily: "var(--font-sora), Sora, Arial, sans-serif",
+          fontSize: "0.95rem",
+          fontWeight: 600,
+          color: "var(--obs-text-secondary)",
+          margin: "0 0 0.75rem",
+        }}
+      >
+        Explore
+      </h2>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
+          gap: "1rem",
+        }}
+      >
+        {cards.map((card) => (
+          <section key={card.label} className="panel">
+            <span className="eyebrow">Explore</span>
+            <h3>{card.label}</h3>
+            {card.unavailable ? (
+              <StatusIndicator status="unavailable" />
+            ) : (
+              <p style={{ fontSize: "2rem", fontWeight: 700 }}>{card.count}</p>
+            )}
+            <div style={{ marginTop: "0.5rem" }}>
+              <Link className="button" href={card.href}>
+                Open
+              </Link>
+            </div>
+          </section>
+        ))}
+        <section className="panel">
+          <span className="eyebrow">Explore</span>
+          <h3>Ask CTEC</h3>
+          <p style={{ color: "var(--muted)" }}>
+            Ask a governed question about the ontology.
+          </p>
+          <div style={{ marginTop: "0.5rem" }}>
+            <Link className="button" href="/intelligence/ask-ctec">
+              Open
+            </Link>
+          </div>
         </section>
-      ))}
-      <section className="panel">
-        <span className="eyebrow">Overview</span>
-        <h2>Ask CTEC</h2>
-        <p style={{ color: "var(--muted)" }}>
-          Ask a governed question about the ontology.
-        </p>
-        <Link className="button" href="/intelligence/ask-ctec">
-          Open
-        </Link>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }

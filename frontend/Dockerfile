@@ -18,7 +18,18 @@ ENV NEXT_PUBLIC_OIDC_REDIRECT_URI=$NEXT_PUBLIC_OIDC_REDIRECT_URI
 ENV NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI=$NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI
 ENV NEXT_PUBLIC_OIDC_SCOPE=$NEXT_PUBLIC_OIDC_SCOPE
 ENV NEXT_PUBLIC_OIDC_API_RESOURCE_URI=$NEXT_PUBLIC_OIDC_API_RESOURCE_URI
-RUN npm run build
+# AUTH-BUG-R1 (see lib/auth/config.ts): Next.js/Turbopack's automatic
+# NEXT_PUBLIC_* build-time inlining was empirically found unreliable for
+# this one value at this application's real size on the remote ACR build
+# agent. Substituting the literal value into source before `next build`
+# runs removes the unreliable inlining step for this value entirely --
+# every other NEXT_PUBLIC_* value is untouched and still relies on the
+# normal automatic mechanism, which remains reliable for them. The `sed`
+# and `next build` are one single `RUN` (one shell, one layer) so there
+# is no Docker layer-commit boundary between the source write and the
+# build reading it -- eliminating any possible visibility gap between
+# the two, not merely making it less likely.
+RUN sed -i "s|__NEXT_PUBLIC_OIDC_API_RESOURCE_URI__|${NEXT_PUBLIC_OIDC_API_RESOURCE_URI}|g" lib/auth/config.ts && npm run build
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
