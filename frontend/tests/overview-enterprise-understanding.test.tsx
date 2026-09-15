@@ -38,8 +38,8 @@ const COMMAND_CENTER_FIXTURE = {
 
 const GOLDEN_THREAD_FINDING = {
   finding_id: "finding-country-of-origin",
-  finding_family: "CROSS_SOURCE_VALUE_CONFLICT",
-  condition_label: "Country of Origin",
+  finding_family: "OQI2",
+  condition_label: "oqi-demo-supplier-country-of-origin",
   status: "OPEN",
   first_seen_at: "2026-01-01T00:00:00Z",
   last_seen_at: "2026-01-02T00:00:00Z",
@@ -115,7 +115,10 @@ describe("Enterprise Understanding panel (Overview)", () => {
 
     render(<EnterpriseUnderstandingPanel />);
 
-    expect(await screen.findByText("Country of Origin")).toBeInTheDocument();
+    // The real, technical condition_label is preserved truthfully...
+    expect(
+      await screen.findByText("oqi-demo-supplier-country-of-origin"),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Criticality — HIGH/)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Open finding/i });
     expect(link).toHaveAttribute(
@@ -126,6 +129,42 @@ describe("Enterprise Understanding panel (Overview)", () => {
     // or "Specification missing" text this component never receives.
     expect(screen.queryByText(/Supplier Portal/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Specification/i)).not.toBeInTheDocument();
+  });
+
+  it("WOW-I2-R1 §2: uses the real, already-shipped family-label mapping as the primary spotlight heading, and demotes the raw technical condition_label to a monospace identifier -- never fabricating a title", async () => {
+    commandCenterMock.mockResolvedValue(COMMAND_CENTER_FIXTURE);
+    listFindingsMock.mockResolvedValue({
+      items: [GOLDEN_THREAD_FINDING],
+      next_cursor: null,
+    });
+
+    const { container } = render(<EnterpriseUnderstandingPanel />);
+    await screen.findByText("oqi-demo-supplier-country-of-origin");
+
+    // OQI2 maps to the same real label already shown in the Findings
+    // page's own filter dropdown -- reused, not invented.
+    expect(
+      screen.getByRole("heading", { name: "Cross-Source Consistency" }),
+    ).toBeInTheDocument();
+
+    // The technical identifier is preserved verbatim, but demoted to a
+    // dedicated, visually-secondary class -- never removed or reworded.
+    const idEl = container.querySelector(".obs-eu-spotlight-id");
+    expect(idEl).toHaveTextContent("oqi-demo-supplier-country-of-origin");
+  });
+
+  it("falls back to the raw finding_family truthfully when it is outside the closed {OQI1,OQI2,OQI3} set, never a fabricated label", async () => {
+    commandCenterMock.mockResolvedValue(COMMAND_CENTER_FIXTURE);
+    listFindingsMock.mockResolvedValue({
+      items: [{ ...GOLDEN_THREAD_FINDING, finding_family: "OQI9" }],
+      next_cursor: null,
+    });
+
+    render(<EnterpriseUnderstandingPanel />);
+
+    expect(
+      await screen.findByRole("heading", { name: "OQI9" }),
+    ).toBeInTheDocument();
   });
 
   it("renders a truthful empty state when there are genuinely zero open findings, never a fabricated spotlight", async () => {
@@ -229,7 +268,7 @@ describe("Enterprise Understanding panel (Overview)", () => {
 
     render(<EnterpriseUnderstandingPanel />);
 
-    await screen.findByText("Country of Origin");
+    await screen.findByText("oqi-demo-supplier-country-of-origin");
     expect(screen.getByRole("link", { name: /Open finding/i })).toHaveAttribute(
       "href",
       "/quality/findings/finding-country-of-origin",
@@ -258,7 +297,7 @@ describe("Enterprise Understanding panel (Overview)", () => {
     });
 
     const { container } = render(<EnterpriseUnderstandingPanel />);
-    await screen.findByText("Country of Origin");
+    await screen.findByText("oqi-demo-supplier-country-of-origin");
 
     expect(
       container.querySelector(".obs-eu-spotlight-enter"),
