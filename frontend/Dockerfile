@@ -24,9 +24,12 @@ ENV NEXT_PUBLIC_OIDC_API_RESOURCE_URI=$NEXT_PUBLIC_OIDC_API_RESOURCE_URI
 # agent. Substituting the literal value into source before `next build`
 # runs removes the unreliable inlining step for this value entirely --
 # every other NEXT_PUBLIC_* value is untouched and still relies on the
-# normal automatic mechanism, which remains reliable for them.
-RUN sed -i "s|__NEXT_PUBLIC_OIDC_API_RESOURCE_URI__|${NEXT_PUBLIC_OIDC_API_RESOURCE_URI}|g" lib/auth/config.ts
-RUN npm run build
+# normal automatic mechanism, which remains reliable for them. The `sed`
+# and `next build` are one single `RUN` (one shell, one layer) so there
+# is no Docker layer-commit boundary between the source write and the
+# build reading it -- eliminating any possible visibility gap between
+# the two, not merely making it less likely.
+RUN sed -i "s|__NEXT_PUBLIC_OIDC_API_RESOURCE_URI__|${NEXT_PUBLIC_OIDC_API_RESOURCE_URI}|g" lib/auth/config.ts && npm run build
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
