@@ -862,7 +862,7 @@ dialog textarea {
   gap: 0.5rem;
   margin-top: 0.25rem;
 }
-.obs-eu-spotlight-card h3 {
+.obs-eu-spotlight-card h2 {
   font-family: var(--font-sora), Sora, Arial, sans-serif;
   font-size: 1.3rem;
   font-weight: 600;

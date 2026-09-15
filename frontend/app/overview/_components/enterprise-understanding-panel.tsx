@@ -233,9 +233,13 @@ function renderSpotlight(state: SpotlightState) {
   }
   return (
     <div className="obs-eu-spotlight-card obs-eu-spotlight-enter">
-      <h3>
+      {/* h2, not h3: matches the heading level EmptyState already uses
+          for this same region's loading/error states -- keeps heading
+          hierarchy consistent across all states, not just the loaded
+          one (h1 Overview -> h2 spotlight identity). */}
+      <h2>
         {FINDING_FAMILY_LABEL[finding.finding_family] ?? finding.finding_family}
-      </h3>
+      </h2>
       <span className="obs-eu-spotlight-id">{finding.condition_label}</span>
       <div className="obs-eu-spotlight-status">
         <span className="obs-eu-spotlight-status-item">
