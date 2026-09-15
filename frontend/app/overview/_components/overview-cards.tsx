@@ -78,52 +78,33 @@ export function OverviewCards() {
   if (!cards) return <EmptyState kind="loading" title="Loading overview" />;
 
   return (
-    <section aria-label="Explore" style={{ marginTop: "1.5rem" }}>
-      <h2
-        style={{
-          fontFamily: "var(--font-sora), Sora, Arial, sans-serif",
-          fontSize: "0.95rem",
-          fontWeight: 600,
-          color: "var(--obs-text-secondary)",
-          margin: "0 0 0.75rem",
-        }}
-      >
-        Explore
-      </h2>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
-          gap: "1rem",
-        }}
-      >
+    <section aria-label="Explore" className="obs-eu-explore">
+      <span className="obs-eu-section-label">Explore</span>
+      <div className="obs-eu-explore-grid">
         {cards.map((card) => (
-          <section key={card.label} className="panel">
-            <span className="eyebrow">Explore</span>
+          <section key={card.label} className="panel obs-eu-explore-card">
             <h3>{card.label}</h3>
             {card.unavailable ? (
               <StatusIndicator status="unavailable" />
             ) : (
-              <p style={{ fontSize: "2rem", fontWeight: 700 }}>{card.count}</p>
+              <p className="obs-eu-explore-count">{card.count}</p>
             )}
-            <div style={{ marginTop: "0.5rem" }}>
-              <Link className="button" href={card.href}>
-                Open
-              </Link>
-            </div>
-          </section>
-        ))}
-        <section className="panel">
-          <span className="eyebrow">Explore</span>
-          <h3>Ask CTEC</h3>
-          <p style={{ color: "var(--muted)" }}>
-            Ask a governed question about the ontology.
-          </p>
-          <div style={{ marginTop: "0.5rem" }}>
-            <Link className="button" href="/intelligence/ask-ctec">
+            <Link className="button obs-eu-explore-button" href={card.href}>
               Open
             </Link>
-          </div>
+          </section>
+        ))}
+        <section className="panel obs-eu-explore-card">
+          <h3>Ask CTEC</h3>
+          <p className="obs-eu-explore-description">
+            Ask a governed question about the ontology.
+          </p>
+          <Link
+            className="button obs-eu-explore-button"
+            href="/intelligence/ask-ctec"
+          >
+            Open
+          </Link>
         </section>
       </div>
     </section>

@@ -30,6 +30,25 @@ function relianceStatus(reliance: string | null): ObservatoryStatus {
   return "unknown";
 }
 
+// WOW-I2-R1 §2: the real backend `condition_label` field is, for every
+// finding family, a direct pass-through of the internal
+// `quality_condition_id`/`business_condition_id` (confirmed by reading
+// backend/app/application/oqi_product_experience_service.py's
+// `list_findings` -- e.g. `condition_label=model1.quality_condition_id`)
+// -- a technical identifier, not a human-authored title, despite its
+// name. No separate human-readable title/name field exists anywhere in
+// FindingSummary. This is the same real, already-shipped family-label
+// mapping already used verbatim in the Findings page's own filter
+// dropdown (frontend/app/quality/findings/page.tsx) -- reused here, not
+// invented -- to give the spotlight a truthful primary heading, while
+// `condition_label` itself is preserved exactly as returned and only
+// demoted to a smaller, monospace identifier treatment below it.
+const FINDING_FAMILY_LABEL: Record<string, string> = {
+  OQI1: "Completeness / Validity",
+  OQI2: "Cross-Source Consistency",
+  OQI3: "Business Rules",
+};
+
 type CommandCenterState =
   | { status: "loading" }
   | { status: "loaded"; data: CommandCenterResponse }
@@ -117,18 +136,28 @@ export function EnterpriseUnderstandingPanel() {
         className="obs-intelligence-surface"
         aria-label="Enterprise understanding"
       >
-        <div className="obs-eu-hero">
-          <span className="eyebrow">Enterprise understanding</span>
-          {renderHero(commandCenter)}
-        </div>
-        <div className="obs-eu-spotlight">
-          <h2>Highest-priority open finding</h2>
-          {renderSpotlight(spotlight)}
+        <div className="obs-eu-story">
+          <div className="obs-eu-hero">
+            <span className="obs-eu-eyebrow">Enterprise understanding</span>
+            {renderHero(commandCenter)}
+          </div>
+          <div className="obs-eu-spotlight">
+            <span className="obs-eu-eyebrow">
+              Highest-priority open finding
+            </span>
+            {renderSpotlight(spotlight)}
+          </div>
         </div>
       </section>
 
-      {renderReliance(commandCenter)}
-      {renderAttention(commandCenter)}
+      <div className="obs-eu-section">
+        <span className="obs-eu-section-label">Reliance</span>
+        {renderReliance(commandCenter)}
+      </div>
+      <div className="obs-eu-section">
+        <span className="obs-eu-section-label">Governed attention</span>
+        {renderAttention(commandCenter)}
+      </div>
     </div>
   );
 }
@@ -204,8 +233,10 @@ function renderSpotlight(state: SpotlightState) {
   }
   return (
     <div className="obs-eu-spotlight-card obs-eu-spotlight-enter">
-      <span className="obs-eu-spotlight-family">{finding.finding_family}</span>
-      <h3>{finding.condition_label}</h3>
+      <h3>
+        {FINDING_FAMILY_LABEL[finding.finding_family] ?? finding.finding_family}
+      </h3>
+      <span className="obs-eu-spotlight-id">{finding.condition_label}</span>
       <div className="obs-eu-spotlight-status">
         <span className="obs-eu-spotlight-status-item">
           <StatusIndicator status="conflict" />
@@ -276,21 +307,11 @@ function renderReliance(state: CommandCenterState) {
         {cells.map((cell) => (
           <Link
             key={cell.key}
-            className="panel"
+            className={`panel obs-eu-reliance-cell obs-eu-reliance-cell--${cell.key}`}
             href="/quality"
-            style={{ display: "block" }}
           >
             <StatusIndicator status={cell.status} />
-            <p
-              style={{
-                fontSize: "1.75rem",
-                fontWeight: 700,
-                lineHeight: 1,
-                margin: "0.35rem 0",
-              }}
-            >
-              {cell.count}
-            </p>
+            <p className="obs-eu-reliance-count">{cell.count}</p>
             <span className="eyebrow">{cell.label}</span>
           </Link>
         ))}
@@ -302,11 +323,7 @@ function renderReliance(state: CommandCenterState) {
     <div
       role="group"
       aria-label="Enterprise knowledge reliance"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))",
-        gap: "1rem",
-      }}
+      className="obs-eu-reliance-grid"
     >
       {body}
     </div>
@@ -342,45 +359,23 @@ function renderAttention(state: CommandCenterState) {
     const investigations = state.data.active_agent_investigations_count;
     return (
       <>
-        <Link
-          className="panel"
-          href="/quality/findings"
-          style={{ display: "block" }}
-        >
+        <Link className="panel obs-eu-attention-cell" href="/quality/findings">
           <StatusIndicator
             status={authorizations > 0 ? "attention" : "not-exercised"}
           />
-          <p
-            style={{
-              fontSize: "1.75rem",
-              fontWeight: 700,
-              lineHeight: 1,
-              margin: "0.35rem 0",
-            }}
-          >
-            {authorizations}
-          </p>
-          <span className="eyebrow">Pending Human Authorization</span>
+          <span className="obs-eu-attention-count">{authorizations}</span>
+          <span className="obs-eu-attention-label">
+            Pending Human Authorization
+          </span>
         </Link>
-        <Link
-          className="panel"
-          href="/quality/findings"
-          style={{ display: "block" }}
-        >
+        <Link className="panel obs-eu-attention-cell" href="/quality/findings">
           <StatusIndicator
             status={investigations > 0 ? "pending" : "not-invoked"}
           />
-          <p
-            style={{
-              fontSize: "1.75rem",
-              fontWeight: 700,
-              lineHeight: 1,
-              margin: "0.35rem 0",
-            }}
-          >
-            {investigations}
-          </p>
-          <span className="eyebrow">Active Agent Investigations</span>
+          <span className="obs-eu-attention-count">{investigations}</span>
+          <span className="obs-eu-attention-label">
+            Active Agent Investigations
+          </span>
         </Link>
       </>
     );
@@ -390,11 +385,7 @@ function renderAttention(state: CommandCenterState) {
     <div
       role="group"
       aria-label="Governed human and agent attention"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))",
-        gap: "1rem",
-      }}
+      className="obs-eu-attention-grid"
     >
       {body}
     </div>
