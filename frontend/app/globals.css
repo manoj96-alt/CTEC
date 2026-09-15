@@ -783,6 +783,102 @@ dialog textarea {
   }
 }
 
+/* ============================================================
+   CDD-080 (WOW-I2): Enterprise Understanding panel (Overview).
+   `.obs-intelligence-surface` is the single, rationed elevated/glass
+   treatment CDD-078 §3 reserved for a small number of intelligence
+   surfaces -- used here for the hero+spotlight region only. It is a
+   dark-canvas-native container (not a `.panel` light island), so it
+   deliberately does NOT appear in `.observatory-main .panel`'s
+   dark-foreground override list above -- it correctly inherits
+   `.observatory-main`'s light ambient text color, the same way
+   `.observatory-header`/`PageHeader` already do.
+   ============================================================ */
+.obs-eu {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.obs-intelligence-surface {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    var(--obs-surface-elevated),
+    var(--obs-surface)
+  );
+  border: 1px solid var(--obs-border-strong);
+  border-radius: calc(var(--obs-radius) * 2);
+  padding: 1.75rem 2rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+.obs-eu-hero-count {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.75rem, 6vw, 4.5rem);
+  line-height: 1;
+  margin: 0.5rem 0 0;
+}
+.obs-eu-hero-caption {
+  color: var(--obs-text-secondary);
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0;
+  max-width: 34rem;
+}
+.obs-eu-spotlight {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--obs-border);
+}
+.obs-eu-spotlight h2 {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--obs-text-secondary);
+}
+.obs-eu-spotlight-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.25rem;
+  background: var(--obs-surface-interactive);
+  border: 1px solid var(--obs-border);
+  border-radius: var(--obs-radius);
+}
+.obs-eu-spotlight-family {
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--obs-text-muted);
+  letter-spacing: 0.02em;
+}
+.obs-eu-spotlight-card h3 {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+.obs-eu-spotlight-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.obs-eu-spotlight-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--obs-text-secondary);
+}
+/* CDD-080 §7-O: exactly one new, real, state-triggered motion use -- a
+   one-shot reveal on the spotlight card when real finding data first
+   arrives. Only applied to the JSX branch that renders once a finding is
+   actually loaded (never during loading/error/empty), so it plays once
+   on mount and never repeats. The global `prefers-reduced-motion` guard
+   above already disables it with no further work required here. */
+.obs-eu-spotlight-enter {
+  animation: obs-conflict-ripple 900ms ease-out 1;
+}
+
 /* TextField (CDD-079 §8/§12): the systemic fix for the invisible-input
    defect. Every state below is real -- boundary always visible, never
    relying on browser-default appearance as the design contract. */
