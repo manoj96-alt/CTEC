@@ -326,6 +326,92 @@ describe("OQI Finding Detail — evidence", () => {
     expect(document.querySelector("script[data-injected]")).toBeNull();
     expect(document.body.innerHTML).not.toContain("<script>alert");
   });
+
+  // CDD-081 §11 Classification D + WOW-I3-A: the certified Golden Thread
+  // (oqi-demo-supplier-country-of-origin, OQI2) has exactly two real
+  // participants -- SAP observing US, PLM observing MX -- and no third
+  // source (backend demo_oqi_seeder.py). This proves the Evidence Rail
+  // renders exactly that shape and fabricates nothing beyond it.
+  it("Golden Thread: SAP=US / PLM=MX render exactly, no third source, no fabricated authority", async () => {
+    mockAll({
+      finding: {
+        finding_family: "OQI2",
+        condition_label: "oqi-demo-supplier-country-of-origin",
+      },
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(screen.getByText("SAP")).toBeInTheDocument();
+    expect(screen.getByText("US")).toBeInTheDocument();
+    expect(screen.getByText("PLM")).toBeInTheDocument();
+    expect(screen.getByText("MX")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Governed authoritative source"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/MES|Supplier Portal|PIM/),
+    ).not.toBeInTheDocument();
+  });
+
+  // CDD-081 §11 Classification D: OQI1/OQI3 never populate `participants`
+  // by design (backend `get_evidence()` only does so for OQI2) -- this is
+  // a different, real evidence representation, not a defect. The empty
+  // table symptom the WOW-I2-R1 operator observed must never render the
+  // same "no evidence" wording a genuinely empty OQI2 case would.
+  it.each(["OQI1", "OQI3"])(
+    "%s with zero participants reads as not comparing sources, never a broken-looking empty table",
+    async (family) => {
+      mockAll({
+        finding: { finding_family: family },
+        evidence: { participants: [], candidate: null },
+      });
+      await renderTab("Evidence");
+
+      expect(
+        screen.getByText(/does not compare multiple governed sources/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          "No source evidence has been recorded for this Finding.",
+        ),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    },
+  );
+
+  it("OQI2 with zero participants is a distinct, honestly-labeled gap", async () => {
+    mockAll({
+      finding: { finding_family: "OQI2" },
+      evidence: { participants: [], candidate: null },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      screen.getByText(
+        "No source evidence has been recorded for this Finding.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("OQI Finding Detail — ontology impact", () => {
@@ -422,7 +508,14 @@ describe("OQI Finding Detail — reliance", () => {
       },
     });
     await renderTab("Explainable Reliance");
-    expect(screen.getByText(/Reliance Unknown/)).toBeInTheDocument();
+    // CDD-081 §12: Conflict Lens now also carries its own brief Reliance
+    // signal outside the tab content (always visible, not tab-scoped) --
+    // this scopes the assertion to the Reliance tab's own detailed panel
+    // so it is unaffected by that separate, real summary text existing
+    // elsewhere on the page.
+    expect(
+      screen.getByText("Reliance Unknown — insufficient evidence to assess"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/Insufficient quality coverage/i),
     ).toBeInTheDocument();
@@ -504,6 +597,18 @@ describe("OQI Finding Detail — agent investigation", () => {
       screen.getByText("<img src=x onerror=alert(1)>"),
     ).toBeInTheDocument();
     expect(document.querySelectorAll("img[onerror]").length).toBe(0);
+  });
+
+  // CDD-081 §14: zero specialists and no recommendation means live agent
+  // reasoning has genuinely never run for this Finding -- this is the
+  // untested "unavailable" branch the WOW-I2-R1 operator flagged as
+  // implying a technical failure. Fixed to the real not-invoked
+  // vocabulary (CDD-079 §10), never a fabricated "unavailable" claim.
+  it("zero specialists and no recommendation render as Not invoked, never Unavailable", async () => {
+    mockAll({ agent: { specialists: [], recommendation: null } });
+    await renderTab("Agent Investigation");
+    expect(screen.getByText("Not invoked")).toBeInTheDocument();
+    expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
   });
 });
 

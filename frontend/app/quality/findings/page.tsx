@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/design-system/empty-state";
 import { PageHeader } from "@/components/design-system/page-header";
+import {
+  StatusIndicator,
+  type ObservatoryStatus,
+} from "@/components/design-system/status-indicator";
 import { OqiApiError, oqiApi } from "@/lib/oqi/api-client";
 import type { FindingSummary } from "@/lib/oqi/contracts";
 
@@ -17,6 +21,27 @@ const RELIANCE_LABEL: Record<string, string> = {
   RELIANCE_SUPPORTED: "Reliance Supported",
   RELIANCE_AT_RISK: "Reliance At Risk",
   RELIANCE_UNKNOWN: "Reliance Unknown",
+};
+
+function relianceStatus(state: string | null): ObservatoryStatus {
+  if (state === "RELIANCE_SUPPORTED") return "verified";
+  if (state === "RELIANCE_AT_RISK") return "conflict";
+  return "unknown";
+}
+
+// CDD-081 §4/§10: the real family filter values (this dropdown's own
+// options below) mapped to their human-readable label for the table's
+// Family column too -- the raw code is preserved verbatim, demoted to a
+// monospace line beneath it, never replaced. INTEGRITY/TIMELINESS are
+// real, separate top-level families (CDD-081 §10 discovery) mapped to
+// their own already-real filter-option text, never collapsed into OQI1-3
+// or invented.
+const FAMILY_LABEL: Record<string, string> = {
+  OQI1: "Completeness / Validity",
+  OQI2: "Cross-Source Consistency",
+  OQI3: "Business Rules",
+  INTEGRITY: "Integrity",
+  TIMELINESS: "Timeliness",
 };
 
 type LoadState =
@@ -188,14 +213,42 @@ function FindingsPageContent() {
                       {item.condition_label}
                     </Link>
                   </td>
-                  <td>{item.finding_family}</td>
-                  <td>{item.status}</td>
-                  <td>{item.highest_criticality ?? "Unknown"}</td>
                   <td>
-                    {item.reliance_state
-                      ? (RELIANCE_LABEL[item.reliance_state] ??
-                        item.reliance_state)
-                      : "Reliance Unknown"}
+                    <div>
+                      {FAMILY_LABEL[item.finding_family] ?? item.finding_family}
+                    </div>
+                    <span className="obs-family-code">
+                      {item.finding_family}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="obs-inline-status">
+                      <StatusIndicator
+                        status={
+                          item.status === "RESOLVED" ? "verified" : "attention"
+                        }
+                      />
+                      <span>{item.status}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="obs-inline-status">
+                      <StatusIndicator status="conflict" />
+                      <span>{item.highest_criticality ?? "Unknown"}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="obs-inline-status">
+                      <StatusIndicator
+                        status={relianceStatus(item.reliance_state)}
+                      />
+                      <span>
+                        {item.reliance_state
+                          ? (RELIANCE_LABEL[item.reliance_state] ??
+                            item.reliance_state)
+                          : "Reliance Unknown"}
+                      </span>
+                    </span>
                   </td>
                   <td>{new Date(item.last_seen_at).toLocaleString()}</td>
                 </tr>

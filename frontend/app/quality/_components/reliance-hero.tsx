@@ -1,7 +1,17 @@
+import {
+  StatusIndicator,
+  type ObservatoryStatus,
+} from "@/components/design-system/status-indicator";
+
 // CDD-045 §16/§29 UI Truth Table: the three Reliance counts are the OQI
 // hero semantic. No score, no percentage, no weighted composite -- three
 // governed counts, rendered with equal visual weight so that UNKNOWN never
 // reads as a quieter, safer variant of AT_RISK (CDD-045 §14/§19).
+//
+// CDD-081 §2: the raw inline-hex dots are replaced with the real,
+// governed StatusIndicator vocabulary (CDD-079 §10) -- the same
+// verified/conflict/unknown mapping already shipped for the Overview
+// spotlight's Reliance cells, reused here rather than reinvented.
 export function RelianceHero({
   supported,
   atRisk,
@@ -15,25 +25,25 @@ export function RelianceHero({
     key: string;
     label: string;
     count: number;
-    color: string;
+    status: ObservatoryStatus;
   }[] = [
     {
       key: "supported",
       label: "Reliance Supported",
       count: supported,
-      color: "#1a7f37",
+      status: "verified",
     },
     {
       key: "at-risk",
       label: "Reliance At Risk",
       count: atRisk,
-      color: "#b42318",
+      status: "conflict",
     },
     {
       key: "unknown",
       label: "Reliance Unknown",
       count: unknown,
-      color: "#7a5c00",
+      status: "unknown",
     },
   ];
 
@@ -53,16 +63,7 @@ export function RelianceHero({
           className="panel"
           style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}
         >
-          <span
-            aria-hidden="true"
-            style={{
-              display: "inline-block",
-              width: "0.6rem",
-              height: "0.6rem",
-              borderRadius: "999px",
-              backgroundColor: cell.color,
-            }}
-          />
+          <StatusIndicator status={cell.status} />
           <span style={{ fontSize: "1.75rem", fontWeight: 700, lineHeight: 1 }}>
             {cell.count}
           </span>

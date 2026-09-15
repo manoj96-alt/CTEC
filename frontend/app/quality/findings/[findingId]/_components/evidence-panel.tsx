@@ -1,3 +1,4 @@
+import { StatusIndicator } from "@/components/design-system/status-indicator";
 import type { EvidenceResponse } from "@/lib/oqi/contracts";
 
 // CDD-045 §11/§29 UI Truth Table -- the signature N-source experience.
@@ -6,7 +7,21 @@ import type { EvidenceResponse } from "@/lib/oqi/contracts";
 // never as correctness. A candidate, if one exists, is always labeled
 // "Candidate — not established truth" -- this exact wording is load-
 // bearing and must never be shortened to imply correctness.
-export function EvidencePanel({ evidence }: { evidence: EvidenceResponse }) {
+//
+// CDD-081 §11: `finding_family` is passed down so an empty
+// `participants` list can be described truthfully. OQI2 is the only
+// family that populates multi-source comparison (backend
+// oqi_product_experience_service.py `get_evidence()`) -- OQI1/OQI3
+// legitimately never do, by design (Classification D), so their empty
+// list must never render the same "no evidence" wording a genuinely
+// empty OQI2 case would.
+export function EvidencePanel({
+  evidence,
+  findingFamily,
+}: {
+  evidence: EvidenceResponse;
+  findingFamily?: string;
+}) {
   const known = evidence.participants.filter(
     (p) => !p.is_missing && p.observed_value !== null,
   );
@@ -23,35 +38,45 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceResponse }) {
   return (
     <div>
       <h3>Source Evidence</h3>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left" }}>Source</th>
-            <th style={{ textAlign: "left" }}>Observed value</th>
-            <th style={{ textAlign: "left" }}>Context</th>
-          </tr>
-        </thead>
-        <tbody>
+
+      {evidence.participants.length === 0 ? (
+        <p role="status">
+          {findingFamily === "OQI2"
+            ? "No source evidence has been recorded for this Finding."
+            : "This finding type does not compare multiple governed sources."}
+        </p>
+      ) : (
+        <div className="obs-evidence-rail">
           {evidence.participants.map((participant) => (
-            <tr key={participant.source_system}>
-              <td>{participant.source_system}</td>
-              <td>
-                {participant.is_missing
-                  ? "Missing"
-                  : participant.observed_value}
-              </td>
-              <td>
+            <div key={participant.source_system} className="obs-evidence-row">
+              <span className="obs-evidence-source">
+                {participant.source_system}
+              </span>
+              <span className="obs-evidence-value">
+                {participant.is_missing ? (
+                  <span className="obs-evidence-missing">
+                    <StatusIndicator status="unknown" />
+                    <span>Missing</span>
+                  </span>
+                ) : (
+                  participant.observed_value
+                )}
+              </span>
+              <span className="obs-evidence-context">
                 {participant.is_authoritative ? (
                   <span>Governed authoritative source</span>
                 ) : null}
                 {participant.is_conflicting ? (
-                  <span style={{ marginLeft: "0.5rem" }}>Conflicting</span>
+                  <span className="obs-evidence-conflict">
+                    <StatusIndicator status="conflict" />
+                    <span>Conflicting</span>
+                  </span>
                 ) : null}
-              </td>
-            </tr>
+              </span>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      )}
 
       {[...valueCounts.entries()].map(([value, count]) => (
         <p key={value} style={{ color: "var(--muted)" }}>
