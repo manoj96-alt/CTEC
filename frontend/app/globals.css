@@ -15,6 +15,45 @@
      --muted's warmer gray and --accent's teal. */
   --attention: #b45309;
   --pending: #64748b;
+
+  /* CDD-079 (WOW-I1): Noetva Intelligence Observatory foundation tokens.
+     Sourced directly from noetva.ai's real, shipped OKLCH design system
+     (CDD-078 §3) -- not invented. Purely additive: nothing above this
+     point is renamed, removed, or reassigned. Scoped to the new shell
+     and new primitives only (site-shell.tsx, TextField, StatusIndicator)
+     -- `body`/`.panel`/existing page interiors are deliberately left on
+     the light tokens above until each page is migrated in a later WOW
+     phase (CDD-079 §14: additive/evolutionary, never a flag-day rename).
+     "obs" = Observatory, to keep this token family visually and
+     grep-ably distinct from the pre-WOW light tokens above. */
+  --obs-canvas-deep: oklch(14.5% 0.033 254);
+  --obs-canvas: oklch(18% 0.032 252);
+  --obs-canvas-alt: oklch(22.5% 0.036 250);
+  --obs-surface: oklch(22.5% 0.036 250);
+  --obs-surface-elevated: oklch(26% 0.038 250);
+  --obs-surface-interactive: oklch(29% 0.04 250);
+  --obs-border: oklch(86% 0.025 230 / 0.16);
+  --obs-border-strong: oklch(86% 0.025 230 / 0.32);
+  --obs-text-primary: oklch(96.5% 0.007 236);
+  --obs-text-secondary: oklch(96.5% 0.007 236 / 0.72);
+  --obs-text-muted: oklch(96.5% 0.007 236 / 0.52);
+
+  /* Noetva semantic concepts (CDD-079 §6). Bound to meaning, never used
+     as a bare color name in component code. */
+  --obs-intelligence: oklch(81% 0.13 199);
+  --obs-ontology: oklch(66% 0.19 258);
+  --obs-evidence: oklch(70% 0.15 294);
+  --obs-verified: oklch(68% 0.15 158);
+  --obs-conflict: oklch(69% 0.19 28);
+  --obs-attention: oklch(78% 0.15 75);
+  --obs-pending: oklch(70% 0.02 250);
+  --obs-unknown: oklch(60% 0.015 250);
+  --obs-deferred: oklch(55% 0.02 250);
+  --obs-authority: oklch(74% 0.12 210);
+  --obs-recommendation: oklch(78% 0.1 260);
+  --obs-remediation: oklch(72% 0.12 230);
+
+  --obs-radius: 0.5rem;
 }
 * {
   box-sizing: border-box;
@@ -29,15 +68,20 @@ a {
   color: inherit;
   text-decoration: none;
 }
+/* WOW-I1-R1: denser action hierarchy (CDD-079 §9 button/action review).
+   Original 0.7rem/1rem padding + 700 weight made every action button
+   visually dominate operational cards. Kept clearly clickable/primary,
+   sized down so information density can win back the space. */
 button,
 .button {
   border: 0;
-  border-radius: 0.55rem;
+  border-radius: 0.5rem;
   background: var(--accent);
   color: white;
-  padding: 0.7rem 1rem;
+  padding: 0.5rem 0.85rem;
   font: inherit;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -71,10 +115,29 @@ textarea:focus-visible {
   gap: 2rem;
   margin-bottom: 2rem;
 }
+/* WOW-I1-R1: operational page-title scale (CDD-079 §7/§11 typography
+   foundation, completed here). The original clamp(2rem, 5vw, 3.25rem)
+   -- up to 52px -- is marketing-hero scale; every authenticated page
+   used it via PageHeader. Reduced to a compact, still-prominent
+   enterprise scale, and given the Sora display face now that it's
+   loaded (WOW-I1 loaded the font but never applied it to any heading). */
 .page-heading h1 {
-  font-size: clamp(2rem, 5vw, 3.25rem);
-  line-height: 1.05;
-  margin: 0.35rem 0;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.35rem, 1.8vw, 1.75rem);
+  line-height: 1.2;
+  margin: 0.2rem 0;
+}
+.panel h2,
+.panel h3 {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 600;
+}
+.panel h2 {
+  font-size: 1.05rem;
+}
+.panel h3 {
+  font-size: 0.95rem;
 }
 .eyebrow {
   text-transform: uppercase;
@@ -87,8 +150,8 @@ textarea:focus-visible {
   background: white;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  padding: 1.5rem;
-  margin: 1rem 0;
+  padding: 1.15rem 1.35rem;
+  margin: 0.85rem 0;
   box-shadow: 0 12px 35px rgba(20, 33, 61, 0.05);
 }
 .status-grid {
@@ -457,4 +520,328 @@ dialog textarea {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ============================================================
+   CDD-079 (WOW-I1): Observatory shell, TextField, and
+   StatusIndicator foundation. Scoped entirely to new markup --
+   nothing above this line is modified. The existing global
+   `prefers-reduced-motion` guard above already disables every
+   keyframe below with no further work.
+   ============================================================ */
+
+/* Motion foundation (CDD-079 §9): definitions only in I1. Applied to
+   real state changes by the phase that owns each surface -- never
+   ambient/looping, never applied to something that isn't a real event. */
+@keyframes obs-evidence-travel {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes obs-conflict-ripple {
+  0% {
+    box-shadow: 0 0 0 0
+      color-mix(in oklch, var(--obs-conflict) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px
+      color-mix(in oklch, var(--obs-conflict) 0%, transparent);
+  }
+}
+@keyframes obs-node-halo {
+  from {
+    box-shadow: 0 0 0 0
+      color-mix(in oklch, var(--obs-intelligence) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 6px
+      color-mix(in oklch, var(--obs-intelligence) 0%, transparent);
+  }
+}
+@keyframes obs-signal-flow {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Observatory shell (CDD-079 §5 shell contract). Dark, disciplined,
+   scoped to the shell/header only -- page interiors are untouched. */
+/* WOW-I1-R1: the light-panel compatibility contract (CDD-079 addendum).
+   `.observatory-shell` sets the dark canvas *background* behind
+   everything, but must NEVER set `color` here -- `color` is inherited,
+   and `.observatory-shell` is the ancestor of every legacy `.panel`
+   (still on the light-mode tokens, un-migrated). The real Azure
+   walkthrough after the first I1 deploy caught exactly this: a light
+   `color` set at this level cascaded into every legacy white panel,
+   rendering their un-migrated (colorless) text almost invisible.
+   `.observatory-header` is the ONLY place light foreground text is
+   applied -- it's the one piece of chrome that is actually always dark.
+   `.observatory-main` explicitly restores the pre-WOW ink color for
+   everything it wraps, so this contract holds even if a future rule
+   accidentally sets `color` somewhere above it again. */
+.observatory-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--obs-canvas);
+  font-family: var(--font-manrope), Manrope, Arial, sans-serif;
+}
+.observatory-header {
+  background: var(--obs-canvas-deep);
+  border-bottom: 1px solid var(--obs-border);
+  color: var(--obs-text-primary);
+}
+.observatory-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.observatory-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.observatory-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  color: var(--obs-text-primary);
+}
+.observatory-wordmark-mark {
+  color: var(--obs-intelligence);
+}
+.observatory-context {
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--obs-text-muted);
+  letter-spacing: 0.02em;
+}
+.observatory-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.observatory-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--obs-radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--obs-text-secondary);
+}
+.observatory-nav-link:hover {
+  color: var(--obs-text-primary);
+  background: var(--obs-surface-interactive);
+}
+.observatory-nav-link[aria-current="page"] {
+  color: var(--obs-text-primary);
+  background: var(--obs-surface);
+  box-shadow: inset 0 -2px 0 var(--obs-intelligence);
+}
+.observatory-nav-link:focus-visible {
+  outline: 3px solid var(--obs-intelligence);
+  outline-offset: 2px;
+}
+.observatory-nav-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.observatory-nav-secondary a {
+  font-size: 0.75rem;
+  color: var(--obs-text-muted);
+}
+.observatory-nav-secondary a:hover {
+  color: var(--obs-text-secondary);
+}
+/* WOW-I1-R2: the corrected two-surface semantic contract. R1 set
+   `.observatory-main`'s ambient color to `var(--ink)` (dark), which
+   fixed text *inside* `.panel`/`.table-wrap`/etc. -- but a great deal of
+   real content (every `PageHeader` title/subtitle, and the entire
+   Findings page: filters, the bare `<table>`, pagination) renders
+   directly under `.observatory-main` with NO `.panel` wrapper, sitting
+   straight on the dark canvas. Forcing dark ink as the ambient default
+   made all of that dark-on-dark. The real Azure walkthrough on revision
+   --0000006 confirmed this precisely (Quality/Intelligence/Supplier
+   Risk/Supply-Chain Impact titles, and the entire Findings page).
+
+   Correct model: the ambient default should match the surface it's
+   actually sitting on. `.observatory-main`'s own background is dark
+   (inherited from `.observatory-shell`), so its ambient text is light.
+   Each light "island" (`.panel` and the other pre-existing light-surface
+   classes below) explicitly overrides back to the original dark ink --
+   exactly the reverse of R1's fix, and the one that actually matches
+   the real DOM structure. */
+.observatory-main {
+  flex: 1;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  color: var(--obs-text-primary);
+}
+.observatory-main .panel,
+.observatory-main .table-wrap,
+.observatory-main .dataset-table-wrap,
+.observatory-main .status-grid,
+.observatory-main .assessment-form fieldset,
+.observatory-main dialog {
+  color: var(--ink);
+}
+/* PageHeader's description (a bare <p>, no explicit color of its own)
+   used to correctly inherit the pre-WOW `--muted` gray -- readable on a
+   light background, unreadable on the dark canvas it actually sits on
+   post-WOW. `.page-heading` is PageHeader's own real wrapper class (and
+   the two pages that replicate its exact markup), so this is still a
+   systemic rule, not a per-page one. */
+.observatory-main .page-heading p {
+  color: var(--obs-text-secondary);
+}
+
+/* Bare, unwrapped tables/selects rendered directly on the dark canvas
+   (e.g. the Findings page: filters + <table>, no .table-wrap). Wrapped
+   in :where(...) so `.observatory-main` itself contributes ZERO
+   specificity here -- these rules are deliberately LOW-priority
+   fallback defaults (specificity equal to the bare element alone) that
+   apply only to a genuinely bare table/select, and can never override
+   the existing, more specific `.table-wrap`/`.dataset-table-wrap`/
+   `.form-grid` rules for anything actually wrapped in one of those
+   (each of which is at least one real class more specific). This is
+   foundation compatibility, not a Findings-specific redesign -- the
+   same pattern `.form-grid input` already establishes for panels,
+   applied the same way to the canvas side. */
+:where(.observatory-main) table {
+  width: 100%;
+  border-collapse: collapse;
+}
+:where(.observatory-main) table th,
+:where(.observatory-main) table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--obs-border);
+  text-align: left;
+}
+:where(.observatory-main) table thead th {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--obs-text-secondary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+:where(.observatory-main) table tbody a {
+  color: var(--obs-intelligence);
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+/* Bare <label> text (e.g. Findings' "Quality family"/"Status") needs no
+   extra rule at all: it has no explicit color of its own, so it already
+   correctly inherits the new light ambient default outside any `.panel`,
+   and the panel's own dark override (above) still correctly applies to
+   `.form-grid label` inside a panel -- pure inheritance handles both
+   cases without a third selector that could conflict with either. Only
+   `<select>` genuinely needs an explicit rule, because Tailwind's
+   Preflight strips its native chrome entirely (border/background), which
+   inheritance alone can never restore. */
+:where(.observatory-main) select {
+  display: inline-block;
+  margin-left: 0.4rem;
+  border: 1px solid var(--obs-border-strong);
+  border-radius: var(--obs-radius);
+  padding: 0.35rem 0.5rem;
+  background: var(--obs-surface);
+  color: var(--obs-text-primary);
+  font: inherit;
+}
+:where(.observatory-main) select:focus-visible {
+  outline: 3px solid var(--obs-intelligence);
+  outline-offset: 1px;
+}
+@media (max-width: 760px) {
+  .observatory-header-inner {
+    padding: 0.85rem 1rem;
+  }
+  .observatory-main {
+    padding: 1.5rem 1rem 3rem;
+  }
+}
+
+/* TextField (CDD-079 §8/§12): the systemic fix for the invisible-input
+   defect. Every state below is real -- boundary always visible, never
+   relying on browser-default appearance as the design contract. */
+.obs-text-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: var(--font-manrope), Manrope, Arial, sans-serif;
+}
+.obs-text-field-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.obs-text-field-input {
+  border: 1px solid #94a3b8;
+  border-radius: var(--obs-radius);
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  background: white;
+  color: var(--ink);
+}
+.obs-text-field-input:hover {
+  border-color: #64748b;
+}
+.obs-text-field-input:focus-visible {
+  outline: 3px solid #0ea5e9;
+  outline-offset: 1px;
+  border-color: #0ea5e9;
+}
+.obs-text-field-input:disabled {
+  background: #f1f5f9;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.obs-text-field--error .obs-text-field-input {
+  border-color: var(--danger);
+}
+.obs-text-field-error {
+  font-size: 0.78rem;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* StatusIndicator (CDD-079 §10): a third, distinct semantic vocabulary
+   from CapabilityStatus (capability-status-badge.tsx, unmodified) and
+   the OQI lifecycle stage states -- describes the state of a specific
+   piece of governed data/evidence. Label + shape + color always
+   together, never color alone. */
+.obs-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.obs-status-indicator-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
 }

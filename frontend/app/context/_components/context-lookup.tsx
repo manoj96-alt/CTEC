@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { signIn } from "@/lib/auth/browser-session";
 import { EmptyState } from "@/components/design-system/empty-state";
+import { TextField } from "@/components/design-system/text-field";
 import { ContextApiError, contextApi } from "@/lib/context/api-client";
 import type { ResolveResponse } from "@/lib/context/contracts";
 import { useContextIdentifiers } from "@/lib/context/context-provider";
@@ -82,24 +83,22 @@ export function ContextLookup() {
       <section className="panel">
         <span className="eyebrow">Look up governed context</span>
         <h2>Resolve blueprint context</h2>
-        <label style={{ display: "block", marginTop: "0.75rem" }}>
-          Blueprint name
-          <input
-            type="text"
+        <div style={{ marginTop: "0.75rem" }}>
+          <TextField
+            label="Blueprint name"
             value={blueprintName}
             onChange={(e) => setBlueprintName(e.target.value)}
             required
           />
-        </label>
-        <label style={{ display: "block", marginTop: "0.5rem" }}>
-          Information element name
-          <input
-            type="text"
+        </div>
+        <div style={{ marginTop: "0.5rem" }}>
+          <TextField
+            label="Information element name"
             value={informationElementName}
             onChange={(e) => setInformationElementName(e.target.value)}
             required
           />
-        </label>
+        </div>
         <div style={{ marginTop: "0.75rem" }}>
           <button
             type="button"
