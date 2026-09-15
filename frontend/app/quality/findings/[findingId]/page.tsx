@@ -3,7 +3,6 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/design-system/empty-state";
-import { PageHeader } from "@/components/design-system/page-header";
 import { OqiApiError, oqiApi } from "@/lib/oqi/api-client";
 import type {
   AgentInvestigationResponse,
@@ -16,6 +15,7 @@ import type {
 } from "@/lib/oqi/contracts";
 import { AgentInvestigationPanel } from "./_components/agent-investigation-panel";
 import { BusinessImpactPanel } from "./_components/business-impact-panel";
+import { ConflictLens } from "./_components/conflict-lens";
 import { EvidencePanel } from "./_components/evidence-panel";
 import { OntologyImpactPanel } from "./_components/ontology-impact-panel";
 import { ReliancePanel } from "./_components/reliance-panel";
@@ -190,18 +190,15 @@ function FindingDetailPageContent() {
   }
 
   const { finding } = state;
-  const isResolved = finding.status === "RESOLVED";
 
   return (
     <div className="max-w-5xl">
-      <PageHeader
-        eyebrow={finding.finding_family}
-        title={finding.condition_label}
-        description={
-          isResolved
-            ? `Resolved — confirmed by fresh evidence and re-evaluation on ${new Date(finding.last_seen_at).toLocaleString()}`
-            : `Status: ${finding.status}`
-        }
+      <ConflictLens
+        finding={finding}
+        evidence={state.evidence}
+        impact={state.impact}
+        businessImpact={state.businessImpact}
+        reliance={state.reliance}
       />
 
       <nav
@@ -221,7 +218,12 @@ function FindingDetailPageContent() {
       </nav>
 
       <section className="panel">
-        {tab === "evidence" && <EvidencePanel evidence={state.evidence} />}
+        {tab === "evidence" && (
+          <EvidencePanel
+            evidence={state.evidence}
+            findingFamily={finding.finding_family}
+          />
+        )}
         {tab === "ontology-impact" && (
           <OntologyImpactPanel impact={state.impact} />
         )}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/design-system/empty-state";
+import { StatusIndicator } from "@/components/design-system/status-indicator";
 import { OqiApiError, oqiApi } from "@/lib/oqi/api-client";
 import type { CommandCenterResponse } from "@/lib/oqi/contracts";
 import { RelianceHero } from "./reliance-hero";
@@ -54,7 +55,7 @@ export function CommandCenter() {
   if (state.status === "unauthorized") {
     return (
       <EmptyState
-        kind="error"
+        kind="not-authorized"
         title="Not authorized to view Ontology Quality Intelligence"
         message="This does not indicate anything about the underlying Reliance state."
       />
@@ -78,60 +79,98 @@ export function CommandCenter() {
       data-testid="oqi-command-center"
       style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}
     >
-      <RelianceHero
-        supported={data.reliance_supported_count}
-        atRisk={data.reliance_at_risk_count}
-        unknown={data.reliance_unknown_count}
-      />
+      <div className="obs-eu-section">
+        <span className="obs-eu-section-label">Reliance</span>
+        <RelianceHero
+          supported={data.reliance_supported_count}
+          atRisk={data.reliance_at_risk_count}
+          unknown={data.reliance_unknown_count}
+        />
+      </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
-          gap: "1rem",
-        }}
-      >
-        <Link
-          className="panel"
-          href="/quality/findings"
-          style={{ display: "block" }}
+      <div className="obs-eu-section">
+        <span className="obs-eu-section-label">Governed attention</span>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
+            gap: "1rem",
+          }}
         >
-          <span className="eyebrow">Critical Dependencies At Risk</span>
-          <h3 style={{ marginTop: "0.25rem" }}>
-            {data.critical_dependencies_at_risk_count}
-          </h3>
-        </Link>
+          <Link
+            className="panel"
+            href="/quality/findings"
+            style={{ display: "block" }}
+          >
+            <span className="eyebrow obs-inline-status">
+              <StatusIndicator
+                status={
+                  data.critical_dependencies_at_risk_count > 0
+                    ? "conflict"
+                    : "verified"
+                }
+              />
+              <span>Critical Dependencies At Risk</span>
+            </span>
+            <h3 style={{ marginTop: "0.25rem" }}>
+              {data.critical_dependencies_at_risk_count}
+            </h3>
+          </Link>
 
-        <Link
-          className="panel"
-          href="/quality/findings?status=OPEN"
-          style={{ display: "block" }}
-        >
-          <span className="eyebrow">Open Findings</span>
-          <h3 style={{ marginTop: "0.25rem" }}>{data.open_findings_count}</h3>
-        </Link>
+          <Link
+            className="panel"
+            href="/quality/findings?status=OPEN"
+            style={{ display: "block" }}
+          >
+            <span className="eyebrow obs-inline-status">
+              <StatusIndicator
+                status={data.open_findings_count > 0 ? "attention" : "verified"}
+              />
+              <span>Open Findings</span>
+            </span>
+            <h3 style={{ marginTop: "0.25rem" }}>{data.open_findings_count}</h3>
+          </Link>
 
-        <Link
-          className="panel"
-          href="/quality/findings"
-          style={{ display: "block" }}
-        >
-          <span className="eyebrow">Active Agent Investigations</span>
-          <h3 style={{ marginTop: "0.25rem" }}>
-            {data.active_agent_investigations_count}
-          </h3>
-        </Link>
+          <Link
+            className="panel"
+            href="/quality/findings"
+            style={{ display: "block" }}
+          >
+            <span className="eyebrow obs-inline-status">
+              <StatusIndicator
+                status={
+                  data.active_agent_investigations_count > 0
+                    ? "pending"
+                    : "not-invoked"
+                }
+              />
+              <span>Active Agent Investigations</span>
+            </span>
+            <h3 style={{ marginTop: "0.25rem" }}>
+              {data.active_agent_investigations_count}
+            </h3>
+          </Link>
 
-        <Link
-          className="panel"
-          href="/quality/findings"
-          style={{ display: "block" }}
-        >
-          <span className="eyebrow">Pending Human Authorization</span>
-          <h3 style={{ marginTop: "0.25rem" }}>
-            {data.pending_human_authorizations_count}
-          </h3>
-        </Link>
+          <Link
+            className="panel"
+            href="/quality/findings"
+            style={{ display: "block" }}
+          >
+            <span className="eyebrow obs-inline-status">
+              <StatusIndicator
+                status={
+                  data.pending_human_authorizations_count > 0
+                    ? "attention"
+                    : "not-exercised"
+                }
+              />
+              <span>Pending Human Authorization</span>
+            </span>
+            <h3 style={{ marginTop: "0.25rem" }}>
+              {data.pending_human_authorizations_count}
+            </h3>
+          </Link>
+        </div>
       </div>
     </div>
   );

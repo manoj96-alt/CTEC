@@ -1071,3 +1071,137 @@ dialog textarea {
   height: 0.55rem;
   flex: none;
 }
+
+/* ============================================================
+   CDD-081 (WOW-I3-A): OQI flagship finding-detail surfaces --
+   Conflict Lens, Evidence Rail, the Findings queue's family/status
+   treatment, and the Governed Decision Gate's first real use of
+   --obs-authority. Purely additive: no existing token is renamed or
+   reassigned, and the light-panel/dark-canvas two-surface contract
+   above (WOW-I1-R2) is unchanged -- Evidence Rail and the Governed
+   Decision Gate live inside the existing `.panel` light island exactly
+   as their predecessor markup did; only Conflict Lens sits directly on
+   `.observatory-main`'s dark canvas, replacing the raw PageHeader that
+   used to occupy that same position (same placement, new component).
+   ============================================================ */
+.obs-cl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 2rem;
+}
+.obs-cl-title {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-weight: 700;
+  margin: 0.15rem 0 0;
+}
+/* The real, technical `condition_label` is preserved verbatim -- demoted
+   to a monospace identifier line, never removed (CDD-081 §10 machine-ID
+   demotion pattern -- the same treatment already shipped for the
+   Overview spotlight's `.obs-eu-spotlight-id`). */
+.obs-cl-id {
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--obs-text-muted);
+  letter-spacing: 0.01em;
+}
+.obs-cl-status-line {
+  color: var(--obs-text-secondary);
+  font-size: 0.9rem;
+  margin: 0.15rem 0 0;
+}
+.obs-cl-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+.obs-cl-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--obs-text-secondary);
+}
+
+/* Evidence Rail (CDD-081 §11): a light-panel-native card/row layout,
+   replacing the always-rendered <table> whose unconditionally-rendered
+   <thead>/empty <tbody> was the root cause of the "broken-looking" empty
+   evidence symptom for OQI1/OQI3 findings (CDD-081 discovery,
+   Classification D -- those families legitimately never populate
+   `participants`, by design, not a defect). Every exact governed string
+   this replaces ("Missing", "Conflicting", "Governed authoritative
+   source", "N governed peers observed {value}", "Candidate — not
+   established truth") is preserved verbatim -- presentation only. */
+.obs-evidence-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.obs-evidence-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(8rem, auto) 1fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--obs-radius);
+}
+.obs-evidence-source {
+  font-weight: 700;
+}
+.obs-evidence-value {
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.obs-evidence-missing,
+.obs-evidence-conflict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.obs-evidence-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .obs-evidence-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+}
+
+/* Findings queue (CDD-081 §4/§10): the raw finding_family code is
+   preserved verbatim, demoted below its mapped human-readable label --
+   same demotion pattern as `.obs-cl-id` above, scoped to the bare table
+   that already sits directly on the dark canvas (no `.table-wrap`). A
+   small reusable pairing of StatusIndicator + the real, unmodified
+   column value (never a replacement for it). */
+.obs-family-code {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--obs-text-muted);
+  margin-top: 0.15rem;
+}
+.obs-inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Governed Decision Gate (CDD-081 §13): the frozen --obs-authority token
+   (CDD-079 §6, unused until now) gets its first real use here, scoped to
+   exactly the moment the lifecycle stepper's CURRENT step is genuinely
+   "Awaiting Human Authorization" -- a small, component-scoped override of
+   the existing current-step marker's border color only. No new
+   StatusIndicator state is added; the real case_status/authorization
+   state machine in remediation-stepper.tsx is unchanged. */
+.stepper-step--awaiting-authority .stepper-marker {
+  border-color: var(--obs-authority);
+}

@@ -124,7 +124,7 @@ export function OntologyImpactPanel({
           {impact.direct_entity_id ? (
             <li>
               Direct impact: {impact.direct_entity_type ?? "Entity"} (
-              {impact.direct_entity_id})
+              <span className="mono">{impact.direct_entity_id}</span>)
             </li>
           ) : null}
           {propagatedNodes.map((segment) => (
@@ -132,7 +132,8 @@ export function OntologyImpactPanel({
               key={`${segment.relationship_instance_id}-${segment.path_ordinal}`}
             >
               Propagated step {segment.path_ordinal}: relationship{" "}
-              {segment.relationship_instance_id} ({segment.direction})
+              <span className="mono">{segment.relationship_instance_id}</span> (
+              {segment.direction})
             </li>
           ))}
         </ul>

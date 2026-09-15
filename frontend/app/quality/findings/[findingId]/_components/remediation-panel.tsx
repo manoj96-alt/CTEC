@@ -1,3 +1,4 @@
+import { StatusIndicator } from "@/components/design-system/status-indicator";
 import type { RemediationResponse } from "@/lib/oqi/contracts";
 import { DecideAuthorizationDialog } from "./decide-authorization-dialog";
 import { RemediationStepper } from "./remediation-stepper";
@@ -81,11 +82,29 @@ export function RemediationPanel({
         <span className="eyebrow">Human Authorization</span>
         {remediation.authorization ? (
           <>
-            <h4 style={{ marginTop: "0.25rem" }}>
-              {remediation.authorization.decided_on
-                ? `Authorized by ${remediation.authorization.principal} at ${new Date(remediation.authorization.decided_on).toLocaleString()}`
-                : "Authorization pending decision"}
-            </h4>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                marginTop: "0.25rem",
+              }}
+            >
+              <StatusIndicator
+                status={
+                  remediation.authorization.status === "REJECTED"
+                    ? "conflict"
+                    : remediation.authorization.decided_on
+                      ? "verified"
+                      : "pending"
+                }
+              />
+              <h4 style={{ margin: 0 }}>
+                {remediation.authorization.decided_on
+                  ? `Authorized by ${remediation.authorization.principal} at ${new Date(remediation.authorization.decided_on).toLocaleString()}`
+                  : "Authorization pending decision"}
+              </h4>
+            </div>
             <p>{remediation.authorization.instruction}</p>
             {remediation.authorization.is_stale ? (
               <p role="alert" style={{ fontWeight: 700 }}>
@@ -112,9 +131,18 @@ export function RemediationPanel({
         <span className="eyebrow">External Remediation</span>
         {remediation.external_execution ? (
           <>
-            <p style={{ fontWeight: 700 }}>
-              External remediation reported — awaiting fresh evidence
-            </p>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+              }}
+            >
+              <StatusIndicator status="attention" />
+              <p style={{ fontWeight: 700, margin: 0 }}>
+                External remediation reported — awaiting fresh evidence
+              </p>
+            </div>
             <p>
               Reported at{" "}
               {new Date(
