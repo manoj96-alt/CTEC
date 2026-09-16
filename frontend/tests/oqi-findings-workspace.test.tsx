@@ -56,6 +56,36 @@ describe("OQI Findings workspace", () => {
     expect(screen.queryByText(/score/i)).not.toBeInTheDocument();
   });
 
+  // CDD-081 §4/§10: the real family code is mapped to its human-readable
+  // label, and preserved verbatim (demoted) alongside it -- never
+  // replaced or hidden.
+  it("maps the real finding_family to its label while preserving the raw code", async () => {
+    listFindingsMock.mockResolvedValue({
+      items: [
+        {
+          finding_id: "11111111-1111-1111-1111-111111111111",
+          finding_family: "OQI2",
+          condition_label: "Manufacturer Part Number conflict",
+          status: "OPEN",
+          first_seen_at: "2026-01-01T00:00:00Z",
+          last_seen_at: "2026-01-02T00:00:00Z",
+          affected_entity_id: null,
+          affected_entity_type: null,
+          highest_criticality: "CRITICAL",
+          reliance_state: "RELIANCE_AT_RISK",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    render(<FindingsPage />);
+
+    expect(
+      await screen.findByText("Cross-Source Consistency"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("OQI2")).toBeInTheDocument();
+  });
+
   it("empty filtered result is honestly empty, never 'healthy'", async () => {
     listFindingsMock.mockResolvedValue({ items: [], next_cursor: null });
     render(<FindingsPage />);

@@ -1,3 +1,7 @@
+import {
+  StatusIndicator,
+  type ObservatoryStatus,
+} from "@/components/design-system/status-indicator";
 import type { RelianceResponse } from "@/lib/oqi/contracts";
 
 // CDD-045 §16/§40/§29 UI Truth Table: exact governed language per state,
@@ -9,6 +13,12 @@ const STATE_COPY: Record<string, string> = {
   RELIANCE_AT_RISK: "Reliance At Risk",
   RELIANCE_UNKNOWN: "Reliance Unknown — insufficient evidence to assess",
 };
+
+function stateStatus(state: string): ObservatoryStatus {
+  if (state === "RELIANCE_SUPPORTED") return "verified";
+  if (state === "RELIANCE_AT_RISK") return "conflict";
+  return "unknown";
+}
 
 const REASON_COPY: Record<string, string> = {
   OPEN_QUALITY_CONDITION: "An open quality condition affects this knowledge.",
@@ -26,8 +36,16 @@ export function ReliancePanel({ reliance }: { reliance: RelianceResponse }) {
   return (
     <div>
       <h3>Explainable Reliance</h3>
-      <p style={{ fontWeight: 700 }}>
-        {STATE_COPY[reliance.state] ?? reliance.state}
+      <p
+        style={{
+          fontWeight: 700,
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+        }}
+      >
+        <StatusIndicator status={stateStatus(reliance.state)} />
+        <span>{STATE_COPY[reliance.state] ?? reliance.state}</span>
       </p>
 
       {reliance.reason_codes.length > 0 ? (

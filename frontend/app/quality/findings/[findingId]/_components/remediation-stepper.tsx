@@ -65,11 +65,17 @@ export function RemediationStepper({
           const isCurrent = index === currentIndex;
           const isPast = currentIndex >= 0 && index < currentIndex;
           const variant = isCurrent ? "current" : isPast ? "past" : "future";
+          // CDD-081 §13: the frozen --obs-authority token's first real use --
+          // scoped to exactly the moment this step is both the CURRENT step
+          // and genuinely "awaiting human authorization," never a rendering
+          // of that same step label in its past/future position.
+          const isAwaitingAuthority =
+            isCurrent && step.status === "AWAITING_AUTHORITY";
           return (
             <li
               key={step.status}
               aria-current={isCurrent ? "step" : undefined}
-              className={`stepper-step stepper-step--${variant}`}
+              className={`stepper-step stepper-step--${variant}${isAwaitingAuthority ? " stepper-step--awaiting-authority" : ""}`}
             >
               <span className="stepper-marker" aria-hidden="true" />
               {step.label}
