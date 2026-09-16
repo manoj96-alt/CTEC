@@ -326,6 +326,329 @@ describe("OQI Finding Detail — evidence", () => {
     expect(document.querySelector("script[data-injected]")).toBeNull();
     expect(document.body.innerHTML).not.toContain("<script>alert");
   });
+
+  // CDD-081 §11 Classification D + WOW-I3-A: the certified Golden Thread
+  // (oqi-demo-supplier-country-of-origin, OQI2) has exactly two real
+  // participants -- SAP observing US, PLM observing MX -- and no third
+  // source (backend demo_oqi_seeder.py). This proves the Evidence Rail
+  // renders exactly that shape and fabricates nothing beyond it.
+  it("Golden Thread: SAP=US / PLM=MX render exactly, no third source, no fabricated authority", async () => {
+    mockAll({
+      finding: {
+        finding_family: "OQI2",
+        condition_label: "oqi-demo-supplier-country-of-origin",
+      },
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(screen.getByText("SAP")).toBeInTheDocument();
+    expect(screen.getByText("US")).toBeInTheDocument();
+    expect(screen.getByText("PLM")).toBeInTheDocument();
+    expect(screen.getByText("MX")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Governed authoritative source"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/MES|Supplier Portal|PIM/),
+    ).not.toBeInTheDocument();
+  });
+
+  // CDD-081 §11 Classification D: OQI1/OQI3 never populate `participants`
+  // by design (backend `get_evidence()` only does so for OQI2) -- this is
+  // a different, real evidence representation, not a defect. The empty
+  // table symptom the WOW-I2-R1 operator observed must never render the
+  // same "no evidence" wording a genuinely empty OQI2 case would.
+  it.each(["OQI1", "OQI3"])(
+    "%s with zero participants reads as not comparing sources, never a broken-looking empty table",
+    async (family) => {
+      mockAll({
+        finding: { finding_family: family },
+        evidence: { participants: [], candidate: null },
+      });
+      await renderTab("Evidence");
+
+      expect(
+        screen.getByText(/does not compare multiple governed sources/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          "No source evidence has been recorded for this Finding.",
+        ),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    },
+  );
+
+  it("OQI2 with zero participants is a distinct, honestly-labeled gap", async () => {
+    mockAll({
+      finding: { finding_family: "OQI2" },
+      evidence: { participants: [], candidate: null },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      screen.getByText(
+        "No source evidence has been recorded for this Finding.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // WOW-I3-A-R5 §5/§6: the Golden Thread's real evidence shape (SAP=US,
+  // PLM=MX, both conflicting, no missing) is exactly the case where the
+  // per-value aggregation count is trivially 1 for every distinct value
+  // -- no real consensus/dissent signal exists, so the redundant "1
+  // governed peer observed {value}" lines are suppressed, while the
+  // disagreement itself is now surfaced as a single, honest banner.
+  it("Golden Thread: two-source disagreement shows the disagreement banner and suppresses the redundant single-peer aggregation lines", async () => {
+    mockAll({
+      finding: {
+        finding_family: "OQI2",
+        condition_label: "oqi-demo-supplier-country-of-origin",
+      },
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      screen.getByText("Governed source values disagree"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("1 governed peer observed US"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("1 governed peer observed MX"),
+    ).not.toBeInTheDocument();
+    // The real per-row facts remain fully visible -- suppression applies
+    // only to the redundant aggregation line, never the governed rows.
+    expect(screen.getByText("SAP")).toBeInTheDocument();
+    expect(screen.getByText("US")).toBeInTheDocument();
+    expect(screen.getByText("PLM")).toBeInTheDocument();
+    expect(screen.getByText("MX")).toBeInTheDocument();
+  });
+
+  // WOW-I3-A-R6: the connected-evidence visualization -- source
+  // observations structurally distinct from the Finding surface, the
+  // Golden Thread's exact truth preserved, and no winner/correct/
+  // authority language anywhere in the comparison.
+  it("Golden Thread: exactly two source cards, structurally distinct from the Finding surface, with the real MX/US values and no fabricated third source", async () => {
+    mockAll({
+      finding: {
+        finding_family: "OQI2",
+        condition_label: "oqi-demo-supplier-country-of-origin",
+      },
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    const { container } = render(<FindingDetailPage />);
+    await screen.findByRole("button", { name: "Evidence" });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+
+    const sourceCards = container.querySelectorAll(".obs-evidence-source-card");
+    expect(sourceCards).toHaveLength(2);
+    const finding = container.querySelector(".obs-evidence-finding");
+    expect(finding).not.toBeNull();
+    expect(finding?.classList.contains("obs-evidence-source-card")).toBe(false);
+    expect(finding?.textContent).toContain("Cross-Source Consistency");
+    // Real participant order (SAP first in this fixture) -- never a
+    // hardcoded or re-sorted presentation.
+    expect(finding?.textContent).toContain("US ≠ MX");
+
+    expect(screen.queryByText("Supplier Portal")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/specification.?missing/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/winner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^correct$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bauthority\b/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/recommended value/i)).not.toBeInTheDocument();
+  });
+
+  it("N-source array-driven rendering: participant count in the DOM always matches the real participant array, not a fixed layout", async () => {
+    mockAll({
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "MES",
+            observed_value: "XYZ999",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PIM",
+            observed_value: null,
+            is_missing: true,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    const { container } = render(<FindingDetailPage />);
+    await screen.findByRole("button", { name: "Evidence" });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+
+    expect(
+      container.querySelectorAll(".obs-evidence-source-card"),
+    ).toHaveLength(4);
+  });
+
+  it("accessible reading order communicates sources then the detected conflict, independent of the decorative connector", async () => {
+    mockAll({
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    const { container } = render(<FindingDetailPage />);
+    await screen.findByRole("button", { name: "Evidence" });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+
+    // The connector is decorative -- its own meaning is not essential,
+    // since the Finding surface (role="status") already carries the
+    // accessible text independently.
+    const connector = container.querySelector(".obs-evidence-connector");
+    expect(connector).toHaveAttribute("aria-hidden", "true");
+    expect(
+      screen.getByText("Governed source values disagree"),
+    ).toBeInTheDocument();
+    // Reading order: sources precede the finding in the DOM.
+    const sourcesEl = container.querySelector(".obs-evidence-sources");
+    const findingEl = container.querySelector(".obs-evidence-finding");
+    expect(sourcesEl?.compareDocumentPosition(findingEl as Node)).toBeTruthy();
+    expect(
+      (sourcesEl?.compareDocumentPosition(findingEl as Node) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("real multi-peer aggregation ('N governed peers observed X') is preserved, never suppressed, whenever it reveals a real consensus/dissent split", async () => {
+    mockAll({
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "MES",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "Supplier Portal",
+            observed_value: "XYZ999",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      screen.getByText("3 governed peers observed ABC123"),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("OQI Finding Detail — ontology impact", () => {
@@ -422,7 +745,14 @@ describe("OQI Finding Detail — reliance", () => {
       },
     });
     await renderTab("Explainable Reliance");
-    expect(screen.getByText(/Reliance Unknown/)).toBeInTheDocument();
+    // CDD-081 §12: Conflict Lens now also carries its own brief Reliance
+    // signal outside the tab content (always visible, not tab-scoped) --
+    // this scopes the assertion to the Reliance tab's own detailed panel
+    // so it is unaffected by that separate, real summary text existing
+    // elsewhere on the page.
+    expect(
+      screen.getByText("Reliance Unknown — insufficient evidence to assess"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/Insufficient quality coverage/i),
     ).toBeInTheDocument();
@@ -504,6 +834,18 @@ describe("OQI Finding Detail — agent investigation", () => {
       screen.getByText("<img src=x onerror=alert(1)>"),
     ).toBeInTheDocument();
     expect(document.querySelectorAll("img[onerror]").length).toBe(0);
+  });
+
+  // CDD-081 §14: zero specialists and no recommendation means live agent
+  // reasoning has genuinely never run for this Finding -- this is the
+  // untested "unavailable" branch the WOW-I2-R1 operator flagged as
+  // implying a technical failure. Fixed to the real not-invoked
+  // vocabulary (CDD-079 §10), never a fabricated "unavailable" claim.
+  it("zero specialists and no recommendation render as Not invoked, never Unavailable", async () => {
+    mockAll({ agent: { specialists: [], recommendation: null } });
+    await renderTab("Agent Investigation");
+    expect(screen.getByText("Not invoked")).toBeInTheDocument();
+    expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
   });
 });
 
@@ -699,5 +1041,39 @@ describe("OQI Finding Detail — deep linking", () => {
       "/quality/findings/22222222-2222-2222-2222-222222222222?tab=reliance",
       { scroll: false },
     );
+  });
+});
+
+describe("OQI Finding Detail — WOW-I3-A-R5 investigation tab visual state", () => {
+  it("the active tab is visually distinguishable from inactive tabs, and inactive tabs remain accessible", async () => {
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+
+    const evidenceTab = screen.getByRole("button", { name: "Evidence" });
+    const remediationTab = screen.getByRole("button", { name: "Remediation" });
+
+    expect(evidenceTab).toHaveAttribute("aria-current", "page");
+    expect(evidenceTab).toHaveClass("obs-investigation-tab");
+    expect(remediationTab).not.toHaveAttribute("aria-current");
+    // Inactive tabs remain real, enabled, clickable buttons -- never
+    // disabled or removed from the accessibility tree.
+    expect(remediationTab).toBeEnabled();
+
+    fireEvent.click(remediationTab);
+    expect(remediationTab).toHaveAttribute("aria-current", "page");
+    expect(evidenceTab).not.toHaveAttribute("aria-current");
+  });
+
+  it("the investigation nav does not imply sequential/automatic execution (no step-number or ordinal markup)", async () => {
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+
+    const nav = screen.getByRole("navigation", {
+      name: "Finding investigation",
+    });
+    expect(nav.querySelector("ol")).toBeNull();
+    expect(nav.querySelector(".stepper-list")).toBeNull();
   });
 });

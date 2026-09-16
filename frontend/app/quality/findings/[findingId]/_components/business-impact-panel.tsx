@@ -1,3 +1,4 @@
+import { StatusIndicator } from "@/components/design-system/status-indicator";
 import type { BusinessImpactResponse } from "@/lib/oqi/contracts";
 
 // CDD-045 §13/§34/§29 UI Truth Table: criticality is a property of a
@@ -13,9 +14,15 @@ export function BusinessImpactPanel({
     return (
       <div>
         <h3>Business Impact</h3>
-        <p role="status">
-          Business impact cannot currently be determined from available governed
-          evidence.
+        <p
+          role="status"
+          style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+        >
+          <StatusIndicator status="unknown" />
+          <span>
+            Business impact cannot currently be determined from available
+            governed evidence.
+          </span>
         </p>
       </div>
     );
@@ -25,7 +32,10 @@ export function BusinessImpactPanel({
     return (
       <div>
         <h3>Business Impact</h3>
-        <p>No known business impact.</p>
+        <p style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <StatusIndicator status="verified" />
+          <span>No known business impact.</span>
+        </p>
       </div>
     );
   }

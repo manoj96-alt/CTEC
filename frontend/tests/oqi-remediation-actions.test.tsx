@@ -462,6 +462,44 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
     expect(current?.querySelector(".stepper-marker")).not.toBeNull();
   });
 
+  it("CDD-081 §13: the awaiting-authority marker class applies only to the live AWAITING_AUTHORITY current step, not to any other step", () => {
+    const remediation = {
+      case_status: "AWAITING_AUTHORITY",
+      candidate: null,
+      recommendation: null,
+      authorization: null,
+      external_execution: null,
+    } as unknown as RemediationResponse;
+    render(<RemediationStepper remediation={remediation} />);
+
+    const current = screen
+      .getByText("Awaiting Human Authorization")
+      .closest("li");
+    expect(current).toHaveClass("stepper-step--awaiting-authority");
+
+    const other = screen.getByText("Candidate Ready").closest("li");
+    expect(other).not.toHaveClass("stepper-step--awaiting-authority");
+  });
+
+  it("CDD-081 §13: a past rendering of the Awaiting Human Authorization step never carries the awaiting-authority marker", () => {
+    const remediation = {
+      case_status: "AUTHORIZED",
+      candidate: null,
+      recommendation: null,
+      authorization: null,
+      external_execution: null,
+    } as unknown as RemediationResponse;
+    render(<RemediationStepper remediation={remediation} />);
+
+    const pastAwaitingAuthority = screen
+      .getByText("Awaiting Human Authorization")
+      .closest("li");
+    expect(pastAwaitingAuthority).toHaveClass("stepper-step--past");
+    expect(pastAwaitingAuthority).not.toHaveClass(
+      "stepper-step--awaiting-authority",
+    );
+  });
+
   it("CDD-062: rejected composite renders as its own group, never inside the linear <ol> step list", () => {
     const remediation = {
       case_status: "AWAITING_AUTHORITY",

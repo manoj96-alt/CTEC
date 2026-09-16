@@ -1,3 +1,4 @@
+import { StatusIndicator } from "@/components/design-system/status-indicator";
 import type { AgentInvestigationResponse } from "@/lib/oqi/contracts";
 
 // CDD-045 §18/§43/§29 UI Truth Table: specialist assessments render side by
@@ -6,6 +7,12 @@ import type { AgentInvestigationResponse } from "@/lib/oqi/contracts";
 // recommendation's basis (specialist-supported vs. synthesizer-only) comes
 // directly from the backend's own field -- never inferred from
 // recommendation text.
+//
+// CDD-081 §14 truth fix: zero specialists and no recommendation means live
+// agent reasoning has genuinely never run for this Finding -- "unavailable"
+// wrongly implied a technical failure. Rendered as the real, existing
+// not-invoked vocabulary instead (CDD-079 §10), the same one already used
+// for Overview's Active Agent Investigations tile.
 export function AgentInvestigationPanel({
   investigation,
 }: {
@@ -18,7 +25,15 @@ export function AgentInvestigationPanel({
     return (
       <div>
         <h3>Agent Investigation</h3>
-        <p role="status">Agent investigation unavailable.</p>
+        <p
+          role="status"
+          style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+        >
+          <StatusIndicator status="not-invoked" />
+          <span>
+            Live agent reasoning has not been invoked for this Finding.
+          </span>
+        </p>
       </div>
     );
   }
