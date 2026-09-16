@@ -102,7 +102,7 @@ export function CommandCenter() {
             href="/quality/findings"
             style={{ display: "block" }}
           >
-            <span className="eyebrow obs-inline-status">
+            <span className="obs-inline-status">
               <StatusIndicator
                 status={
                   data.critical_dependencies_at_risk_count > 0
@@ -110,7 +110,9 @@ export function CommandCenter() {
                     : "verified"
                 }
               />
-              <span>Critical Dependencies At Risk</span>
+              <span className="obs-inline-status-label">
+                Critical Dependencies At Risk
+              </span>
             </span>
             <h3 style={{ marginTop: "0.25rem" }}>
               {data.critical_dependencies_at_risk_count}
@@ -122,11 +124,11 @@ export function CommandCenter() {
             href="/quality/findings?status=OPEN"
             style={{ display: "block" }}
           >
-            <span className="eyebrow obs-inline-status">
+            <span className="obs-inline-status">
               <StatusIndicator
                 status={data.open_findings_count > 0 ? "attention" : "verified"}
               />
-              <span>Open Findings</span>
+              <span className="obs-inline-status-label">Open Findings</span>
             </span>
             <h3 style={{ marginTop: "0.25rem" }}>{data.open_findings_count}</h3>
           </Link>
@@ -136,7 +138,7 @@ export function CommandCenter() {
             href="/quality/findings"
             style={{ display: "block" }}
           >
-            <span className="eyebrow obs-inline-status">
+            <span className="obs-inline-status">
               <StatusIndicator
                 status={
                   data.active_agent_investigations_count > 0
@@ -144,7 +146,9 @@ export function CommandCenter() {
                     : "not-invoked"
                 }
               />
-              <span>Active Agent Investigations</span>
+              <span className="obs-inline-status-label">
+                Active Agent Investigations
+              </span>
             </span>
             <h3 style={{ marginTop: "0.25rem" }}>
               {data.active_agent_investigations_count}
@@ -156,7 +160,7 @@ export function CommandCenter() {
             href="/quality/findings"
             style={{ display: "block" }}
           >
-            <span className="eyebrow obs-inline-status">
+            <span className="obs-inline-status">
               <StatusIndicator
                 status={
                   data.pending_human_authorizations_count > 0
@@ -164,7 +168,9 @@ export function CommandCenter() {
                     : "not-exercised"
                 }
               />
-              <span>Pending Human Authorization</span>
+              <span className="obs-inline-status-label">
+                Pending Human Authorization
+              </span>
             </span>
             <h3 style={{ marginTop: "0.25rem" }}>
               {data.pending_human_authorizations_count}

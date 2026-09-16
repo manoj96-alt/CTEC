@@ -412,6 +412,98 @@ describe("OQI Finding Detail — evidence", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  // WOW-I3-A-R5 §5/§6: the Golden Thread's real evidence shape (SAP=US,
+  // PLM=MX, both conflicting, no missing) is exactly the case where the
+  // per-value aggregation count is trivially 1 for every distinct value
+  // -- no real consensus/dissent signal exists, so the redundant "1
+  // governed peer observed {value}" lines are suppressed, while the
+  // disagreement itself is now surfaced as a single, honest banner.
+  it("Golden Thread: two-source disagreement shows the disagreement banner and suppresses the redundant single-peer aggregation lines", async () => {
+    mockAll({
+      finding: {
+        finding_family: "OQI2",
+        condition_label: "oqi-demo-supplier-country-of-origin",
+      },
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(screen.getByText("Governed sources disagree")).toBeInTheDocument();
+    expect(
+      screen.queryByText("1 governed peer observed US"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("1 governed peer observed MX"),
+    ).not.toBeInTheDocument();
+    // The real per-row facts remain fully visible -- suppression applies
+    // only to the redundant aggregation line, never the governed rows.
+    expect(screen.getByText("SAP")).toBeInTheDocument();
+    expect(screen.getByText("US")).toBeInTheDocument();
+    expect(screen.getByText("PLM")).toBeInTheDocument();
+    expect(screen.getByText("MX")).toBeInTheDocument();
+  });
+
+  it("real multi-peer aggregation ('N governed peers observed X') is preserved, never suppressed, whenever it reveals a real consensus/dissent split", async () => {
+    mockAll({
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "MES",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "Supplier Portal",
+            observed_value: "XYZ999",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      screen.getByText("3 governed peers observed ABC123"),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("OQI Finding Detail — ontology impact", () => {
@@ -804,5 +896,39 @@ describe("OQI Finding Detail — deep linking", () => {
       "/quality/findings/22222222-2222-2222-2222-222222222222?tab=reliance",
       { scroll: false },
     );
+  });
+});
+
+describe("OQI Finding Detail — WOW-I3-A-R5 investigation tab visual state", () => {
+  it("the active tab is visually distinguishable from inactive tabs, and inactive tabs remain accessible", async () => {
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+
+    const evidenceTab = screen.getByRole("button", { name: "Evidence" });
+    const remediationTab = screen.getByRole("button", { name: "Remediation" });
+
+    expect(evidenceTab).toHaveAttribute("aria-current", "page");
+    expect(evidenceTab).toHaveClass("obs-investigation-tab");
+    expect(remediationTab).not.toHaveAttribute("aria-current");
+    // Inactive tabs remain real, enabled, clickable buttons -- never
+    // disabled or removed from the accessibility tree.
+    expect(remediationTab).toBeEnabled();
+
+    fireEvent.click(remediationTab);
+    expect(remediationTab).toHaveAttribute("aria-current", "page");
+    expect(evidenceTab).not.toHaveAttribute("aria-current");
+  });
+
+  it("the investigation nav does not imply sequential/automatic execution (no step-number or ordinal markup)", async () => {
+    mockAll({});
+    render(<FindingDetailPage />);
+    await screen.findByText(BASE_FINDING.condition_label);
+
+    const nav = screen.getByRole("navigation", {
+      name: "Finding investigation",
+    });
+    expect(nav.querySelector("ol")).toBeNull();
+    expect(nav.querySelector(".stepper-list")).toBeNull();
   });
 });

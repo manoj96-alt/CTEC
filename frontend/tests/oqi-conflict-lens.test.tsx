@@ -254,3 +254,41 @@ describe("Conflict Lens — no fabricated metrics", () => {
     expect(screen.getByText("Reliance At Risk")).toBeInTheDocument();
   });
 });
+
+describe("Conflict Lens — WOW-I3-A-R5 visual hierarchy (chain + verdict)", () => {
+  it("renders exactly three supporting signals in the chain and Reliance as a visually distinct verdict, never a fourth identical badge", () => {
+    const { container } = render(
+      <ConflictLens
+        finding={FINDING}
+        evidence={EMPTY_EVIDENCE}
+        impact={EMPTY_IMPACT}
+        businessImpact={EMPTY_BUSINESS_IMPACT}
+        reliance={{ ...EMPTY_RELIANCE, state: "RELIANCE_AT_RISK" }}
+      />,
+    );
+    const chainSteps = container.querySelectorAll(".obs-cl-chain-step");
+    expect(chainSteps).toHaveLength(3);
+    const verdict = container.querySelector(".obs-cl-verdict");
+    expect(verdict).not.toBeNull();
+    expect(verdict?.textContent).toContain("Reliance");
+    expect(verdict?.textContent).toContain("Reliance At Risk");
+    // The verdict is a structurally separate element from the chain, not
+    // a fourth .obs-cl-chain-step sibling.
+    expect(verdict?.classList.contains("obs-cl-chain-step")).toBe(false);
+  });
+
+  it("the chain never asserts a causal claim beyond the three real, independently-computed outcomes", () => {
+    render(
+      <ConflictLens
+        finding={FINDING}
+        evidence={EMPTY_EVIDENCE}
+        impact={EMPTY_IMPACT}
+        businessImpact={EMPTY_BUSINESS_IMPACT}
+        reliance={EMPTY_RELIANCE}
+      />,
+    );
+    expect(
+      screen.queryByText(/causes|caused by|results in|leads to/i),
+    ).not.toBeInTheDocument();
+  });
+});

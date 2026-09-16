@@ -201,14 +201,16 @@ function FindingDetailPageContent() {
         reliance={state.reliance}
       />
 
-      <nav
-        aria-label="Finding investigation"
-        style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}
-      >
+      {/* WOW-I3-A-R5 §7: six investigation perspectives, not workflow
+          steps -- a flat underline-tab pattern (mirroring the already-
+          shipped primary-nav active treatment) rather than a numbered
+          stepper, so the navigation never implies the six execute in
+          sequence or automatically. */}
+      <nav aria-label="Finding investigation" className="obs-investigation-nav">
         {TABS.map((entry) => (
           <button
             key={entry.key}
-            className="button"
+            className="obs-investigation-tab"
             aria-current={tab === entry.key ? "page" : undefined}
             onClick={() => setTab(entry.key)}
           >

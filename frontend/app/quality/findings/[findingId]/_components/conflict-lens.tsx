@@ -141,22 +141,42 @@ export function ConflictLens({
           ? `Resolved — confirmed by fresh evidence and re-evaluation on ${new Date(finding.last_seen_at).toLocaleString()}`
           : `Status: ${finding.status}`}
       </p>
-      <div className="obs-cl-signals">
-        <span className="obs-cl-signal">
+      {/* WOW-I3-A-R5 §4: three independent, already-computed supporting
+          signals (evidence/ontology/business), each still labelled
+          individually and each still driven only by its own real
+          outcome -- no causal edge between them is asserted, only a
+          left-to-right reading order. The real chain the backend does
+          assert is that Reliance (OQI6) is the one governed verdict
+          synthesized from this knowledge -- rendered as a visually
+          distinct conclusion below, not a fifth identical badge. */}
+      <div
+        className="obs-cl-chain"
+        role="group"
+        aria-label="Governed intelligence signals"
+      >
+        <span className="obs-cl-chain-step">
           <StatusIndicator status={evidenceStatus} />
           <span>{evidenceText}</span>
         </span>
-        <span className="obs-cl-signal">
+        <span className="obs-cl-chain-connector" aria-hidden="true" />
+        <span className="obs-cl-chain-step">
           <StatusIndicator status={impactStatus} />
           <span>{impactText}</span>
         </span>
-        <span className="obs-cl-signal">
+        <span className="obs-cl-chain-connector" aria-hidden="true" />
+        <span className="obs-cl-chain-step">
           <StatusIndicator status={businessStatus} />
           <span>{businessText}</span>
         </span>
-        <span className="obs-cl-signal">
-          <StatusIndicator status={relianceStatus(reliance.state)} />
-          <span>{RELIANCE_LABEL[reliance.state] ?? reliance.state}</span>
+        <span className="obs-cl-chain-arrow" aria-hidden="true">
+          →
+        </span>
+      </div>
+      <div className="obs-cl-verdict">
+        <StatusIndicator status={relianceStatus(reliance.state)} />
+        <span className="obs-cl-verdict-label">Reliance</span>
+        <span className="obs-cl-verdict-value">
+          {RELIANCE_LABEL[reliance.state] ?? reliance.state}
         </span>
       </div>
     </div>

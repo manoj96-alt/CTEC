@@ -34,6 +34,17 @@ export function EvidencePanel({
       );
     }
   }
+  const hasDisagreement = evidence.participants.some((p) => p.is_conflicting);
+  // WOW-I3-A-R5 §6: "N governed peers observed {value}" is frontend-
+  // derived aggregation of the already-visible rows above it -- real
+  // information when it reveals a consensus/dissent split (e.g. "3
+  // governed peers observed X" alongside a lone dissenter), but pure
+  // restatement when every distinct value already has a count of
+  // exactly one (nothing was actually aggregated). Suppressed only in
+  // that specific case -- never when it would drop a real governed
+  // fact -- per CDD-081 §11/WOW-I3-A-R5 §6 Option C.
+  const aggregationIsInformative =
+    known.length > 0 && valueCounts.size !== known.length;
 
   return (
     <div>
@@ -46,7 +57,13 @@ export function EvidencePanel({
             : "This finding type does not compare multiple governed sources."}
         </p>
       ) : (
-        <div className="obs-evidence-rail">
+        <div
+          className={
+            hasDisagreement
+              ? "obs-evidence-rail obs-evidence-rail--disagreement"
+              : "obs-evidence-rail"
+          }
+        >
           {evidence.participants.map((participant) => (
             <div key={participant.source_system} className="obs-evidence-row">
               <span className="obs-evidence-source">
@@ -78,11 +95,20 @@ export function EvidencePanel({
         </div>
       )}
 
-      {[...valueCounts.entries()].map(([value, count]) => (
-        <p key={value} style={{ color: "var(--muted)" }}>
-          {count} governed peer{count === 1 ? "" : "s"} observed {value}
+      {hasDisagreement ? (
+        <p className="obs-evidence-disagreement-banner">
+          <StatusIndicator status="conflict" />
+          <span>Governed sources disagree</span>
         </p>
-      ))}
+      ) : null}
+
+      {aggregationIsInformative
+        ? [...valueCounts.entries()].map(([value, count]) => (
+            <p key={value} className="obs-evidence-aggregate">
+              {count} governed peer{count === 1 ? "" : "s"} observed {value}
+            </p>
+          ))
+        : null}
 
       {evidence.candidate ? (
         <div className="panel" style={{ marginTop: "1rem" }}>

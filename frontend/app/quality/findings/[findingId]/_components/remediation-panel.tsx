@@ -55,7 +55,7 @@ export function RemediationPanel({
       <RemediationStepper remediation={remediation} />
 
       {remediation.candidate ? (
-        <div className="panel">
+        <div className="panel obs-gate-card">
           <span className="eyebrow">Deterministic candidate</span>
           <h4 style={{ marginTop: "0.25rem" }}>
             {remediation.candidate.proposed_value}
@@ -64,7 +64,7 @@ export function RemediationPanel({
         </div>
       ) : null}
 
-      <div className="panel">
+      <div className="panel obs-gate-card obs-gate-card--recommendation">
         <span className="eyebrow">Agent Recommendation</span>
         {remediation.recommendation ? (
           <>
@@ -78,7 +78,7 @@ export function RemediationPanel({
         )}
       </div>
 
-      <div className="panel">
+      <div className="panel obs-gate-card obs-gate-card--authority">
         <span className="eyebrow">Human Authorization</span>
         {remediation.authorization ? (
           <>
@@ -127,7 +127,7 @@ export function RemediationPanel({
         )}
       </div>
 
-      <div className="panel">
+      <div className="panel obs-gate-card obs-gate-card--remediation">
         <span className="eyebrow">External Remediation</span>
         {remediation.external_execution ? (
           <>

@@ -1111,49 +1111,124 @@ dialog textarea {
   font-size: 0.9rem;
   margin: 0.15rem 0 0;
 }
-.obs-cl-signals {
+/* WOW-I3-A-R5: the four signals were previously one flat row of
+   identically-weighted badges -- truthful, but reading as an
+   administrative record rather than an intelligence summary. The real
+   causal shape the OQI backend actually supports is preserved and
+   nothing else: evidence/ontology/business are three independent,
+   already-computed observations (never chained into a fabricated
+   causal claim -- there is no real dependency edge between them in the
+   contracts), and Reliance is the one real, backend-computed verdict
+   that already synthesizes across them (OQI6). The visual chain below
+   reflects that real asymmetry -- three supporting facts leading the
+   eye to one governed conclusion -- without inventing a causal link the
+   API does not assert. */
+.obs-cl-chain {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 1.25rem;
-  margin-top: 0.75rem;
+  gap: 0;
+  margin-top: 0.9rem;
 }
-.obs-cl-signal {
+.obs-cl-chain-step {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
   color: var(--obs-text-secondary);
 }
+.obs-cl-chain-connector {
+  display: inline-block;
+  width: 1.5rem;
+  height: 0;
+  border-top: 1px dashed var(--obs-border-strong);
+  margin: 0 0.65rem;
+  flex: none;
+}
+.obs-cl-chain-arrow {
+  display: inline-block;
+  margin-left: 0.75rem;
+  color: var(--obs-text-muted);
+}
+/* The one real, backend-computed verdict (OQI6 Reliance) -- visually the
+   heaviest element in the Conflict Lens, since it is the actual answer
+   to "can I rely on this knowledge," not a fourth peer signal. */
+.obs-cl-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--obs-radius);
+  border: 1px solid var(--obs-border-strong);
+  background: var(--obs-surface-elevated);
+}
+.obs-cl-verdict-label {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--obs-text-muted);
+}
+.obs-cl-verdict-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--obs-text-primary);
+}
 
-/* Evidence Rail (CDD-081 §11): a light-panel-native card/row layout,
-   replacing the always-rendered <table> whose unconditionally-rendered
-   <thead>/empty <tbody> was the root cause of the "broken-looking" empty
-   evidence symptom for OQI1/OQI3 findings (CDD-081 discovery,
-   Classification D -- those families legitimately never populate
-   `participants`, by design, not a defect). Every exact governed string
-   this replaces ("Missing", "Conflicting", "Governed authoritative
-   source", "N governed peers observed {value}", "Candidate — not
-   established truth") is preserved verbatim -- presentation only. */
+/* Evidence Rail (CDD-081 §11, refined WOW-I3-A-R5): a light-panel-native
+   card layout, replacing the always-rendered <table> whose
+   unconditionally-rendered <thead>/empty <tbody> was the root cause of
+   the "broken-looking" empty evidence symptom for OQI1/OQI3 findings
+   (CDD-081 discovery, Classification D -- those families legitimately
+   never populate `participants`, by design, not a defect). Every exact
+   governed string this replaces ("Missing", "Conflicting", "Governed
+   authoritative source", "N governed peers observed {value}",
+   "Candidate — not established truth") is preserved verbatim --
+   presentation only. R5 adds a purely visual disagreement treatment
+   (connector + banner) applied only when the real, already-computed
+   `is_conflicting`/distinct-value data already indicates disagreement --
+   never inferred or added independently of that real signal, and never
+   implying which source is correct. */
 .obs-evidence-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
   margin-top: 0.75rem;
 }
 .obs-evidence-row {
   display: grid;
-  grid-template-columns: minmax(8rem, auto) minmax(8rem, auto) 1fr;
+  grid-template-columns: minmax(6rem, auto) minmax(8rem, auto) 1fr;
   gap: 1rem;
   align-items: center;
-  padding: 0.6rem 0.75rem;
+  padding: 0.7rem 0.85rem;
   border: 1px solid var(--line);
   border-radius: var(--obs-radius);
+  position: relative;
+}
+.obs-evidence-rail--disagreement .obs-evidence-row {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+.obs-evidence-rail--disagreement .obs-evidence-row:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 1.35rem;
+  bottom: -0.6rem;
+  width: 2px;
+  height: 0.6rem;
+  background: color-mix(in srgb, var(--danger) 55%, transparent);
 }
 .obs-evidence-source {
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 .obs-evidence-value {
   font-family: ui-monospace, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 .obs-evidence-missing,
@@ -1169,10 +1244,31 @@ dialog textarea {
   font-size: 0.85rem;
   color: var(--muted);
 }
+.obs-evidence-disagreement-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+/* Aggregation context ("N governed peers observed {value}") is demoted
+   to small metadata beneath the rail -- still real, unmodified governed
+   text, never removed, just no longer competing visually with the
+   sources it summarizes (WOW-I3-A-R5 §6). */
+.obs-evidence-aggregate {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.15rem 0 0;
+}
 @media (max-width: 640px) {
   .obs-evidence-row {
     grid-template-columns: 1fr;
     gap: 0.35rem;
+  }
+  .obs-evidence-rail--disagreement .obs-evidence-row:not(:last-child)::after {
+    left: 50%;
   }
 }
 
@@ -1194,14 +1290,83 @@ dialog textarea {
   align-items: center;
   gap: 0.4rem;
 }
+/* WOW-I3-A-R5 §9: a normal, human-readable label (e.g. "Critical
+   Dependencies At Risk") must never carry the same uppercase/tracked
+   treatment as a short eyebrow/category tag -- that rule from CDD-079
+   §11 was being violated by reusing `.eyebrow` for these longer Quality
+   Command Center labels. Mirrors the already-correct, already-shipped
+   `.obs-eu-attention-label` treatment from the Overview panel exactly
+   (same tokens, same weight), rather than inventing a new one. */
+.obs-inline-status-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
 
-/* Governed Decision Gate (CDD-081 §13): the frozen --obs-authority token
-   (CDD-079 §6, unused until now) gets its first real use here, scoped to
-   exactly the moment the lifecycle stepper's CURRENT step is genuinely
-   "Awaiting Human Authorization" -- a small, component-scoped override of
-   the existing current-step marker's border color only. No new
-   StatusIndicator state is added; the real case_status/authorization
-   state machine in remediation-stepper.tsx is unchanged. */
+/* Investigation tab navigation (WOW-I3-A-R5 §7): the six tabs previously
+   all rendered as identical filled `.button` elements with no visual
+   distinction for the active one beyond an invisible `aria-current`
+   attribute. Mirrors the already-shipped primary-nav active treatment
+   (`.observatory-nav-link[aria-current="page"]`) exactly -- a flat
+   underline-tab pattern, deliberately not a numbered stepper, so it
+   never implies the six investigation perspectives execute in sequence. */
+.obs-investigation-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--obs-border);
+}
+.obs-investigation-tab {
+  background: transparent;
+  color: var(--obs-text-secondary);
+  border: 0;
+  border-radius: var(--obs-radius) var(--obs-radius) 0 0;
+  padding: 0.55rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.obs-investigation-tab:hover {
+  color: var(--obs-text-primary);
+  background: var(--obs-surface-interactive);
+}
+.obs-investigation-tab[aria-current="page"] {
+  color: var(--obs-text-primary);
+  background: var(--obs-surface);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--obs-intelligence);
+}
+.obs-investigation-tab:focus-visible {
+  outline: 3px solid var(--obs-intelligence);
+  outline-offset: 2px;
+}
+
+/* Governed Decision Gate (CDD-081 §13, refined WOW-I3-A-R5): the frozen
+   --obs-authority token (CDD-079 §6) already got its first real use in
+   the stepper marker below. R5 extends real use of the two remaining
+   frozen-but-previously-unused semantic tokens (--obs-recommendation,
+   --obs-remediation, CDD-079 §6) to the Governed Decision Gate's own
+   cards -- a left-accent identifying each card's real governed role
+   (recommendation vs. authorization vs. remediation), never a claim
+   about its current state. No new StatusIndicator state, no change to
+   remediation-panel.tsx's real conditional rendering. */
+.obs-gate-card {
+  border-left: 3px solid var(--obs-border-strong);
+  padding-left: 0.9rem;
+}
+.obs-gate-card--recommendation {
+  border-left-color: var(--obs-recommendation);
+}
+.obs-gate-card--authority {
+  border-left-color: var(--obs-authority);
+}
+.obs-gate-card--remediation {
+  border-left-color: var(--obs-remediation);
+}
 .stepper-step--awaiting-authority .stepper-marker {
   border-color: var(--obs-authority);
 }
