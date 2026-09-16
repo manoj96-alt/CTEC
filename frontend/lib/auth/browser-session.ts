@@ -75,6 +75,17 @@ function clearRenewalMarker(): void {
 // involved at all). This flag is intentionally not exported: it is pure
 // internal one-shot bookkeeping, not authentication or authorization state.
 let renewalAttempted = false;
+// CDD-082/WOW-I3-A-R3: proven (auth-callback-diagnostics.test.tsx) that
+// without this guard, the bootstrap silent-renewal's own signinRedirect()
+// call and an explicit signIn() click can both be in flight on the same
+// UserManager at once -- two independent top-level OIDC navigation
+// transactions racing for which one's redirect actually takes effect.
+// This is the narrowest possible fix: a single shared in-flight-redirect
+// promise. signIn() awaits it before starting its own redirect, so the
+// two are always strictly sequential, never concurrent -- no PKCE/state/
+// nonce/token semantics change, only the ordering of when
+// signinRedirect() may be called.
+let inFlightRedirect: Promise<unknown> | null = null;
 // AUTH-UX-G shared lifecycle: the single place accessToken()/principalId()
 // obtain a currently-usable User. A missing or expired in-memory User
 // triggers at most one bounded renewal attempt per page lifetime; an
@@ -102,7 +113,7 @@ async function restoredUser(): Promise<User | null> {
   // renders an interactive page, so this never surfaces an unexpected login
   // form. state.silent lets the existing /auth/callback distinguish this
   // from an explicit signIn() failure (see that file's own comment).
-  await sessionManagerInstance
+  const redirect = sessionManagerInstance
     .signinRedirect({
       prompt: "none",
       state: { returnPath: currentSafePath(), silent: true },
@@ -112,7 +123,23 @@ async function restoredUser(): Promise<User | null> {
       // metadata/discovery failure) -- fail closed exactly like any other
       // bounded-renewal failure; there is nothing further to do here.
     });
+  inFlightRedirect = redirect;
+  await redirect;
   return null;
+}
+// CDD-082: read-only, side-effect-free diagnostic accessor -- exposes the
+// *existing* internal bounded-renewal guard state as booleans only, so a
+// caller (the auth callback page) can safely report, never mutate,
+// whether a bootstrap silent-renewal was attempted this page lifetime.
+// Adds no new authentication behavior and no new state.
+export function authDiagnostics(): {
+  silentRenewalAttempted: boolean;
+  renewalMarkerPresent: boolean;
+} {
+  return {
+    silentRenewalAttempted: renewalAttempted,
+    renewalMarkerPresent: renewalMarkerSet(),
+  };
 }
 export async function accessToken(): Promise<string | null> {
   const user = await restoredUser();
@@ -133,9 +160,20 @@ export async function signIn(returnPath = "/supplier-risk"): Promise<void> {
   // A deliberate user action always gets a clean slate -- the automatic-
   // renewal suppression marker must never block an explicit sign-in.
   clearRenewalMarker();
-  await sessionManager().signinRedirect({
+  // CDD-082/WOW-I3-A-R3: wait out any bootstrap silent-renewal redirect
+  // already in flight before starting this explicit one, so the two
+  // signinRedirect() calls are never concurrent (see inFlightRedirect
+  // above). If the silent one is mid-navigation, the page is about to
+  // unload anyway; if it merely failed to initiate one, this proceeds
+  // immediately once that settles.
+  if (inFlightRedirect) {
+    await inFlightRedirect;
+  }
+  const redirect = sessionManager().signinRedirect({
     state: { returnPath: safeReturnPath(returnPath) },
   });
+  inFlightRedirect = redirect;
+  await redirect;
 }
 export async function completeSignIn(): Promise<{
   user: User;
