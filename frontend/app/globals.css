@@ -1176,99 +1176,136 @@ dialog textarea {
   color: var(--obs-text-primary);
 }
 
-/* Evidence Rail (CDD-081 §11, refined WOW-I3-A-R5): a light-panel-native
-   card layout, replacing the always-rendered <table> whose
-   unconditionally-rendered <thead>/empty <tbody> was the root cause of
-   the "broken-looking" empty evidence symptom for OQI1/OQI3 findings
-   (CDD-081 discovery, Classification D -- those families legitimately
-   never populate `participants`, by design, not a defect). Every exact
-   governed string this replaces ("Missing", "Conflicting", "Governed
-   authoritative source", "N governed peers observed {value}",
-   "Candidate — not established truth") is preserved verbatim --
-   presentation only. R5 adds a purely visual disagreement treatment
-   (connector + banner) applied only when the real, already-computed
-   `is_conflicting`/distinct-value data already indicates disagreement --
-   never inferred or added independently of that real signal, and never
-   implying which source is correct. */
-.obs-evidence-rail {
+/* Connected Evidence (CDD-081 §11, refined WOW-I3-A-R6): a light-panel-
+   native three-layer visualization -- real source observations (array-
+   driven, never fixed to two), a purely decorative comparison
+   connector, and a Finding surface -- replacing R5's flat row list,
+   which made each source card read as individually defective rather
+   than showing that the CONFLICT belongs to the comparison between
+   observations. Every exact governed string this preserves ("Missing",
+   "Conflicting", "Governed authoritative source", "N governed peers
+   observed {value}", "Candidate — not established truth") is unchanged
+   -- presentation only. The connector never implies causation,
+   precedence, or authority between sources -- only that the real
+   observations are being compared as evidence for this finding, and
+   that meaning is carried by the Finding surface's own accessible text
+   (role="status"), not solely by the decorative (aria-hidden) lines. */
+.obs-evidence-comparison {
+  margin-top: 0.85rem;
+}
+.obs-evidence-sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
+.obs-evidence-source-card {
+  flex: 1 1 10rem;
+  min-width: 9rem;
+  max-width: 16rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  margin-top: 0.75rem;
-}
-.obs-evidence-row {
-  display: grid;
-  grid-template-columns: minmax(6rem, auto) minmax(8rem, auto) 1fr;
-  gap: 1rem;
   align-items: center;
-  padding: 0.7rem 0.85rem;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
   border: 1px solid var(--line);
   border-radius: var(--obs-radius);
-  position: relative;
+  text-align: center;
 }
-.obs-evidence-rail--disagreement .obs-evidence-row {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+.obs-evidence-comparison--disagreement .obs-evidence-source-card {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
 }
-.obs-evidence-rail--disagreement .obs-evidence-row:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  left: 1.35rem;
-  bottom: -0.6rem;
-  width: 2px;
-  height: 0.6rem;
-  background: color-mix(in srgb, var(--danger) 55%, transparent);
-}
-.obs-evidence-source {
+.obs-evidence-source-name {
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   font-size: 0.78rem;
   color: var(--muted);
 }
-.obs-evidence-value {
+.obs-evidence-source-value {
   font-family: ui-monospace, monospace;
-  font-size: 1.05rem;
+  font-size: 1.3rem;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
-.obs-evidence-missing,
-.obs-evidence-conflict {
+.obs-evidence-source-caption {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.obs-evidence-source-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.obs-evidence-source-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.obs-evidence-missing {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  font-size: 1rem;
 }
-.obs-evidence-context {
+/* Decorative only (aria-hidden) -- a neutral convergence, never a
+   left-to-right arrow, so it cannot be read as directional flow between
+   sources. */
+.obs-evidence-connector {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-.obs-evidence-disagreement-banner {
-  display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.35rem;
+  margin: 0.6rem auto 0;
+}
+.obs-evidence-connector-line {
+  width: min(60%, 20rem);
+  height: 1px;
+  background: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.obs-evidence-connector-stem {
+  width: 2px;
+  height: 0.75rem;
+  background: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.obs-evidence-finding {
+  margin: 0 auto;
+  max-width: 24rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  border-radius: var(--obs-radius);
+  text-align: center;
+}
+.obs-evidence-finding-title {
+  margin: 0.2rem 0 0;
+}
+.obs-evidence-finding-values {
+  font-family: ui-monospace, monospace;
+  font-size: 1.1rem;
   font-weight: 700;
-  font-size: 0.85rem;
   color: var(--danger);
+  margin: 0.3rem 0;
+}
+.obs-evidence-finding-caption {
+  color: var(--muted);
+  margin: 0.2rem 0 0;
 }
 /* Aggregation context ("N governed peers observed {value}") is demoted
-   to small metadata beneath the rail -- still real, unmodified governed
-   text, never removed, just no longer competing visually with the
-   sources it summarizes (WOW-I3-A-R5 §6). */
+   to small metadata beneath the comparison -- still real, unmodified
+   governed text, never removed, just no longer competing visually with
+   the sources it summarizes (WOW-I3-A-R5 §6). */
 .obs-evidence-aggregate {
   color: var(--muted);
   font-size: 0.8rem;
   margin: 0.15rem 0 0;
 }
 @media (max-width: 640px) {
-  .obs-evidence-row {
-    grid-template-columns: 1fr;
-    gap: 0.35rem;
+  .obs-evidence-sources {
+    flex-direction: column;
+    align-items: stretch;
   }
-  .obs-evidence-rail--disagreement .obs-evidence-row:not(:last-child)::after {
-    left: 50%;
+  .obs-evidence-source-card {
+    max-width: none;
   }
 }
 

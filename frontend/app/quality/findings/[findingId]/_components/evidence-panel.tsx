@@ -15,6 +15,25 @@ import type { EvidenceResponse } from "@/lib/oqi/contracts";
 // legitimately never do, by design (Classification D), so their empty
 // list must never render the same "no evidence" wording a genuinely
 // empty OQI2 case would.
+//
+// WOW-I3-A-R6: evolves the flat row list into a CONNECTED EVIDENCE
+// visualization -- three layers (source observations, a purely
+// decorative comparison connector, and a Finding surface) built
+// entirely from the real `participants` array (never a fixed 2-source
+// layout) and the same real `is_conflicting`/`is_missing`/
+// `is_authoritative` flags as before. The connector asserts nothing
+// beyond "these governed observations are being compared as evidence
+// for this finding" -- no causation, precedence, or authority. Per
+// R6 §9 investigation: a real, backend-seeded human-readable business
+// label ("Country of Origin", `demo_oqi_seeder.py`
+// `field_label=CanonicalName("Country of Origin")`) exists for the
+// Golden Thread, but belongs to a separate domain (SourceField/
+// FieldValueEvidence) never exposed by any OQI API contract this page
+// consumes (`EvidenceParticipant`/`FindingDetailResponse` carry no such
+// field, confirmed by direct search) -- no identifier bridge connects
+// them, matching CDD-081's own prior finding on this exact class of
+// gap. It is therefore never hardcoded here; the Finding surface uses
+// only the existing truthful "Governed source values disagree" wording.
 export function EvidencePanel({
   evidence,
   findingFamily,
@@ -35,8 +54,17 @@ export function EvidencePanel({
     }
   }
   const hasDisagreement = evidence.participants.some((p) => p.is_conflicting);
+  // The distinct observed values among conflicting participants, in
+  // participant order -- real values only, never a synthesized summary.
+  const disagreeingValues = [
+    ...new Set(
+      evidence.participants
+        .filter((p) => p.is_conflicting && p.observed_value !== null)
+        .map((p) => p.observed_value as string),
+    ),
+  ];
   // WOW-I3-A-R5 §6: "N governed peers observed {value}" is frontend-
-  // derived aggregation of the already-visible rows above it -- real
+  // derived aggregation of the already-visible cards above it -- real
   // information when it reveals a consensus/dissent split (e.g. "3
   // governed peers observed X" alongside a lone dissenter), but pure
   // restatement when every distinct value already has a count of
@@ -60,47 +88,82 @@ export function EvidencePanel({
         <div
           className={
             hasDisagreement
-              ? "obs-evidence-rail obs-evidence-rail--disagreement"
-              : "obs-evidence-rail"
+              ? "obs-evidence-comparison obs-evidence-comparison--disagreement"
+              : "obs-evidence-comparison"
           }
         >
-          {evidence.participants.map((participant) => (
-            <div key={participant.source_system} className="obs-evidence-row">
-              <span className="obs-evidence-source">
-                {participant.source_system}
-              </span>
-              <span className="obs-evidence-value">
-                {participant.is_missing ? (
-                  <span className="obs-evidence-missing">
-                    <StatusIndicator status="unknown" />
-                    <span>Missing</span>
+          {/* LAYER 1+2 -- source system + its own observation, structurally
+              driven by the real participant array (never fixed to two). */}
+          <div className="obs-evidence-sources">
+            {evidence.participants.map((participant) => (
+              <div
+                key={participant.source_system}
+                className="obs-evidence-source-card"
+              >
+                <span className="obs-evidence-source-name">
+                  {participant.source_system}
+                </span>
+                <span className="obs-evidence-source-value">
+                  {participant.is_missing ? (
+                    <span className="obs-evidence-missing">
+                      <StatusIndicator status="unknown" />
+                      <span>Missing</span>
+                    </span>
+                  ) : (
+                    participant.observed_value
+                  )}
+                </span>
+                {participant.is_missing ? null : (
+                  <span className="obs-evidence-source-caption">
+                    Observed value
                   </span>
-                ) : (
-                  participant.observed_value
                 )}
-              </span>
-              <span className="obs-evidence-context">
                 {participant.is_authoritative ? (
-                  <span>Governed authoritative source</span>
+                  <span className="obs-evidence-source-meta">
+                    Governed authoritative source
+                  </span>
                 ) : null}
                 {participant.is_conflicting ? (
-                  <span className="obs-evidence-conflict">
+                  <span className="obs-evidence-source-flag">
                     <StatusIndicator status="conflict" />
                     <span>Conflicting</span>
                   </span>
                 ) : null}
-              </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Purely decorative -- the real meaning ("these observations
+              are being compared") lives in the Finding surface's own
+              accessible text below, never solely in this connector. */}
+          {hasDisagreement ? (
+            <div className="obs-evidence-connector" aria-hidden="true">
+              <span className="obs-evidence-connector-line" />
+              <span className="obs-evidence-connector-stem" />
             </div>
-          ))}
+          ) : null}
+
+          {/* LAYER 3 -- the one real, already-computed finding this
+              comparison supports: a cross-source disagreement. Never a
+              claim about which value is correct. */}
+          {hasDisagreement ? (
+            <div className="obs-evidence-finding" role="status">
+              <span className="eyebrow">Detected Conflict</span>
+              <h4 className="obs-evidence-finding-title">
+                Cross-Source Consistency
+              </h4>
+              {disagreeingValues.length > 1 ? (
+                <p className="obs-evidence-finding-values">
+                  {disagreeingValues.join(" ≠ ")}
+                </p>
+              ) : null}
+              <p className="obs-evidence-finding-caption">
+                Governed source values disagree
+              </p>
+            </div>
+          ) : null}
         </div>
       )}
-
-      {hasDisagreement ? (
-        <p className="obs-evidence-disagreement-banner">
-          <StatusIndicator status="conflict" />
-          <span>Governed sources disagree</span>
-        </p>
-      ) : null}
 
       {aggregationIsInformative
         ? [...valueCounts.entries()].map(([value, count]) => (

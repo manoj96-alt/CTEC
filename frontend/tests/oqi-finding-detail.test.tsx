@@ -447,7 +447,9 @@ describe("OQI Finding Detail — evidence", () => {
     });
     await renderTab("Evidence");
 
-    expect(screen.getByText("Governed sources disagree")).toBeInTheDocument();
+    expect(
+      screen.getByText("Governed source values disagree"),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText("1 governed peer observed US"),
     ).not.toBeInTheDocument();
@@ -460,6 +462,149 @@ describe("OQI Finding Detail — evidence", () => {
     expect(screen.getByText("US")).toBeInTheDocument();
     expect(screen.getByText("PLM")).toBeInTheDocument();
     expect(screen.getByText("MX")).toBeInTheDocument();
+  });
+
+  // WOW-I3-A-R6: the connected-evidence visualization -- source
+  // observations structurally distinct from the Finding surface, the
+  // Golden Thread's exact truth preserved, and no winner/correct/
+  // authority language anywhere in the comparison.
+  it("Golden Thread: exactly two source cards, structurally distinct from the Finding surface, with the real MX/US values and no fabricated third source", async () => {
+    mockAll({
+      finding: {
+        finding_family: "OQI2",
+        condition_label: "oqi-demo-supplier-country-of-origin",
+      },
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    const { container } = render(<FindingDetailPage />);
+    await screen.findByRole("button", { name: "Evidence" });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+
+    const sourceCards = container.querySelectorAll(".obs-evidence-source-card");
+    expect(sourceCards).toHaveLength(2);
+    const finding = container.querySelector(".obs-evidence-finding");
+    expect(finding).not.toBeNull();
+    expect(finding?.classList.contains("obs-evidence-source-card")).toBe(false);
+    expect(finding?.textContent).toContain("Cross-Source Consistency");
+    // Real participant order (SAP first in this fixture) -- never a
+    // hardcoded or re-sorted presentation.
+    expect(finding?.textContent).toContain("US ≠ MX");
+
+    expect(screen.queryByText("Supplier Portal")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/specification.?missing/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/winner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^correct$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bauthority\b/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/recommended value/i)).not.toBeInTheDocument();
+  });
+
+  it("N-source array-driven rendering: participant count in the DOM always matches the real participant array, not a fixed layout", async () => {
+    mockAll({
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "ABC123",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+          {
+            source_system: "MES",
+            observed_value: "XYZ999",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PIM",
+            observed_value: null,
+            is_missing: true,
+            is_authoritative: false,
+            is_conflicting: false,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    const { container } = render(<FindingDetailPage />);
+    await screen.findByRole("button", { name: "Evidence" });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+
+    expect(
+      container.querySelectorAll(".obs-evidence-source-card"),
+    ).toHaveLength(4);
+  });
+
+  it("accessible reading order communicates sources then the detected conflict, independent of the decorative connector", async () => {
+    mockAll({
+      evidence: {
+        participants: [
+          {
+            source_system: "SAP",
+            observed_value: "US",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+          {
+            source_system: "PLM",
+            observed_value: "MX",
+            is_missing: false,
+            is_authoritative: false,
+            is_conflicting: true,
+          },
+        ],
+        candidate: null,
+      },
+    });
+    const { container } = render(<FindingDetailPage />);
+    await screen.findByRole("button", { name: "Evidence" });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+
+    // The connector is decorative -- its own meaning is not essential,
+    // since the Finding surface (role="status") already carries the
+    // accessible text independently.
+    const connector = container.querySelector(".obs-evidence-connector");
+    expect(connector).toHaveAttribute("aria-hidden", "true");
+    expect(
+      screen.getByText("Governed source values disagree"),
+    ).toBeInTheDocument();
+    // Reading order: sources precede the finding in the DOM.
+    const sourcesEl = container.querySelector(".obs-evidence-sources");
+    const findingEl = container.querySelector(".obs-evidence-finding");
+    expect(sourcesEl?.compareDocumentPosition(findingEl as Node)).toBeTruthy();
+    expect(
+      (sourcesEl?.compareDocumentPosition(findingEl as Node) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("real multi-peer aggregation ('N governed peers observed X') is preserved, never suppressed, whenever it reveals a real consensus/dissent split", async () => {
