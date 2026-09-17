@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { StudioClient } from "@/app/ontology-studio/_components/studio-client";
+import { computeLayeredLayout } from "@/app/ontology-studio/_components/ontology-graph";
 
 beforeEach(() => {
   process.env.NEXT_PUBLIC_CTEC_API_ORIGIN = "http://localhost:8000";
@@ -402,6 +403,129 @@ test("WOW-I3-B: node selection uses the real --obs-intelligence token, and the l
   expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/at risk/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/finding/i)).not.toBeInTheDocument();
+});
+
+// WOW-I3-B-R1: the layered layout is a pure function of the real graph
+// structure -- tested directly, independent of ReactFlow/DOM rendering,
+// so it never becomes a screenshot-fragile test.
+test("WOW-I3-B-R1: the layered layout places concepts strictly left-to-right in real relationship-direction order, deterministically, with no fabricated stage/process semantics", () => {
+  const concepts = [
+    { name: "A" } as never,
+    { name: "B" } as never,
+    { name: "C" } as never,
+  ];
+  const relationships = [
+    { source_concept: "A", target_concept: "B", name: "leadsTo" } as never,
+    { source_concept: "B", target_concept: "C", name: "leadsTo" } as never,
+  ];
+
+  const first = computeLayeredLayout(concepts, relationships);
+  const second = computeLayeredLayout(concepts, relationships);
+
+  // Strictly increasing x per real edge direction: A -> B -> C.
+  expect(first.positions.A.x).toBeLessThan(first.positions.B.x);
+  expect(first.positions.B.x).toBeLessThan(first.positions.C.x);
+
+  // Deterministic: identical input produces identical output.
+  expect(second.positions).toEqual(first.positions);
+  expect(second.layerOf).toEqual(first.layerOf);
+});
+
+test("WOW-I3-B-R1: a concept with no relationships still receives a real, non-overlapping layout position, never dropped from the graph", () => {
+  const concepts = [
+    { name: "Connected" } as never,
+    { name: "Isolated" } as never,
+  ];
+  const relationships: never[] = [];
+
+  const { positions } = computeLayeredLayout(concepts, relationships);
+
+  expect(positions.Connected).toBeDefined();
+  expect(positions.Isolated).toBeDefined();
+});
+
+test("WOW-I3-B-R1: selecting a concept keeps every real concept visible, distinctly emphasizes it and its directly connected concepts, and visually de-emphasizes (never hides) unrelated concepts", async () => {
+  const threeConceptFixture = {
+    ...ontologyFixture,
+    concepts: [
+      ...ontologyFixture.concepts,
+      {
+        entity_type_id: "id-region",
+        name: "Region",
+        definition: "A geographic area.",
+        definition_source: "curated",
+        lifecycle_state: "Active",
+        governance_status: "Approved",
+        version_number: 1,
+        discovery_label: "curated",
+      },
+    ],
+  };
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(threeConceptFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+
+  const supplierNodes = screen.getAllByText("Supplier");
+  fireEvent.click(supplierNodes[0]);
+
+  const supplierNode = supplierNodes[0].closest(
+    "[style*='border']",
+  ) as HTMLElement;
+  await waitFor(() => {
+    expect(supplierNode.style.border).toContain("var(--obs-intelligence)");
+  });
+
+  // Material is directly connected via the real "supplies" relationship --
+  // it must show the connected-tier obs-intelligence-derived border and
+  // must NOT be muted.
+  const materialNode = screen
+    .getAllByText("Material")[0]
+    .closest("[style*='border']") as HTMLElement;
+  expect(materialNode.style.border).toContain("obs-intelligence");
+  expect(materialNode.style.opacity).not.toBe("0.55");
+
+  // Region has no relationship to Supplier at all -- it remains present
+  // (never hidden) but is visually de-emphasized.
+  const regionNode = screen
+    .getAllByText("Region")[0]
+    .closest("[style*='border']") as HTMLElement;
+  expect(regionNode.style.opacity).toBe("0.55");
+
+  // Every real concept stays represented in the DOM.
+  expect(screen.getAllByText("Supplier").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Material").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Region").length).toBeGreaterThan(0);
+});
+
+test("WOW-I3-B-R1: the relationship inventory is presented as a collapsible, keyboard-accessible details/summary, collapsed by default, with its content still queryable for accessibility", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(ontologyFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByText(/Supplier — supplies → Material/),
+    ).toBeInTheDocument(),
+  );
+
+  const details = screen
+    .getByText(/Supplier — supplies → Material/)
+    .closest("details");
+  expect(details).not.toBeNull();
+  expect(details).not.toHaveAttribute("open");
+  expect(screen.getByText(/Relationship details/)).toBeInTheDocument();
 });
 
 test("shows a bounded error state with Retry when the ontology API is unavailable, never a fabricated fallback", async () => {

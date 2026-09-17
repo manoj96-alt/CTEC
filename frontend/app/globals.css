@@ -479,6 +479,14 @@ dialog textarea {
 .graph-legend-swatch--selected {
   border: 2px solid var(--obs-intelligence);
 }
+/* WOW-I3-B-R1: a directly-connected node is only ever rendered while a
+   concept is selected -- this swatch is added because that state is
+   actually rendered (CDD-083 §12/CDD-083-R1 §12), not as a fabricated
+   ontology semantic. */
+.graph-legend-swatch--connected {
+  border: 1px solid var(--obs-intelligence);
+  opacity: 0.55;
+}
 .graph-legend-swatch--unselected {
   border: 1px solid var(--line);
 }
@@ -1464,11 +1472,83 @@ dialog textarea {
 /* The graph canvas itself -- a dark, Observatory-native surface inside
    the still-light .panel that contains the eyebrow/legend/accessible
    fallback/inspector, matching the established two-surface contract
-   (dark chrome/intelligence surfaces, light content panels). */
+   (dark chrome/intelligence surfaces, light content panels). WOW-I3-B-R1:
+   height increased from a compressed 22rem so the layered map has real
+   room to read; tiered down responsively rather than left enormous on
+   small viewports. */
 .obs-ontology-canvas {
   margin-top: 1rem;
-  height: 22rem;
+  height: 34rem;
   border-radius: 0.5rem;
   background: var(--obs-canvas);
   overflow: hidden;
+}
+@media (max-width: 1024px) {
+  .obs-ontology-canvas {
+    height: 30rem;
+  }
+}
+@media (max-width: 640px) {
+  .obs-ontology-canvas {
+    height: 24rem;
+  }
+}
+/* WOW-I3-B-R1: a compact, truthful orientation cue living in the light
+   .panel above the canvas (not inside it), so it uses the legacy
+   light-context --muted token like the rest of the panel's chrome. */
+.obs-ontology-caption {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+/* WOW-I3-B-R1: progressive disclosure for the accessible relationship
+   fallback list -- native <details>/<summary>, zero JS, fully
+   keyboard-operable, content stays in the DOM (never removed) when
+   collapsed. Light-panel context: --muted/--line, not --obs-*. */
+.obs-ontology-relationship-details {
+  margin-top: 1rem;
+}
+.obs-ontology-relationship-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.obs-ontology-relationship-details ul {
+  margin-top: 0.5rem;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+/* WOW-I3-B-R1: the per-concept inspector's metadata grid and
+   incoming/outgoing relationship lists -- light-panel context. */
+.obs-ontology-inspector-meta {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.obs-ontology-inspector-meta dt {
+  color: var(--muted);
+}
+.obs-ontology-inspector-meta dd {
+  margin: 0.2rem 0 0;
+  font-weight: 600;
+}
+.obs-ontology-relationships {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.obs-ontology-relationships ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .obs-ontology-relationships {
+    grid-template-columns: 1fr;
+  }
 }
