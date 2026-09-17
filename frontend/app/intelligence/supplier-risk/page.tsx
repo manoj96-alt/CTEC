@@ -9,7 +9,7 @@ export default function Page() {
           <h1>Supplier Risk</h1>
           <p>
             Governed supplier risk assessment and supply chain impact decisions,
-            backed by CTEC&apos;s existing evidence and decision engines.
+            backed by Noetva&apos;s existing evidence and decision engines.
           </p>
         </div>
       </div>

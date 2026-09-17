@@ -31,7 +31,7 @@ const DEMO_SCENARIOS = [
     key: "unknown",
     label: "Missing governed evidence",
     description:
-      "Required disruption-severity evidence is genuinely unavailable. CTEC does not guess.",
+      "Required disruption-severity evidence is genuinely unavailable. Noetva does not guess.",
     supplierEntityId: "8b2833c6-e347-5b98-925d-bbb0a8a71e12",
   },
   {

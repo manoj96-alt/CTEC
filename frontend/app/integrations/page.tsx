@@ -46,9 +46,9 @@ export default function Page() {
         <span className="eyebrow">Model Context Protocol</span>
         <h2>MCP</h2>
         <p style={{ color: "var(--muted)" }}>
-          CTEC can discover MCP tool capabilities as a governed backend concept.
-          Discovery is not execution: there is no interactive way to connect,
-          invoke, or run an MCP tool from this workspace.
+          Noetva can discover MCP tool capabilities as a governed backend
+          concept. Discovery is not execution: there is no interactive way to
+          connect, invoke, or run an MCP tool from this workspace.
         </p>
       </section>
     </div>
