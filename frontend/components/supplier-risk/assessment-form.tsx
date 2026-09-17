@@ -114,7 +114,7 @@ export function AssessmentForm() {
           <span className="eyebrow">New assessment</span>
           <h1>Assess supplier risk</h1>
           <p>
-            Enter governed source observations and policy references. CTEC
+            Enter governed source observations and policy references. Noetva
             determines the outcome.
           </p>
         </div>

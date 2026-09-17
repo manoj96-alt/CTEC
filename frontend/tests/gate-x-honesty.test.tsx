@@ -205,7 +205,7 @@ describe("Gate X honesty", () => {
     }) as unknown as typeof fetch;
 
     render(<AdministrationPage />);
-    expect(screen.getByText(/not managed by CTEC/i)).toBeInTheDocument();
+    expect(screen.getByText(/not managed by Noetva/i)).toBeInTheDocument();
     for (const forbidden of ["Add user", "Manage roles", "Tenant settings"]) {
       expect(screen.queryByText(forbidden)).not.toBeInTheDocument();
     }

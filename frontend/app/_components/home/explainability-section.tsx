@@ -6,7 +6,7 @@ export function ExplainabilitySection() {
         Deterministic rules, human decisions
       </h2>
       <p className="mt-4 max-w-2xl leading-7" style={{ color: "var(--muted)" }}>
-        CTEC does not use an opaque model to decide what happens next.
+        Noetva does not use an opaque model to decide what happens next.
         Recommendation factors and rule conditions reference sample fixture
         filenames and row indexes. The recommendation is presented for human
         review — Approve or Reject records one reviewer decision in the current

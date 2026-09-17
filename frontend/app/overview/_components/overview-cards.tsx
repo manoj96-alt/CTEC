@@ -95,7 +95,7 @@ export function OverviewCards() {
           </section>
         ))}
         <section className="panel obs-eu-explore-card">
-          <h3>Ask CTEC</h3>
+          <h3>Ask Noetva</h3>
           <p className="obs-eu-explore-description">
             Ask a governed question about the ontology.
           </p>
