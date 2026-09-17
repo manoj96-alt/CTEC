@@ -14,19 +14,7 @@ const JOURNEY_STEPS = [
 
 export function JourneyIndicator() {
   return (
-    <ol
-      aria-label="Ontology Studio journey"
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "0.5rem",
-        listStyle: "none",
-        padding: 0,
-        marginTop: "0.75rem",
-        fontSize: "0.8rem",
-        color: "var(--muted)",
-      }}
-    >
+    <ol aria-label="Ontology Studio journey" className="obs-ontology-journey">
       {JOURNEY_STEPS.map((step, index) => (
         <li key={step}>
           {step}
@@ -37,6 +25,13 @@ export function JourneyIndicator() {
   );
 }
 
+// CDD-083 §5.1: the orientation region migrates from a light `.panel` to
+// the frozen, rationed `.obs-intelligence-surface` (CDD-078 §3) -- the
+// same dark-canvas treatment already shipped for Overview's hero/
+// spotlight -- extending its designed use to a second, genuinely
+// orientation-shaped surface ("what ontology am I looking at"). Every
+// real field already rendered here is preserved verbatim; only its
+// typographic/color treatment changes.
 export function StudioOverview({
   ontology,
   connectorCount,
@@ -45,63 +40,43 @@ export function StudioOverview({
   connectorCount: number;
 }) {
   return (
-    <section className="panel">
-      <p className="eyebrow">Ontology Studio</p>
-      <h1 style={{ marginTop: "0.25rem" }}>{ontology.name}</h1>
+    <section className="obs-intelligence-surface obs-ontology-overview">
+      <span className="obs-eu-eyebrow">Ontology</span>
+      <h1 className="obs-ontology-title">{ontology.name}</h1>
       <JourneyIndicator />
-      <p
-        style={{
-          color: "var(--muted)",
-          marginTop: "0.75rem",
-          maxWidth: "42rem",
-        }}
-      >
-        {ontology.description}
-      </p>
-      <dl
-        style={{
-          marginTop: "1rem",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(10rem, 1fr))",
-          gap: "0.75rem",
-          fontSize: "0.85rem",
-        }}
-      >
+      <p className="obs-ontology-description">{ontology.description}</p>
+      <dl className="obs-ontology-stats">
         <div>
-          <dt style={{ color: "var(--muted)" }}>Ontology ID</dt>
-          <dd style={{ fontWeight: 700 }}>{ontology.ontology_id}</dd>
+          <dt>Ontology ID</dt>
+          <dd className="mono">{ontology.ontology_id}</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Version</dt>
-          <dd style={{ fontWeight: 700 }}>{ontology.version}</dd>
+          <dt>Version</dt>
+          <dd>{ontology.version}</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Status</dt>
-          <dd style={{ fontWeight: 700 }}>{ontology.status}</dd>
+          <dt>Status</dt>
+          <dd>{ontology.status}</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Concepts</dt>
-          <dd style={{ fontWeight: 700 }}>{ontology.concepts.length}</dd>
+          <dt>Concepts</dt>
+          <dd>{ontology.concepts.length}</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Relationships</dt>
-          <dd style={{ fontWeight: 700 }}>{ontology.relationships.length}</dd>
+          <dt>Relationships</dt>
+          <dd>{ontology.relationships.length}</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Quality score</dt>
-          <dd style={{ fontWeight: 700 }}>
-            {(ontology.quality.overall_score * 100).toFixed(0)}%
-          </dd>
+          <dt>Quality score</dt>
+          <dd>{(ontology.quality.overall_score * 100).toFixed(0)}%</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Connected sources</dt>
-          <dd style={{ fontWeight: 700 }}>{connectorCount}</dd>
+          <dt>Connected sources</dt>
+          <dd>{connectorCount}</dd>
         </div>
         <div>
-          <dt style={{ color: "var(--muted)" }}>Activation applications</dt>
-          <dd style={{ fontWeight: 700 }}>
-            {ontology.activation_applications.join(", ")}
-          </dd>
+          <dt>Activation applications</dt>
+          <dd>{ontology.activation_applications.join(", ")}</dd>
         </div>
       </dl>
     </section>

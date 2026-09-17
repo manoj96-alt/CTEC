@@ -470,8 +470,14 @@ dialog textarea {
   background: white;
   flex: none;
 }
+/* CDD-083 §5.2: matches the graph's own node-selection border token
+   (--obs-intelligence, cyan -- the app-wide "selection/intelligence"
+   semantic, CDD-079 §6) so the legend stays truthful to what the graph
+   actually shows; this class has exactly one consumer
+   (ontology-graph.tsx, grep-confirmed), so this is a value change, not
+   a reinterpretation of a shared token. */
 .graph-legend-swatch--selected {
-  border: 2px solid var(--accent-strong);
+  border: 2px solid var(--obs-intelligence);
 }
 .graph-legend-swatch--unselected {
   border: 1px solid var(--line);
@@ -1406,4 +1412,63 @@ dialog textarea {
 }
 .stepper-step--awaiting-authority .stepper-marker {
   border-color: var(--obs-authority);
+}
+
+/* ============================================================
+   CDD-083 (WOW-I3-B): Ontology Intelligence -- the orientation region
+   (StudioOverview) reuses the frozen, rationed .obs-intelligence-
+   surface (CDD-078 §3) exactly as Overview's hero/spotlight does; the
+   graph canvas (not the surrounding .panel -- the light/dark two-
+   surface contract is unchanged) gets its own dark, Observatory-native
+   background. Purely additive: no existing token renamed/reassigned.
+   ============================================================ */
+.obs-ontology-overview {
+  margin-bottom: 1.5rem;
+}
+.obs-ontology-title {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  margin: 0.25rem 0 0;
+}
+.obs-ontology-journey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--obs-text-muted);
+}
+.obs-ontology-description {
+  color: var(--obs-text-secondary);
+  margin-top: 0.75rem;
+  max-width: 42rem;
+}
+.obs-ontology-stats {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+.obs-ontology-stats dt {
+  color: var(--obs-text-muted);
+}
+.obs-ontology-stats dd {
+  margin: 0.3rem 0 0;
+  font-weight: 700;
+  color: var(--obs-text-primary);
+}
+/* The graph canvas itself -- a dark, Observatory-native surface inside
+   the still-light .panel that contains the eyebrow/legend/accessible
+   fallback/inspector, matching the established two-surface contract
+   (dark chrome/intelligence surfaces, light content panels). */
+.obs-ontology-canvas {
+  margin-top: 1rem;
+  height: 22rem;
+  border-radius: 0.5rem;
+  background: var(--obs-canvas);
+  overflow: hidden;
 }

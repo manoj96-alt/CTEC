@@ -37,9 +37,14 @@ export function OntologyGraph({
       position: positions[concept.name] ?? { x: 0, y: 0 },
       data: { label: concept.name },
       style: {
+        // CDD-083 §5.2: selection now uses --obs-intelligence (cyan),
+        // matching the app-wide "cyan = selection/intelligence" semantic
+        // (CDD-079 §6) instead of the legacy pre-Observatory accent --
+        // the legend swatch below is updated to the identical token so
+        // it stays truthful to what the graph actually shows.
         border:
           concept.name === selectedName
-            ? "2px solid var(--accent-strong)"
+            ? "2px solid var(--obs-intelligence)"
             : "1px solid var(--line)",
         borderRadius: "0.5rem",
         padding: "0.5rem",
@@ -54,7 +59,9 @@ export function OntologyGraph({
       target: relationship.target_concept,
       label: relationship.name,
       animated: false,
-      style: { stroke: "var(--muted)" },
+      // A structural connector line, not free-standing muted text --
+      // --obs-border-strong is the token designed for exactly this.
+      style: { stroke: "var(--obs-border-strong)" },
     }));
 
     return { nodes: flowNodes, edges: flowEdges };
@@ -78,13 +85,14 @@ export function OntologyGraph({
       <h2 style={{ marginTop: "0.25rem" }}>
         Governed Concepts &amp; Relationships
       </h2>
+      {/* CDD-083 §5.2: the canvas itself (not the surrounding .panel --
+          the established light/dark two-surface contract is unchanged)
+          gets a dark, Observatory-native background, giving the
+          flagship graph real depth without a page-level dark-mode
+          flip. Node/edge/legend tokens below are chosen to read
+          correctly against this specific background. */}
       <div
-        style={{
-          marginTop: "1rem",
-          height: "22rem",
-          border: "1px solid var(--line)",
-          borderRadius: "0.5rem",
-        }}
+        className="obs-ontology-canvas"
         role="img"
         aria-label="Ontology concept and relationship graph"
       >
@@ -99,7 +107,7 @@ export function OntologyGraph({
             <Controls />
           </ReactFlow>
         ) : (
-          <div style={{ padding: "1.5rem", color: "var(--muted)" }}>
+          <div style={{ padding: "1.5rem", color: "var(--obs-text-muted)" }}>
             No concepts are available from the ontology service yet.
           </div>
         )}
@@ -151,7 +159,25 @@ export function OntologyGraph({
 
       {selectedConcept && (
         <div className="panel" style={{ marginTop: "1rem" }}>
-          <p style={{ fontWeight: 700 }}>{selectedConcept.name}</p>
+          <p
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontWeight: 700,
+            }}
+          >
+            <span>{selectedConcept.name}</span>
+            {/* CDD-083 §5.3: discovery_label is a real, already-fetched
+                field that was previously never rendered anywhere --
+                answers "what does Noetva actually know vs. merely
+                visualize" truthfully, without inventing a new field. */}
+            <span className="status-tag">
+              {selectedConcept.discovery_label === "curated"
+                ? "Curated"
+                : "Auto-discovered"}
+            </span>
+          </p>
           <p style={{ color: "var(--muted)", marginTop: "0.25rem" }}>
             {selectedConcept.definition || "No definition available."}
           </p>

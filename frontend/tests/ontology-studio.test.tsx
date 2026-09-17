@@ -315,6 +315,95 @@ test("CDD-062: concept lifecycle_state and governance_status render as a visual 
   expect(governanceValues[0]).toHaveClass("status-tag");
 });
 
+// CDD-083 §5.3: discovery_label is a real, already-fetched field
+// (backend/app/domain/ontology/resolver.py) previously never rendered
+// anywhere -- promoted here truthfully, never inferred or fabricated.
+test("WOW-I3-B: a curated concept's real discovery_label renders as a truthful provenance badge", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(ontologyFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const supplierNodes = screen.getAllByText("Supplier");
+  fireEvent.click(supplierNodes[0]);
+
+  await waitFor(() =>
+    expect(
+      screen.getByText("An organization that provides materials."),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.getByText("Curated")).toBeInTheDocument();
+  expect(screen.queryByText("Auto-discovered")).not.toBeInTheDocument();
+});
+
+test("WOW-I3-B: an auto-discovered concept's real discovery_label renders truthfully, never upgraded to Curated", async () => {
+  const autoDiscoveredFixture = {
+    ...ontologyFixture,
+    concepts: [
+      { ...ontologyFixture.concepts[0], discovery_label: "unknown" },
+      ontologyFixture.concepts[1],
+    ],
+  };
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(autoDiscoveredFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const supplierNodes = screen.getAllByText("Supplier");
+  fireEvent.click(supplierNodes[0]);
+
+  await waitFor(() =>
+    expect(screen.getByText("Auto-discovered")).toBeInTheDocument(),
+  );
+  expect(screen.queryByText("Curated")).not.toBeInTheDocument();
+});
+
+test("WOW-I3-B: node selection uses the real --obs-intelligence token, and the legend matches it, never a fabricated OQI/trust/quality annotation on any node", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(ontologyFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const supplierNodes = screen.getAllByText("Supplier");
+  fireEvent.click(supplierNodes[0]);
+
+  await waitFor(() => {
+    const node = supplierNodes[0].closest(
+      "[style*='border']",
+    ) as HTMLElement | null;
+    expect(node?.style.border).toContain("var(--obs-intelligence)");
+  });
+
+  // No OQI concept (finding count, DQ badge, trust/confidence score, or
+  // "at risk" language) is ever attached to an ontology node -- CDD-081's
+  // rejection of a fabricated reverse OQI-to-Ontology mapping still holds.
+  expect(screen.queryByText(/trust score/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/at risk/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/finding/i)).not.toBeInTheDocument();
+});
+
 test("shows a bounded error state with Retry when the ontology API is unavailable, never a fabricated fallback", async () => {
   vi.stubGlobal(
     "fetch",
