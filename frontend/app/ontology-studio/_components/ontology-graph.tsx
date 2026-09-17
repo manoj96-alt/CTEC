@@ -224,12 +224,57 @@ export function computeEgoLayout(
   return { positions, leftNames, rightNames, contextNames };
 }
 
-type NodeTier = "selected" | "connected" | "muted" | "default";
+export interface FocusSubgraph {
+  concepts: Concept[];
+  relationships: Relationship[];
+}
+
+// WOW-I3-B-R3: operator visual evidence on R2 showed that even though the
+// selected concept and its direct neighbors were now unmistakable, the
+// muted context concepts' OWN relationships (e.g. usedIn, candidateFor,
+// exposedTo when Supplier is selected) still rendered inside the same
+// canvas -- visually competing with the focused relationships even at low
+// opacity. This derives a strict, real-data-only subgraph: the selected
+// concept, every concept with a real direct relationship to it, and only
+// those real incident relationships. This is PRESENTATIONAL filtering of
+// what the focused ReactFlow canvas renders -- the complete ontology is
+// never mutated, remains fully queryable via Overview mode and the
+// Relationship Details inventory below, and this function contains no
+// concept-name-specific logic (works for any selected concept, in any
+// ontology). Exported so its derivation can be unit-tested directly.
+export function computeFocusSubgraph(
+  concepts: Concept[],
+  relationships: Relationship[],
+  selectedName: string,
+): FocusSubgraph {
+  const nameSet = new Set(concepts.map((c) => c.name));
+  const incident = relationships.filter(
+    (r) =>
+      nameSet.has(r.source_concept) &&
+      nameSet.has(r.target_concept) &&
+      (r.source_concept === selectedName || r.target_concept === selectedName),
+  );
+  const focusNames = new Set<string>([selectedName]);
+  incident.forEach((r) => {
+    focusNames.add(r.source_concept);
+    focusNames.add(r.target_concept);
+  });
+  return {
+    concepts: concepts.filter((c) => focusNames.has(c.name)),
+    relationships: incident,
+  };
+}
+
+type NodeTier = "selected" | "connected" | "default";
 
 // All tiers render inside the dark `.obs-ontology-canvas` (CDD-083 §5.2),
 // so every color here is an --obs-* dark-canvas-appropriate token, never
 // the light-panel --muted/--line tokens used outside the canvas. Every
 // tier also differs in border WIDTH and font-weight, not color alone.
+// WOW-I3-B-R3: the "muted" tier is retired -- the focused canvas now only
+// ever renders the selected concept and its direct neighbors (see
+// `computeFocusSubgraph`), so there is no longer a third, visually
+// competing "unrelated but present" tier inside the canvas.
 function nodeStyleFor(tier: NodeTier): CSSProperties {
   switch (tier) {
     case "selected":
@@ -254,17 +299,6 @@ function nodeStyleFor(tier: NodeTier): CSSProperties {
         fontWeight: 600,
         background: "var(--obs-surface-interactive)",
         color: "var(--obs-text-primary)",
-      };
-    case "muted":
-      return {
-        border: "1px solid var(--obs-border-strong)",
-        borderRadius: "0.6rem",
-        padding: "0.5rem 0.75rem",
-        fontSize: "0.8rem",
-        fontWeight: 500,
-        background: "var(--obs-surface)",
-        color: "var(--obs-text-muted)",
-        opacity: 0.55,
       };
     default:
       return {
@@ -300,85 +334,37 @@ export function OntologyGraph({
     [relationships, nameSet],
   );
 
-  const connectedNames = useMemo(() => {
-    if (selectedName == null) return new Set<string>();
-    const set = new Set<string>();
-    validRelationships.forEach((r) => {
-      if (r.source_concept === selectedName) set.add(r.target_concept);
-      if (r.target_concept === selectedName) set.add(r.source_concept);
-    });
-    return set;
-  }, [validRelationships, selectedName]);
-
-  const { nodes, edges, focusIds } = useMemo(() => {
-    // WOW-I3-B-R2: overview (nothing selected) keeps the global layered
-    // layout; selecting a concept switches to the dedicated ego layout so
-    // every direct relationship gets its own short, unambiguous lane.
-    const positions =
-      selectedName == null
-        ? computeLayeredLayout(concepts, validRelationships).positions
-        : computeEgoLayout(concepts, validRelationships, selectedName)
-            .positions;
-
-    const flowNodes: Node[] = concepts.map((concept) => {
-      const tier: NodeTier =
-        selectedName == null
-          ? "default"
-          : concept.name === selectedName
-            ? "selected"
-            : connectedNames.has(concept.name)
-              ? "connected"
-              : "muted";
-      return {
+  // WOW-I3-B-R3: the focused ReactFlow canvas renders ONLY the selected
+  // concept, concepts with a real direct relationship to it, and those
+  // real incident relationships -- derived generically from the actual
+  // graph data (no hardcoded concept/relationship names). Overview mode
+  // (nothing selected) is completely unaffected: it still renders every
+  // real concept and relationship via the unchanged global layered layout.
+  const { nodes, edges } = useMemo(() => {
+    if (selectedName == null) {
+      const { positions } = computeLayeredLayout(concepts, validRelationships);
+      const flowNodes: Node[] = concepts.map((concept) => ({
         id: concept.name,
         position: positions[concept.name] ?? { x: 0, y: 0 },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         data: { label: concept.name },
-        style: nodeStyleFor(tier),
-      };
-    });
-
-    const flowEdges: Edge[] = validRelationships.map((relationship) => {
-      const touchesSelected =
-        selectedName != null &&
-        (relationship.source_concept === selectedName ||
-          relationship.target_concept === selectedName);
-      const muted = selectedName != null && !touchesSelected;
-      // A structural connector line, not free-standing muted text --
-      // --obs-border-strong / --obs-intelligence are the tokens designed
-      // for exactly this, inside the dark canvas.
-      const stroke = touchesSelected
-        ? "var(--obs-intelligence)"
-        : "var(--obs-border-strong)";
-
-      return {
+        style: nodeStyleFor("default"),
+      }));
+      const flowEdges: Edge[] = validRelationships.map((relationship) => ({
         id: `${relationship.source_concept}-${relationship.name}-${relationship.target_concept}`,
         source: relationship.source_concept,
         target: relationship.target_concept,
         label: relationship.name,
         animated: false,
-        // WOW-I3-B-R2: orthogonal step routing, not a bezier curve -- a
-        // "dedicated connection lane" (per the operator's own §6 language)
-        // reads unambiguously even when several relationships fan out of
-        // the same concept, which a curve can visually blur together.
         type: "smoothstep",
-        style: {
-          stroke,
-          strokeWidth: touchesSelected ? 2 : 1,
-          opacity: muted ? 0.15 : 1,
-        },
+        style: { stroke: "var(--obs-border-strong)", strokeWidth: 1 },
         labelStyle: {
-          fill: touchesSelected
-            ? "var(--obs-text-primary)"
-            : "var(--obs-text-secondary)",
+          fill: "var(--obs-text-secondary)",
           fontSize: 11,
-          fontWeight: touchesSelected ? 700 : 500,
+          fontWeight: 500,
         },
-        labelBgStyle: {
-          fill: "var(--obs-canvas-deep)",
-          fillOpacity: muted ? 0.25 : 0.85,
-        },
+        labelBgStyle: { fill: "var(--obs-canvas-deep)", fillOpacity: 0.85 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 3,
         // Direction is the real source_concept -> target_concept edge only
@@ -386,26 +372,65 @@ export function OntologyGraph({
         // process sequence beyond it.
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: stroke,
+          color: "var(--obs-border-strong)",
           width: 14,
           height: 14,
         },
-      };
-    });
+      }));
+      return { nodes: flowNodes, edges: flowEdges };
+    }
 
-    // WOW-I3-B-R2: while a concept is selected, fit the viewport to just
-    // the selection + its direct neighbors (ReactFlow's own `fitView`
-    // `nodes` option -- no new dependency), not the full ontology. The
-    // muted context cluster stays fully present and reachable by pan/
-    // zoom, but no longer forces the meaningful, dense local view to
-    // zoom out and shrink to fit ten nodes' worth of empty canvas.
-    const focusIds =
-      selectedName == null
-        ? null
-        : [selectedName, ...connectedNames].filter((id) => nameSet.has(id));
+    const focus = computeFocusSubgraph(
+      concepts,
+      validRelationships,
+      selectedName,
+    );
+    const { positions } = computeEgoLayout(
+      concepts,
+      validRelationships,
+      selectedName,
+    );
 
-    return { nodes: flowNodes, edges: flowEdges, focusIds };
-  }, [concepts, validRelationships, selectedName, connectedNames, nameSet]);
+    const flowNodes: Node[] = focus.concepts.map((concept) => ({
+      id: concept.name,
+      position: positions[concept.name] ?? { x: 0, y: 0 },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      data: { label: concept.name },
+      style: nodeStyleFor(
+        concept.name === selectedName ? "selected" : "connected",
+      ),
+    }));
+
+    // Every relationship in `focus.relationships` is, by construction,
+    // directly incident to the selected concept -- there is no longer a
+    // "muted, non-incident" edge case inside the focused canvas.
+    const flowEdges: Edge[] = focus.relationships.map((relationship) => ({
+      id: `${relationship.source_concept}-${relationship.name}-${relationship.target_concept}`,
+      source: relationship.source_concept,
+      target: relationship.target_concept,
+      label: relationship.name,
+      animated: false,
+      type: "smoothstep",
+      style: { stroke: "var(--obs-intelligence)", strokeWidth: 2 },
+      labelStyle: {
+        fill: "var(--obs-text-primary)",
+        fontSize: 11,
+        fontWeight: 700,
+      },
+      labelBgStyle: { fill: "var(--obs-canvas-deep)", fillOpacity: 0.85 },
+      labelBgPadding: [4, 2] as [number, number],
+      labelBgBorderRadius: 3,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: "var(--obs-intelligence)",
+        width: 14,
+        height: 14,
+      },
+    }));
+
+    return { nodes: flowNodes, edges: flowEdges };
+  }, [concepts, validRelationships, selectedName]);
 
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
     setSelectedName(node.id);
@@ -427,18 +452,35 @@ export function OntologyGraph({
       </h2>
       {/* CDD-083 §13: a compact, truthful orientation cue -- direction
           shown in the graph is exactly the real relationship direction,
-          never an implied business process or chronology. */}
+          never an implied business process or chronology. WOW-I3-B-R3:
+          the focus-mode copy no longer claims the rest of the ontology is
+          "visible, muted, below" -- it no longer is, inside this canvas --
+          and instead truthfully points at how to see it (Overview mode). */}
       <p className="obs-ontology-caption">
         {selectedName == null
           ? "Relationship direction follows the governed ontology. Select a concept to focus on its direct relationships."
-          : "Showing direct relationships for the selected concept. The rest of the ontology remains visible, muted, below."}
+          : "Showing direct relationships for the selected concept. Return to overview to see the complete ontology."}
       </p>
+      {selectedName != null && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setSelectedName(null)}
+          style={{ marginTop: "0.5rem" }}
+        >
+          View full ontology
+        </button>
+      )}
       {/* CDD-083 §5.2: the canvas itself (not the surrounding .panel --
           the established light/dark two-surface contract is unchanged)
           gets a dark, Observatory-native background, giving the
           flagship graph real depth without a page-level dark-mode
           flip. Node/edge/legend tokens below are chosen to read
-          correctly against this specific background. */}
+          correctly against this specific background. WOW-I3-B-R3: the
+          `nodes`/`edges` passed in already ARE the correct set to fit --
+          overview gets every real concept, focus mode gets only the
+          selected concept + its direct neighbors (computeFocusSubgraph)
+          -- so fitView no longer needs a `nodes` filter option. */}
       <div
         className="obs-ontology-canvas"
         role="img"
@@ -446,21 +488,17 @@ export function OntologyGraph({
       >
         {nodes.length > 0 ? (
           <ReactFlow
-            // WOW-I3-B-R2: remounting on selection change (rather than an
-            // imperative fitView() effect) keeps the fit-to-focus behavior
-            // simple and deterministic -- this is a 10-node demo-scale
-            // ontology, so a remount is cheap and has no visible cost.
+            // Remounting on selection change keeps the fit-to-focus
+            // viewport recompute simple and deterministic -- this is a
+            // 10-node demo-scale ontology, so a remount is cheap and has
+            // no visible cost.
             key={selectedName ?? "__overview__"}
             nodes={nodes}
             edges={edges}
             onNodeClick={handleNodeClick}
             nodesDraggable={false}
             fitView
-            fitViewOptions={
-              focusIds
-                ? { nodes: focusIds.map((id) => ({ id })), padding: 0.4 }
-                : { padding: 0.2 }
-            }
+            fitViewOptions={{ padding: selectedName == null ? 0.2 : 0.4 }}
           >
             <Background />
             <Controls />

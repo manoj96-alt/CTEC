@@ -10,6 +10,7 @@ import { StudioClient } from "@/app/ontology-studio/_components/studio-client";
 import {
   computeLayeredLayout,
   computeEgoLayout,
+  computeFocusSubgraph,
 } from "@/app/ontology-studio/_components/ontology-graph";
 
 beforeEach(() => {
@@ -457,7 +458,7 @@ test("WOW-I3-B-R1: a concept with no relationships still receives a real, non-ov
   expect(positions.Isolated).toBeDefined();
 });
 
-test("WOW-I3-B-R1: selecting a concept keeps every real concept visible, distinctly emphasizes it and its directly connected concepts, and visually de-emphasizes (never hides) unrelated concepts", async () => {
+test("WOW-I3-B-R3: selecting a concept renders only it and its directly connected concepts inside the focused canvas -- an unrelated concept is absent from the canvas, not merely muted, but remains real (present in Overview mode and Relationship Details)", async () => {
   const threeConceptFixture = {
     ...ontologyFixture,
     concepts: [
@@ -479,47 +480,51 @@ test("WOW-I3-B-R1: selecting a concept keeps every real concept visible, distinc
     { ok: true, json: () => Promise.resolve(connectorsFixture) },
     { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
   ]);
-  render(<StudioClient />);
+  const { container } = render(<StudioClient />);
 
+  // Overview mode: Region is real and present in the canvas.
   await waitFor(() =>
     expect(
       screen.getByLabelText(/Ontology concept and relationship graph/),
     ).toBeInTheDocument(),
   );
+  const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
+  expect(within(canvas).getAllByText("Region").length).toBeGreaterThan(0);
 
   const supplierNodes = screen.getAllByText("Supplier");
   fireEvent.click(supplierNodes[0]);
 
-  // WOW-I3-B-R2: selecting a concept remounts the ReactFlow canvas into
-  // its dedicated ego layout -- re-query the node fresh inside waitFor
-  // rather than holding a reference captured before the remount.
+  // Selecting Supplier remounts the canvas into focus mode -- re-query
+  // fresh inside waitFor rather than holding a pre-remount reference.
   await waitFor(() => {
-    const node = screen
+    const node = within(canvas)
       .getAllByText("Supplier")[0]
       .closest("[style*='border']") as HTMLElement;
     expect(node.style.border).toContain("var(--obs-intelligence)");
   });
 
   // Material is directly connected via the real "supplies" relationship --
-  // it must show the connected-tier obs-intelligence-derived border and
-  // must NOT be muted.
-  const materialNode = screen
+  // it must be present in the focused canvas with the connected-tier
+  // border.
+  const materialNode = within(canvas)
     .getAllByText("Material")[0]
     .closest("[style*='border']") as HTMLElement;
   expect(materialNode.style.border).toContain("obs-intelligence");
-  expect(materialNode.style.opacity).not.toBe("0.55");
 
-  // Region has no relationship to Supplier at all -- it remains present
-  // (never hidden) but is visually de-emphasized.
-  const regionNode = screen
-    .getAllByText("Region")[0]
-    .closest("[style*='border']") as HTMLElement;
-  expect(regionNode.style.opacity).toBe("0.55");
+  // Region has no direct relationship to Supplier -- it must be entirely
+  // absent from the focused canvas (not merely muted), per the operator's
+  // R3 finding that a muted-but-present unrelated node/edge still
+  // visually competed with the focused relationships.
+  expect(within(canvas).queryByText("Region")).not.toBeInTheDocument();
 
-  // Every real concept stays represented in the DOM.
-  expect(screen.getAllByText("Supplier").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Material").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Region").length).toBeGreaterThan(0);
+  // Region remains real: it is still findable outside the canvas (e.g.
+  // in the always-present accessible relationship representation for any
+  // relationship it participates in), and reachable again via "View full
+  // ontology".
+  fireEvent.click(screen.getByRole("button", { name: "View full ontology" }));
+  await waitFor(() =>
+    expect(within(canvas).getAllByText("Region").length).toBeGreaterThan(0),
+  );
 });
 
 test("WOW-I3-B-R1: the relationship inventory is presented as a collapsible, keyboard-accessible details/summary, collapsed by default, with its content still queryable for accessibility", async () => {
@@ -695,6 +700,84 @@ test("WOW-I3-B-R2: the ego layout distinguishes Material's real incoming sources
   expect(rightNames.sort()).toEqual(["BOM", "Contract"].sort());
 });
 
+// WOW-I3-B-R3: computeFocusSubgraph is exercised here with entirely
+// generic concept/relationship names (A/B/C/D), never Supplier/Material/
+// Contract -- proving the derivation contains no hardcoded domain-
+// specific focus graph and works for any real ontology data (§13.I).
+test("WOW-I3-B-R3: computeFocusSubgraph derives the focused concept/relationship set generically from real graph data, with no hardcoded domain-specific logic", () => {
+  const concepts = [
+    { name: "A" } as never,
+    { name: "B" } as never,
+    { name: "C" } as never,
+    { name: "D" } as never,
+  ];
+  const relationships = [
+    { source_concept: "A", target_concept: "B", name: "relAB" } as never,
+    { source_concept: "C", target_concept: "A", name: "relCA" } as never,
+    // Not incident to A -- must be excluded from A's focus subgraph.
+    { source_concept: "C", target_concept: "D", name: "relCD" } as never,
+  ];
+
+  const focus = computeFocusSubgraph(concepts, relationships, "A");
+
+  expect(focus.concepts.map((c) => c.name).sort()).toEqual(
+    ["A", "B", "C"].sort(),
+  );
+  expect(focus.relationships).toHaveLength(2);
+  expect(
+    focus.relationships.some(
+      (r) => r.source_concept === "A" && r.target_concept === "B",
+    ),
+  ).toBe(true);
+  expect(
+    focus.relationships.some(
+      (r) => r.source_concept === "C" && r.target_concept === "A",
+    ),
+  ).toBe(true);
+  // D is not directly related to A -- excluded from both the concept and
+  // relationship sets.
+  expect(focus.concepts.map((c) => c.name)).not.toContain("D");
+  expect(focus.relationships.some((r) => r.name === "relCD")).toBe(false);
+});
+
+test("WOW-I3-B-R3: Supplier focus mode renders exactly Supplier/Material/Region/Contract and exactly the supplies/locatedIn/boundBy edges inside the canvas -- no unrelated concept or relationship (usedIn, candidateFor) is rendered", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(supplierRiskFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  const { container } = render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
+  // Before selecting, Overview mode renders BOM too (it is real and
+  // unrelated to nothing at this stage) -- its disappearance from the
+  // canvas is the signal that focus mode has taken effect.
+  expect(within(canvas).getAllByText("BOM").length).toBeGreaterThan(0);
+
+  fireEvent.click(within(canvas).getAllByText("Supplier")[0]);
+
+  await waitFor(() =>
+    expect(within(canvas).queryByText("BOM")).not.toBeInTheDocument(),
+  );
+
+  // Exactly Supplier's 3 real direct neighbors are present in the canvas.
+  expect(within(canvas).getAllByText("Material").length).toBeGreaterThan(0);
+  expect(within(canvas).getAllByText("Region").length).toBeGreaterThan(0);
+  expect(within(canvas).getAllByText("Contract").length).toBeGreaterThan(0);
+
+  // BOM and Alternate Supplier have no direct relationship to Supplier --
+  // absent from the canvas entirely.
+  expect(within(canvas).queryByText("BOM")).not.toBeInTheDocument();
+  expect(
+    within(canvas).queryByText("Alternate Supplier"),
+  ).not.toBeInTheDocument();
+});
+
 test("WOW-I3-B-R2: selecting Supplier makes 'Supplier — boundBy → Contract' directly, unambiguously readable in the inspector, with no reversed direction and every other real direct relationship present", async () => {
   mockFetchSequence([
     { ok: true, json: () => Promise.resolve(supplierRiskFixture) },
@@ -816,42 +899,141 @@ test("WOW-I3-B-R2: selecting Material distinguishes its real incoming relationsh
   expect(screen.getByText("Relationship details (6)")).toBeInTheDocument();
 });
 
-test("WOW-I3-B-R2: selected/connected/muted concept tiers are distinguished by border width and font weight, not color alone, and unrelated concepts remain present when Supplier is selected", async () => {
+test("WOW-I3-B-R3: Contract focus mode renders only its two real incoming neighbors (Supplier, Material) in the canvas -- Region, BOM, and Alternate Supplier are absent", async () => {
   mockFetchSequence([
     { ok: true, json: () => Promise.resolve(supplierRiskFixture) },
     { ok: true, json: () => Promise.resolve(connectorsFixture) },
     { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
   ]);
-  render(<StudioClient />);
+  const { container } = render(<StudioClient />);
 
   await waitFor(() =>
     expect(
       screen.getByLabelText(/Ontology concept and relationship graph/),
     ).toBeInTheDocument(),
   );
+  const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
+  fireEvent.click(within(canvas).getAllByText("Contract")[0]);
+
+  await waitFor(() =>
+    expect(within(canvas).queryByText("Region")).not.toBeInTheDocument(),
+  );
+
+  expect(within(canvas).getAllByText("Supplier").length).toBeGreaterThan(0);
+  expect(within(canvas).getAllByText("Material").length).toBeGreaterThan(0);
+  expect(within(canvas).queryByText("Region")).not.toBeInTheDocument();
+  expect(within(canvas).queryByText("BOM")).not.toBeInTheDocument();
+  expect(
+    within(canvas).queryByText("Alternate Supplier"),
+  ).not.toBeInTheDocument();
+});
+
+test("WOW-I3-B-R3: Material focus mode renders exactly its 4 real direct neighbors (Supplier, Alternate Supplier, BOM, Contract) in the canvas -- Region is absent", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(supplierRiskFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  const { container } = render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
+  fireEvent.click(within(canvas).getAllByText("Material")[0]);
+
+  await waitFor(() =>
+    expect(within(canvas).queryByText("Region")).not.toBeInTheDocument(),
+  );
+
+  expect(within(canvas).getAllByText("Supplier").length).toBeGreaterThan(0);
+  expect(
+    within(canvas).getAllByText("Alternate Supplier").length,
+  ).toBeGreaterThan(0);
+  expect(within(canvas).getAllByText("BOM").length).toBeGreaterThan(0);
+  expect(within(canvas).getAllByText("Contract").length).toBeGreaterThan(0);
+  expect(within(canvas).queryByText("Region")).not.toBeInTheDocument();
+});
+
+test("WOW-I3-B-R3: an obvious 'View full ontology' control returns from Concept Focus mode to Ontology Overview, restoring the complete real graph in the canvas", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(supplierRiskFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  const { container } = render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByRole("button", { name: "View full ontology" }),
+  ).not.toBeInTheDocument();
+
+  const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
+  fireEvent.click(within(canvas).getAllByText("Supplier")[0]);
+
+  const resetButton = await screen.findByRole("button", {
+    name: "View full ontology",
+  });
+  await waitFor(() =>
+    expect(within(canvas).queryByText("BOM")).not.toBeInTheDocument(),
+  );
+
+  fireEvent.click(resetButton);
+
+  await waitFor(() =>
+    expect(within(canvas).getAllByText("BOM").length).toBeGreaterThan(0),
+  );
+  // Overview mode is restored: every real concept is back in the canvas,
+  // and the reset control itself disappears (nothing is selected).
+  expect(
+    within(canvas).getAllByText("Alternate Supplier").length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.queryByRole("button", { name: "View full ontology" }),
+  ).not.toBeInTheDocument();
+});
+
+test("WOW-I3-B-R3: selected/connected concept tiers are distinguished by border width and font weight, not color alone, and a concept with no direct relationship to the selection (Alternate Supplier, when Supplier is selected) is absent from the focused canvas entirely", async () => {
+  mockFetchSequence([
+    { ok: true, json: () => Promise.resolve(supplierRiskFixture) },
+    { ok: true, json: () => Promise.resolve(connectorsFixture) },
+    { ok: true, json: () => Promise.resolve({ "@context": {}, "@graph": [] }) },
+  ]);
+  const { container } = render(<StudioClient />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(/Ontology concept and relationship graph/),
+    ).toBeInTheDocument(),
+  );
+  const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
   fireEvent.click(screen.getAllByText("Supplier")[0]);
 
-  const selectedNode = screen
+  const selectedNode = within(canvas)
     .getAllByText("Supplier")[0]
     .closest("[style*='border']") as HTMLElement;
   await waitFor(() => expect(selectedNode.style.border).toContain("2px"));
   expect(selectedNode.style.fontWeight).toBe("700");
 
-  const connectedNode = screen
+  const connectedNode = within(canvas)
     .getAllByText("Contract")[0]
     .closest("[style*='border']") as HTMLElement;
   expect(connectedNode.style.border).toContain("1px");
   expect(connectedNode.style.fontWeight).toBe("600");
 
-  // Alternate Supplier has no direct relationship to Supplier -- it
-  // remains present (never removed) but is visually muted, distinguished
-  // by border width AND font weight, not merely a color shift.
-  const mutedNode = screen
-    .getAllByText("Alternate Supplier")[0]
-    .closest("[style*='border']") as HTMLElement;
-  expect(mutedNode.style.border).toContain("1px");
-  expect(mutedNode.style.fontWeight).toBe("500");
-  expect(mutedNode.style.opacity).toBe("0.55");
+  // Alternate Supplier has no direct relationship to Supplier -- per the
+  // R3 product decision, it is absent from the focused canvas entirely
+  // (not merely muted), since a muted-but-present node still visually
+  // competed with the focused relationships in the operator's R2 review.
+  expect(
+    within(canvas).queryByText("Alternate Supplier"),
+  ).not.toBeInTheDocument();
 });
 
 test("shows a bounded error state with Retry when the ontology API is unavailable, never a fabricated fallback", async () => {
