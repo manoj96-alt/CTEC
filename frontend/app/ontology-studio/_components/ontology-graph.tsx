@@ -27,7 +27,10 @@ export interface LayeredLayout {
 // process stage, chronology, or cardinality. Layer/column position is a
 // rendering strategy only; it is never a new ontology fact. Exported so
 // its determinism and direction-fidelity can be unit-tested directly,
-// independent of ReactFlow/DOM rendering.
+// independent of ReactFlow/DOM rendering. WOW-I3-B-R2: retained exactly
+// as the "ontology overview" (nothing selected) layout -- see
+// `computeEgoLayout` below for the selected-concept mode, which replaces
+// this for the local-focus experience.
 export function computeLayeredLayout(
   concepts: Concept[],
   relationships: Relationship[],
@@ -112,11 +115,121 @@ export function computeLayeredLayout(
   return { positions, layerOf };
 }
 
+export interface EgoLayout {
+  positions: Record<string, { x: number; y: number }>;
+  leftNames: string[];
+  rightNames: string[];
+  contextNames: string[];
+}
+
+const EGO_LANE_GAP = 280;
+const EGO_ROW_HEIGHT = 84;
+const EGO_CONTEXT_ROW_GAP = 110;
+const EGO_CONTEXT_COLUMNS = 4;
+const EGO_CONTEXT_COLUMN_WIDTH = 220;
+
+// WOW-I3-B-R2: the operator's own review found the global layered layout
+// technically truthful but cognitively weak -- a relationship that has to
+// "skip" a layer (e.g. Supplier, layer 0, -> Contract, layer 2, because
+// Contract's own layer is driven by its OTHER real predecessor Material)
+// is forced to visually cross through the intermediate layer's nodes and
+// edges, making a single real relationship hard to trace by eye. Global
+// edge/label styling alone cannot fix this -- it is a layout problem.
+//
+// This is a dedicated three-lane ego (local-focus) layout, used only
+// while a concept is selected: every concept with a real incoming edge
+// to the selection is placed in a left column; every concept with a real
+// outgoing edge from the selection in a right column; the selection
+// itself is centered between them. Every direct relationship therefore
+// gets its own short, dedicated lane between two fixed columns -- it can
+// never have to cross through an unrelated layer. Every remaining
+// concept (no direct edge to the selection) is kept fully present, never
+// removed, in a compact muted cluster positioned below the focus lanes
+// so it cannot visually compete with them.
+//
+// A concept that is simultaneously a real incoming source AND a real
+// outgoing target of the selection (not present in the current supplier-
+// risk ontology, but not excluded by the contract) is positioned once,
+// on the right/outgoing lane -- this is a purely cosmetic tie-break; the
+// textual Incoming/Outgoing lists in the inspector are derived
+// independently from the real relationships and list it correctly under
+// both headings regardless of where it is drawn.
+//
+// Purely a rendering strategy: no new ontology fact, no fabricated
+// hierarchy, chronology, or process sequence. Exported so its
+// determinism and direction-fidelity can be unit-tested directly.
+export function computeEgoLayout(
+  concepts: Concept[],
+  relationships: Relationship[],
+  selectedName: string,
+): EgoLayout {
+  const names = concepts.map((c) => c.name);
+  const nameSet = new Set(names);
+  const validRelationships = relationships.filter(
+    (r) => nameSet.has(r.source_concept) && nameSet.has(r.target_concept),
+  );
+
+  const incomingNames = Array.from(
+    new Set(
+      validRelationships
+        .filter(
+          (r) =>
+            r.target_concept === selectedName &&
+            r.source_concept !== selectedName,
+        )
+        .map((r) => r.source_concept),
+    ),
+  );
+  const outgoingNames = Array.from(
+    new Set(
+      validRelationships
+        .filter(
+          (r) =>
+            r.source_concept === selectedName &&
+            r.target_concept !== selectedName,
+        )
+        .map((r) => r.target_concept),
+    ),
+  );
+  const outgoingSet = new Set(outgoingNames);
+  const leftNames = incomingNames.filter((n) => !outgoingSet.has(n));
+  const rightNames = outgoingNames;
+  const focusNames = new Set([selectedName, ...leftNames, ...rightNames]);
+  const contextNames = names.filter((n) => !focusNames.has(n));
+
+  const positions: Record<string, { x: number; y: number }> = {};
+  positions[selectedName] = { x: 0, y: 0 };
+
+  const laneY = (count: number, index: number) =>
+    (index - (count - 1) / 2) * EGO_ROW_HEIGHT;
+
+  leftNames.forEach((n, i) => {
+    positions[n] = { x: -EGO_LANE_GAP, y: laneY(leftNames.length, i) };
+  });
+  rightNames.forEach((n, i) => {
+    positions[n] = { x: EGO_LANE_GAP, y: laneY(rightNames.length, i) };
+  });
+
+  const focusRows = Math.max(leftNames.length, rightNames.length, 1);
+  const contextTop = (focusRows / 2) * EGO_ROW_HEIGHT + EGO_CONTEXT_ROW_GAP;
+  contextNames.forEach((n, i) => {
+    const col = i % EGO_CONTEXT_COLUMNS;
+    const row = Math.floor(i / EGO_CONTEXT_COLUMNS);
+    positions[n] = {
+      x: (col - (EGO_CONTEXT_COLUMNS - 1) / 2) * EGO_CONTEXT_COLUMN_WIDTH,
+      y: contextTop + row * EGO_ROW_HEIGHT,
+    };
+  });
+
+  return { positions, leftNames, rightNames, contextNames };
+}
+
 type NodeTier = "selected" | "connected" | "muted" | "default";
 
 // All tiers render inside the dark `.obs-ontology-canvas` (CDD-083 §5.2),
 // so every color here is an --obs-* dark-canvas-appropriate token, never
-// the light-panel --muted/--line tokens used outside the canvas.
+// the light-panel --muted/--line tokens used outside the canvas. Every
+// tier also differs in border WIDTH and font-weight, not color alone.
 function nodeStyleFor(tier: NodeTier): CSSProperties {
   switch (tier) {
     case "selected":
@@ -197,8 +310,15 @@ export function OntologyGraph({
     return set;
   }, [validRelationships, selectedName]);
 
-  const { nodes, edges } = useMemo(() => {
-    const { positions } = computeLayeredLayout(concepts, validRelationships);
+  const { nodes, edges, focusIds } = useMemo(() => {
+    // WOW-I3-B-R2: overview (nothing selected) keeps the global layered
+    // layout; selecting a concept switches to the dedicated ego layout so
+    // every direct relationship gets its own short, unambiguous lane.
+    const positions =
+      selectedName == null
+        ? computeLayeredLayout(concepts, validRelationships).positions
+        : computeEgoLayout(concepts, validRelationships, selectedName)
+            .positions;
 
     const flowNodes: Node[] = concepts.map((concept) => {
       const tier: NodeTier =
@@ -238,10 +358,15 @@ export function OntologyGraph({
         target: relationship.target_concept,
         label: relationship.name,
         animated: false,
+        // WOW-I3-B-R2: orthogonal step routing, not a bezier curve -- a
+        // "dedicated connection lane" (per the operator's own §6 language)
+        // reads unambiguously even when several relationships fan out of
+        // the same concept, which a curve can visually blur together.
+        type: "smoothstep",
         style: {
           stroke,
           strokeWidth: touchesSelected ? 2 : 1,
-          opacity: muted ? 0.3 : 1,
+          opacity: muted ? 0.15 : 1,
         },
         labelStyle: {
           fill: touchesSelected
@@ -252,7 +377,7 @@ export function OntologyGraph({
         },
         labelBgStyle: {
           fill: "var(--obs-canvas-deep)",
-          fillOpacity: muted ? 0.4 : 0.85,
+          fillOpacity: muted ? 0.25 : 0.85,
         },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 3,
@@ -268,8 +393,19 @@ export function OntologyGraph({
       };
     });
 
-    return { nodes: flowNodes, edges: flowEdges };
-  }, [concepts, validRelationships, selectedName, connectedNames]);
+    // WOW-I3-B-R2: while a concept is selected, fit the viewport to just
+    // the selection + its direct neighbors (ReactFlow's own `fitView`
+    // `nodes` option -- no new dependency), not the full ontology. The
+    // muted context cluster stays fully present and reachable by pan/
+    // zoom, but no longer forces the meaningful, dense local view to
+    // zoom out and shrink to fit ten nodes' worth of empty canvas.
+    const focusIds =
+      selectedName == null
+        ? null
+        : [selectedName, ...connectedNames].filter((id) => nameSet.has(id));
+
+    return { nodes: flowNodes, edges: flowEdges, focusIds };
+  }, [concepts, validRelationships, selectedName, connectedNames, nameSet]);
 
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
     setSelectedName(node.id);
@@ -293,7 +429,9 @@ export function OntologyGraph({
           shown in the graph is exactly the real relationship direction,
           never an implied business process or chronology. */}
       <p className="obs-ontology-caption">
-        Relationship direction follows the governed ontology.
+        {selectedName == null
+          ? "Relationship direction follows the governed ontology. Select a concept to focus on its direct relationships."
+          : "Showing direct relationships for the selected concept. The rest of the ontology remains visible, muted, below."}
       </p>
       {/* CDD-083 §5.2: the canvas itself (not the surrounding .panel --
           the established light/dark two-surface contract is unchanged)
@@ -308,11 +446,21 @@ export function OntologyGraph({
       >
         {nodes.length > 0 ? (
           <ReactFlow
+            // WOW-I3-B-R2: remounting on selection change (rather than an
+            // imperative fitView() effect) keeps the fit-to-focus behavior
+            // simple and deterministic -- this is a 10-node demo-scale
+            // ontology, so a remount is cheap and has no visible cost.
+            key={selectedName ?? "__overview__"}
             nodes={nodes}
             edges={edges}
             onNodeClick={handleNodeClick}
             nodesDraggable={false}
             fitView
+            fitViewOptions={
+              focusIds
+                ? { nodes: focusIds.map((id) => ({ id })), padding: 0.4 }
+                : { padding: 0.2 }
+            }
           >
             <Background />
             <Controls />
@@ -364,7 +512,9 @@ export function OntologyGraph({
           Collapsed by default (progressive disclosure) behind a native,
           keyboard-operable <details>/<summary> -- content stays present
           in the DOM and queryable, so the accessibility contract is not
-          weakened. */}
+          weakened. Secondary to the graph + selected-concept inspector
+          below (CDD-083-R2 §9): a complete inventory for accessibility/
+          audit, not a substitute for graph comprehension. */}
       <details className="obs-ontology-relationship-details">
         <summary>Relationship details ({relationships.length})</summary>
         <ul>
@@ -403,6 +553,12 @@ export function OntologyGraph({
                 : "Auto-discovered"}
             </span>
           </p>
+          <p style={{ color: "var(--muted)", marginTop: "0.5rem" }}>
+            {selectedConcept.definition || "No definition available."}
+          </p>
+          <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+            Definition source: {selectedConcept.definition_source}
+          </p>
           <dl className="obs-ontology-inspector-meta">
             <div>
               <dt>Governance</dt>
@@ -429,14 +585,9 @@ export function OntologyGraph({
               <dd className="mono">{selectedConcept.entity_type_id}</dd>
             </div>
           </dl>
-          <p style={{ color: "var(--muted)", marginTop: "0.5rem" }}>
-            {selectedConcept.definition || "No definition available."}
-          </p>
-          <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-            Definition source: {selectedConcept.definition_source}
-          </p>
 
           <div className="obs-ontology-relationships">
+            <p className="eyebrow">Connected relationships</p>
             <div>
               <p style={{ fontWeight: 600, fontSize: "0.85rem" }}>Incoming</p>
               {incoming.length ? (
@@ -449,7 +600,7 @@ export function OntologyGraph({
                 </ul>
               ) : (
                 <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-                  none
+                  None
                 </p>
               )}
             </div>
@@ -465,7 +616,7 @@ export function OntologyGraph({
                 </ul>
               ) : (
                 <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-                  none
+                  None
                 </p>
               )}
             </div>
