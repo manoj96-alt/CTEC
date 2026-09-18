@@ -334,6 +334,87 @@ test("network failure that is not a SupplyChainImpactApiError shows the same una
   );
 });
 
+test("WOW-I4-B1-R1: the compact scenario selector shows only the active scenario's description, not all three at once", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+
+  // Before any selection, no description is shown (compact idle state).
+  expect(
+    screen.queryByText(/Single-sourced, high-severity disruption/),
+  ).not.toBeInTheDocument();
+
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(
+      screen.getByText(/Single-sourced, high-severity disruption/),
+    ).toBeInTheDocument(),
+  );
+  // Only the selected scenario's own description renders, not the other two.
+  expect(
+    screen.queryByText(/Required disruption-severity evidence/),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/does not exceed the governed \$10,000,000/),
+  ).not.toBeInTheDocument();
+});
+
+test("WOW-I4-B1-R1: Impact Intelligence renders exactly the real hop-grouped dependency structure (Material, Product, Facility), with no fabricated item-to-item edge", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByLabelText("Ontology impact")).toBeInTheDocument(),
+  );
+  const chain = screen.getByLabelText("Ontology impact");
+  expect(chain).toHaveTextContent("Material");
+  expect(chain).toHaveTextContent("Demo Material");
+  expect(chain).toHaveTextContent("Product");
+  expect(chain).toHaveTextContent("Demo Product");
+  expect(chain).toHaveTextContent("Facility");
+  expect(chain).toHaveTextContent("Demo Facility");
+  // The hop-grouping caption states the real limitation explicitly --
+  // grouping by relationship hop, never a claimed traced edge.
+  expect(
+    screen.getByText(/Impact grouped by governed ontology relationship hop/),
+  ).toBeInTheDocument();
+});
+
+test("WOW-I4-B1-R1: revenue exposure renders as a real, prominent figure derived only from the backend-returned evidence value", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByText(/Demo Revenue Exposure/)).toBeInTheDocument(),
+  );
+  // 12000000 (the mocked evidence value) rendered as USD currency --
+  // never a recalculated or fabricated figure.
+  expect(screen.getByText("$12,000,000")).toBeInTheDocument();
+});
+
+test("WOW-I4-B1-R1: no ranking, score, or winner is introduced for alternatives -- only the four real fields render", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByText("What alternatives exist?")).toBeInTheDocument(),
+  );
+  const alternatives = screen
+    .getByText("What alternatives exist?")
+    .closest("section")!;
+  expect(alternatives).toHaveTextContent("Qualification");
+  expect(alternatives).toHaveTextContent("Capacity");
+  expect(alternatives).toHaveTextContent("Lead time");
+  expect(alternatives).toHaveTextContent("Cost context");
+  expect(alternatives.textContent).not.toMatch(/score/i);
+  expect(alternatives.textContent).not.toMatch(/rank/i);
+  expect(alternatives.textContent).not.toMatch(/best/i);
+  expect(alternatives.textContent).not.toMatch(/winner/i);
+});
+
 test("no business conclusion is computed client-side: only backend-returned outcome/reason/narrative/confidence are ever rendered", async () => {
   evaluateMock.mockResolvedValue(recommendedResponse);
   render(<SupplyChainImpactPage />);

@@ -53,6 +53,9 @@ type WorkspaceState =
 
 export default function SupplyChainImpactPage() {
   const [state, setState] = useState<WorkspaceState>({ status: "idle" });
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const activeScenario =
+    DEMO_SCENARIOS.find((scenario) => scenario.key === selectedKey) ?? null;
 
   async function runScenario(supplierEntityId: string) {
     setState({ status: "loading" });
@@ -100,27 +103,35 @@ export default function SupplyChainImpactPage() {
         aria-label="Scenario selection"
       >
         <div className="eyebrow">Decision context</div>
-        <h2 style={{ marginTop: "0.25rem" }}>Choose a governed scenario</h2>
-        <div className="action-row" style={{ flexWrap: "wrap" }}>
+        <div
+          className="obs-sci-scenario-segmented"
+          role="group"
+          aria-label="Choose a governed scenario"
+        >
           {DEMO_SCENARIOS.map((scenario) => (
             <button
               key={scenario.key}
-              className="secondary"
               type="button"
+              className={
+                selectedKey === scenario.key
+                  ? "obs-sci-scenario-chip obs-sci-scenario-chip--active"
+                  : "obs-sci-scenario-chip"
+              }
               disabled={state.status === "loading"}
-              onClick={() => void runScenario(scenario.supplierEntityId)}
+              onClick={() => {
+                setSelectedKey(scenario.key);
+                void runScenario(scenario.supplierEntityId);
+              }}
             >
               {scenario.label}
             </button>
           ))}
         </div>
-        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-          {DEMO_SCENARIOS.map((scenario) => (
-            <span key={scenario.key} style={{ display: "block" }}>
-              <strong>{scenario.label}:</strong> {scenario.description}
-            </span>
-          ))}
-        </p>
+        {activeScenario && (
+          <p className="obs-sci-scenario-description">
+            {activeScenario.description}
+          </p>
+        )}
       </section>
 
       {state.status === "loading" && (
@@ -169,23 +180,38 @@ export default function SupplyChainImpactPage() {
 
       {result && (
         <>
-          <div className="obs-sci-pair">
+          <section
+            className="panel obs-sci-impact"
+            aria-label="Impact intelligence"
+          >
+            <div className="eyebrow">Impact intelligence</div>
+            <h2>What is happening, and why it matters</h2>
             <RiskSignalPanel
               supplierName={result.impact.supplier_name}
               material={material}
               evidence={candidate?.evidence ?? []}
             />
+            <span className="obs-sci-flow-arrow" aria-hidden="true">
+              ↓
+            </span>
             <BusinessImpactPanel
               impact={result.impact}
               singleSourceExposure={material?.single_source_exposure ?? null}
               revenueMateriality={material?.revenue_materiality ?? null}
               evidence={candidate?.evidence ?? []}
             />
-          </div>
+          </section>
+
+          <p className="obs-sci-zone-label">Decision evidence</p>
           <div className="obs-sci-pair">
             <EvidencePanel evidence={candidate?.evidence ?? []} />
             <AlternativesPanel candidates={material?.candidates ?? []} />
           </div>
+
+          <div className="obs-sci-connector" aria-hidden="true">
+            ↓
+          </div>
+
           <div className="obs-intelligence-surface obs-sci-decision">
             <RecommendationPanel
               candidate={candidate}

@@ -26,55 +26,63 @@ function singleSourceLabel(singleSourceExposure: boolean | null): string {
   return singleSourceExposure ? "Single-sourced" : "Multi-sourced";
 }
 
-// WOW-I4-B1 (CDD-085 §7.2): hop-grouped, not per-edge. `impact.materials/
-// products/facilities/revenue_exposures` are already deduplicated, merged
-// arrays server-side (backend/app/application/supply_chain_impact_api.py)
+// WOW-I4-B1-R1: hop-grouped, not per-edge -- unchanged truth boundary from
+// R1 (CDD-085 §5/§7.2). `impact.materials/products/facilities/
+// revenue_exposures` are already deduplicated, merged arrays server-side
 // -- the exposed contract does not preserve which product came from which
-// material. Grouping by relationship hop is truthful; drawing a specific
-// item-to-item line would not be, so this stays semantic
-// heading-plus-list markup (real, always-accessible text), never a
-// graph/diagram library or an implied one-to-one edge.
+// material. Rendered inside a dark canvas sub-surface (reusing the exact
+// --obs-* tokens Ontology Explorer's own node/edge treatment already
+// established -- --obs-surface-elevated chips, --obs-intelligence
+// connectors -- as tokens only, no Explorer component imported), so this
+// reads as an ontology-grounded visualization rather than plain text
+// columns, per the operator's explicit comparison to Ontology Explorer's
+// quality bar. Still semantic heading-plus-list markup throughout, so it
+// remains inherently accessible without a separate duplicate fallback.
 function DependencyChain({ impact }: { impact: ImpactSummary }) {
   const hops: Array<{ label: string; items: string[] }> = [
-    { label: "Supplier", items: [impact.supplier_name] },
-    {
-      label: "Materials",
-      items: impact.materials.map((m) => m.material_name),
-    },
-    { label: "Products", items: impact.products.map((p) => p.entity_name) },
-    {
-      label: "Facilities & revenue exposure",
-      items: [
-        ...impact.facilities.map((f) => f.entity_name),
-        ...impact.revenue_exposures.map((r) => r.entity_name),
-      ],
-    },
+    { label: "Material", items: impact.materials.map((m) => m.material_name) },
+    { label: "Product", items: impact.products.map((p) => p.entity_name) },
+    { label: "Facility", items: impact.facilities.map((f) => f.entity_name) },
   ].filter((hop) => hop.items.length > 0);
 
+  if (hops.length === 0) {
+    return (
+      <p className="obs-sci-chain-caption">
+        No governed dependency structure is available for this supplier.
+      </p>
+    );
+  }
+
   return (
-    <div className="obs-sci-chain" role="group" aria-label="Dependency chain">
-      {hops.map((hop, index) => (
-        <div className="obs-sci-chain-hop" key={hop.label}>
-          {index > 0 && (
-            <span className="obs-sci-chain-arrow" aria-hidden="true">
-              →
-            </span>
-          )}
-          <div className="obs-sci-chain-hop-label">{hop.label}</div>
-          <ul>
-            {hop.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      ))}
+    <div className="obs-sci-chain-canvas">
+      <div className="obs-sci-chain" role="group" aria-label="Ontology impact">
+        {hops.map((hop, index) => (
+          <div className="obs-sci-chain-hop" key={hop.label}>
+            {index > 0 && (
+              <span className="obs-sci-chain-arrow" aria-hidden="true">
+                →
+              </span>
+            )}
+            <div className="obs-sci-chain-hop-label">{hop.label}</div>
+            <ul>
+              {hop.items.map((item) => (
+                <li className="obs-sci-chain-chip" key={item}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 // Explanatory visualization only -- every node/edge below comes directly
 // from `impact` (already server-traversed); no traversal, inference, or
-// new ontology query happens here (CDD-016 §11).
+// new ontology query happens here (CDD-016 §11). WOW-I4-B1-R1: no longer
+// its own `.panel` -- the second and third steps of the Risk -> Ontology
+// impact -> Revenue flow inside the shared "Impact intelligence" surface.
 export function BusinessImpactPanel({
   impact,
   singleSourceExposure,
@@ -90,26 +98,35 @@ export function BusinessImpactPanel({
     (item) => item.predicate === "annualRevenueUsd",
   );
   return (
-    <section className="panel" aria-label="Business impact">
-      <div className="eyebrow">Business impact</div>
-      <h2>Why it matters</h2>
-      <dl className="status-grid">
-        <dt>Sourcing</dt>
-        <dd>{singleSourceLabel(singleSourceExposure)}</dd>
-        <dt>Revenue exposure</dt>
-        <dd>
+    <div aria-label="Business impact" className="obs-sci-impact-body">
+      <div className="obs-sci-impact-badges">
+        <span className="status-tag">
+          {singleSourceLabel(singleSourceExposure)}
+        </span>
+        <span className="status-tag">
           {materialityLabel(revenueMateriality)}
-          {revenueEvidence ? ` (${currency(revenueEvidence.value)})` : ""}
-        </dd>
-      </dl>
-      <div className="conditions">
-        <h3>Dependency chain</h3>
-        <p className="obs-sci-chain-caption">
-          Grouped by real ontology relationship hop, not a specific item-to-item
-          traced path.
-        </p>
-        <DependencyChain impact={impact} />
+        </span>
       </div>
-    </section>
+      <p className="obs-sci-chain-caption">
+        Impact grouped by governed ontology relationship hop -- not a specific
+        item-to-item traced path.
+      </p>
+      <DependencyChain impact={impact} />
+      {impact.revenue_exposures.length > 0 && (
+        <div className="obs-sci-revenue">
+          <span className="obs-sci-revenue-label">
+            Revenue exposure recorded against{" "}
+            {impact.revenue_exposures
+              .map((item) => item.entity_name)
+              .join(", ")}
+          </span>
+          {revenueEvidence && (
+            <span className="obs-sci-revenue-value">
+              {currency(revenueEvidence.value)}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

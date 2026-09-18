@@ -19,10 +19,10 @@ function evidenceValue(
   );
 }
 
-// WOW-I4-B1 (CDD-085 §7.3): comparable cards using only the four real
-// fields the API returns -- no score, ranking, or "best alternative"
-// claim. Card order is exactly the API's own return order, never
-// re-sorted by any client-side preference.
+// WOW-I4-B1-R1 (operator: "large mostly-empty Alternatives panel is
+// unacceptable"): information density matched to the real amount of data
+// -- the same four real fields (qualification/capacity/leadTimeDays/
+// costUsd), tighter card, no score/ranking/winner.
 export function AlternativesPanel({
   candidates,
 }: {
@@ -33,7 +33,9 @@ export function AlternativesPanel({
       <div className="eyebrow">Alternatives</div>
       <h2>What alternatives exist?</h2>
       {candidates.length === 0 ? (
-        <p>No candidate alternate suppliers were evaluated.</p>
+        <p className="obs-sci-empty-evidence">
+          No candidate alternate suppliers were evaluated.
+        </p>
       ) : (
         <ul className="obs-sci-alt-list">
           {candidates.map((candidate, index) => (
@@ -41,24 +43,34 @@ export function AlternativesPanel({
               key={candidate.alternate_supplier_entity_id ?? index}
               className="obs-sci-alt-card"
             >
-              <strong>
+              <strong className="obs-sci-alt-name">
                 {candidateLabel(candidate.alternate_supplier_entity_id)}
               </strong>
-              <dl className="status-grid">
-                <dt>Qualification</dt>
-                <dd>
-                  {evidenceValue(candidate, "qualification") ?? "Unknown"}
-                </dd>
-                <dt>Capacity</dt>
-                <dd>{evidenceValue(candidate, "capacity") ?? "Unknown"}</dd>
-                <dt>Lead time</dt>
-                <dd>
-                  {evidenceValue(candidate, "leadTimeDays")
-                    ? `${evidenceValue(candidate, "leadTimeDays")} days`
-                    : "Not provided"}
-                </dd>
-                <dt>Cost context</dt>
-                <dd>{evidenceValue(candidate, "costUsd") ?? "Not provided"}</dd>
+              <dl className="obs-sci-alt-grid">
+                <div>
+                  <dt>Qualification</dt>
+                  <dd>
+                    {evidenceValue(candidate, "qualification") ?? "Unknown"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Capacity</dt>
+                  <dd>{evidenceValue(candidate, "capacity") ?? "Unknown"}</dd>
+                </div>
+                <div>
+                  <dt>Lead time</dt>
+                  <dd>
+                    {evidenceValue(candidate, "leadTimeDays")
+                      ? `${evidenceValue(candidate, "leadTimeDays")} days`
+                      : "Not provided"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Cost context</dt>
+                  <dd>
+                    {evidenceValue(candidate, "costUsd") ?? "Not provided"}
+                  </dd>
+                </div>
               </dl>
             </li>
           ))}

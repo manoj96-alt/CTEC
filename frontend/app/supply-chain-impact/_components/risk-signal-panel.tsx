@@ -8,10 +8,10 @@ function severityLabel(highSeverityDisruption: boolean | null): string {
   return highSeverityDisruption ? "High severity" : "Not high severity";
 }
 
-// WOW-I4-B1 (CDD-085 §7.2): paired with BusinessImpactPanel in page.tsx's
-// "Signal + Impact" region -- same real fields, minor layout-only touch-up
-// (evidence citation now a compact metadata line, matching the pattern
-// used by EvidencePanel elsewhere on this page).
+// WOW-I4-B1-R1 (operator visual rejection): no longer its own `.panel` --
+// a compact header strip inside the shared "Impact intelligence" surface
+// in page.tsx, the first step of the Risk -> Ontology impact -> Revenue
+// flow. Same real fields as before, denser presentation only.
 export function RiskSignalPanel({
   supplierName,
   material,
@@ -25,14 +25,14 @@ export function RiskSignalPanel({
     (item) => item.predicate === "severity",
   );
   return (
-    <section className="panel" aria-label="Risk signal">
-      <div className="eyebrow">Risk signal</div>
-      <h2>{supplierName}</h2>
-      <p className="standing">
-        <strong>
+    <div className="obs-sci-risk-strip" aria-label="Risk signal">
+      <div className="obs-sci-risk-strip-head">
+        <span className="obs-sci-risk-label">Risk signal</span>
+        <span className="obs-sci-risk-supplier">{supplierName}</span>
+        <span className="status-tag">
           {severityLabel(material?.high_severity_disruption ?? null)}
-        </strong>
-      </p>
+        </span>
+      </div>
       {severityEvidence ? (
         <p className="obs-sci-evidence-meta">
           Reported as &ldquo;{severityEvidence.value}&rdquo; by{" "}
@@ -42,6 +42,6 @@ export function RiskSignalPanel({
       ) : (
         <p>No governed severity evidence is available for this supplier.</p>
       )}
-    </section>
+    </div>
   );
 }
