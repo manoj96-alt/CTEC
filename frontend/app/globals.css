@@ -1602,40 +1602,99 @@ dialog textarea {
   color: var(--muted);
   font-size: 0.85rem;
 }
-/* Zone 2 -- Impact Intelligence: WOW-I4-B1-R2, one integrated
-   composition. The decorative standalone flow arrow is removed
-   (operator: reads as ornamental, not a governed relationship) --
-   progression is communicated by spacing/typography/the canvas
-   surface transition instead. Risk Signal is now a compact context
-   caption (not an independent header block); its real supplier name
-   and severity also appear as a structural chip on the chain's own
-   Supplier hop, below. */
-.obs-sci-impact h2 {
-  margin-top: 0.25rem;
+/* Zone 2 -- Impact Intelligence: WOW-I4-B1-R3, the page's flagship
+   intelligence centerpiece (operator: "Impact Intelligence is a small
+   visualization placed inside a white container rather than the primary
+   intelligence canvas"). The risk banner and the impact surface both sit
+   directly on `.observatory-main`'s own dark canvas -- no white `.panel`
+   wrapper, one fewer nested rectangle -- matching the two-surface
+   contract's dark-investigation-surface half instead of its light-panel
+   half. */
+.obs-sci-risk-banner {
+  margin-top: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--obs-border);
 }
-.obs-sci-risk-strip {
-  margin-top: 0.5rem;
+.obs-sci-risk-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem 1.25rem;
 }
-.obs-sci-risk-caption {
-  color: var(--muted);
+.obs-sci-risk-banner-row--sub {
+  margin-top: 0.4rem;
+}
+.obs-sci-risk-supplier {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  color: var(--obs-text-primary);
+}
+.obs-sci-risk-exposure {
+  margin-left: auto;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  color: var(--obs-text-primary);
+}
+.obs-sci-risk-sourcing {
+  color: var(--obs-text-secondary);
   font-size: 0.85rem;
 }
-/* Dependency chain: the full real hop sequence (Supplier through
-   Revenue Exposure) inside one dark canvas sub-surface -- real names
-   only, never a claimed item-to-item edge (CDD-085 §5/§7.2). Chip/
-   connector tokens match Ontology Explorer's own node/edge treatment
-   (reused as tokens, no component imported). The inline arrows between
-   hop GROUPS are presentation/progression only (operator §3/§6) -- not
-   the removed standalone page-level decorative arrows. */
-.obs-sci-chain-caption {
-  color: var(--muted);
+.obs-sci-risk-authority {
+  color: var(--obs-intelligence);
   font-size: 0.8rem;
-  margin: 0 0 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
-.obs-sci-chain-canvas {
+.obs-sci-risk-tag {
+  background: var(--obs-surface-elevated);
+  border-color: var(--obs-border-strong);
+  color: var(--obs-text-secondary);
+}
+.obs-sci-risk-tag--conflict {
+  background: color-mix(
+    in oklch,
+    var(--obs-conflict) 22%,
+    var(--obs-surface-elevated)
+  );
+  border-color: var(--obs-conflict);
+  color: var(--obs-text-primary);
+}
+.obs-sci-risk-caption {
+  margin-top: 0.6rem;
+  color: var(--obs-text-muted);
+  font-size: 0.82rem;
+}
+.obs-sci-impact-surface {
+  margin-top: 1.25rem;
+  padding: 1.75rem 2rem 2rem;
   background: var(--obs-canvas);
-  border-radius: 0.75rem;
-  padding: 1rem;
+  border: 1px solid var(--obs-border);
+  border-radius: calc(var(--obs-radius) * 2);
+}
+.obs-sci-impact-surface h2 {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
+  color: var(--obs-text-primary);
+}
+/* Dependency chain: the full real hop sequence (Supplier through
+   Revenue Exposure) -- real names only, never a claimed item-to-item edge
+   (CDD-085 §5/§7.2). Chip/connector tokens match Ontology Explorer's own
+   node/edge treatment (reused as tokens, no component imported). The
+   inline arrows between hop GROUPS are presentation/progression only
+   (operator §3/§6) -- not the removed standalone page-level decorative
+   arrows. The disclaimer caption is deliberately legible, not shrunk to
+   microcopy (operator §5 of the R3 governing prompt). */
+.obs-sci-chain-caption {
+  color: var(--obs-text-secondary);
+  font-size: 0.85rem;
+  margin: 0.9rem 0 1.1rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--obs-border-strong);
 }
 .obs-sci-chain {
   display: flex;
@@ -1645,41 +1704,46 @@ dialog textarea {
 }
 .obs-sci-chain-hop {
   position: relative;
-  flex: 1 1 9rem;
-  min-width: 9rem;
-  padding: 0.5rem 0.85rem;
+  flex: 1 1 10rem;
+  min-width: 10rem;
+  padding: 0.65rem 1rem;
 }
 .obs-sci-chain-hop--terminal {
-  flex: 1 1 11rem;
+  flex: 1 1 12rem;
+}
+.obs-sci-chain-hop--origin {
+  border-left: 2px solid var(--obs-conflict);
+  padding-left: 0.85rem;
 }
 .obs-sci-chain-arrow {
   position: absolute;
-  left: -0.6rem;
-  top: 0.6rem;
+  left: -0.7rem;
+  top: 0.75rem;
   color: var(--obs-intelligence);
   font-weight: 700;
+  font-size: 1.1rem;
 }
 .obs-sci-chain-hop-label {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--obs-text-muted);
 }
 .obs-sci-chain-hop ul {
   list-style: none;
-  margin: 0.4rem 0 0;
+  margin: 0.5rem 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 .obs-sci-chain-chip {
   background: var(--obs-surface-elevated);
   color: var(--obs-text-primary);
   border: 1px solid var(--obs-border-strong);
   border-radius: 0.4rem;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.82rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
 }
 .obs-sci-chain-hop--terminal .obs-sci-chain-chip {
   background: color-mix(
@@ -1699,7 +1763,7 @@ dialog textarea {
 .obs-sci-chain-chip-value {
   font-family: var(--font-sora), Sora, Arial, sans-serif;
   font-weight: 700;
-  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-size: clamp(1.6rem, 3.4vw, 2.3rem);
   color: var(--obs-text-primary);
 }
 @media (max-width: 760px) {
@@ -1708,7 +1772,14 @@ dialog textarea {
     align-items: stretch;
   }
   .obs-sci-chain-hop {
-    padding: 0.5rem 0;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--obs-border);
+  }
+  .obs-sci-chain-hop:last-child {
+    border-bottom: none;
+  }
+  .obs-sci-chain-hop--origin {
+    padding-left: 0.85rem;
   }
   .obs-sci-chain-arrow {
     display: none;
@@ -1749,21 +1820,35 @@ dialog textarea {
   border-radius: 0.6rem;
   color: var(--muted);
 }
-/* Evidence: a denser evidence matrix (fact / value / source+time). */
+/* Evidence: WOW-I4-B1-R3 (operator: "Evidence looks like six database/
+   key-value tiles"). A ruled ledger -- fact / value / source+time as
+   aligned grid columns with dividing rules, not a card grid. `<li>`
+   becomes a transparent grid row (`display: contents`) so its three
+   children lay directly into the parent grid's three columns; each cell
+   carries its own bottom rule. `item.predicate` inside `<strong>` is
+   still rendered verbatim -- unchanged text, only the surrounding layout
+   is restyled. */
 .obs-sci-evidence-list {
-  list-style: none;
-  margin: 0.5rem 0 0;
-  padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: minmax(9rem, auto) minmax(6rem, 1fr) minmax(
+      11rem,
+      auto
+    );
+  column-gap: 1.25rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
 }
 .obs-sci-evidence-item {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.55rem 0.7rem;
-  background: #f7fafc;
-  border-radius: 0.55rem;
+  display: contents;
+}
+.obs-sci-evidence-fact,
+.obs-sci-evidence-value,
+.obs-sci-evidence-meta {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
 }
 .obs-sci-evidence-fact {
   font-size: 0.72rem;
@@ -1777,9 +1862,33 @@ dialog textarea {
 .obs-sci-evidence-meta {
   color: var(--muted);
   font-size: 0.78rem;
+  justify-content: flex-end;
+  text-align: right;
+}
+@media (max-width: 640px) {
+  .obs-sci-evidence-list {
+    grid-template-columns: 1fr;
+  }
+  .obs-sci-evidence-item {
+    display: block;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .obs-sci-evidence-fact,
+  .obs-sci-evidence-value,
+  .obs-sci-evidence-meta {
+    display: block;
+    padding: 0.1rem 0;
+    border-bottom: none;
+    text-align: left;
+  }
 }
 /* Alternatives: comparable cards sized to their real data, no
-   ranking/score/winner. */
+   ranking/score/winner. WOW-I4-B1-R3: an explicit, neutral
+   "Alternative under evaluation" framing (operator §4 of the governing
+   prompt's own proposed truthful wording) plus a closing note tying the
+   real fields to the real governed policy that reads them -- still no
+   score/rank/best/winner/discovery claim. */
 .obs-sci-alt-list {
   list-style: none;
   margin: 0.5rem 0 0;
@@ -1788,11 +1897,20 @@ dialog textarea {
   gap: 0.6rem;
 }
 .obs-sci-alt-card {
-  padding: 0.65rem 0.8rem;
+  padding: 0.75rem 0.9rem;
   border: 1px solid var(--line);
   border-radius: 0.6rem;
 }
+.obs-sci-alt-eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  color: var(--accent);
+}
 .obs-sci-alt-name {
+  display: block;
+  margin-top: 0.2rem;
   font-size: 0.9rem;
 }
 .obs-sci-alt-grid {
@@ -1809,6 +1927,11 @@ dialog textarea {
 .obs-sci-alt-grid dd {
   margin: 0.15rem 0 0;
   font-weight: 700;
+}
+.obs-sci-alt-note {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 /* Governed Decision: the page's dominant visual anchor -- larger
    heading, generous padding, an accent bar, never outcome-colored
@@ -1838,6 +1961,62 @@ dialog textarea {
 .obs-sci-decision .standing {
   color: var(--obs-text-primary);
   font-size: 1.1rem;
+}
+/* WOW-I4-B1-R3 (operator: "make the recommendation more explainable...
+   use the actual governed conditions"): the real Gate F four-condition
+   policy (backend/app/integration/adapters/gate_f/drm.py) as five
+   independently observable governed facts. Tone colors are truthful,
+   restrained semantics (operator §6): --obs-verified only for a
+   positively-true condition, --obs-conflict only for a positively-false
+   one, neutral otherwise for Unknown -- never implying a color-only
+   outcome. */
+.obs-sci-conditions {
+  margin-top: 1.1rem;
+}
+.obs-sci-conditions ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.obs-sci-conditions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--obs-border);
+  color: var(--obs-text-secondary);
+  font-size: 0.88rem;
+}
+.obs-sci-condition-tag {
+  border-color: var(--obs-border-strong);
+  background: var(--obs-surface-elevated);
+  color: var(--obs-text-secondary);
+}
+.obs-sci-condition-tag--pass {
+  border-color: var(--obs-verified);
+  background: color-mix(
+    in oklch,
+    var(--obs-verified) 20%,
+    var(--obs-surface-elevated)
+  );
+  color: var(--obs-text-primary);
+}
+.obs-sci-condition-tag--fail {
+  border-color: var(--obs-conflict);
+  background: color-mix(
+    in oklch,
+    var(--obs-conflict) 20%,
+    var(--obs-surface-elevated)
+  );
+  color: var(--obs-text-primary);
+}
+.obs-sci-condition-tag--unknown {
+  border-color: var(--obs-border-strong);
+  background: var(--obs-surface-elevated);
+  color: var(--obs-text-muted);
 }
 .obs-sci-reasons {
   border-left: 3px solid var(--obs-border-strong);

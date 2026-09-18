@@ -3,32 +3,90 @@ import type {
   MaterialEvaluationResult,
 } from "@/lib/supply-chain-impact/contracts";
 
-// WOW-I4-B1-R2 (operator: "excessive unused white space... between Risk
-// Signal and ontology impact"): a single compact context caption, not an
-// independent panel -- the real supplier name and severity now also
-// appear as a structural chip on the Impact Intelligence chain's own
-// Supplier hop (BusinessImpactPanel), so this caption's job is narrative
-// context (the actual evidence citation) rather than duplicating a
-// header. Same real fields, same props, as R1.
+function currency(value: string | undefined): string | null {
+  if (!value) return null;
+  const amount = Number(value);
+  if (Number.isNaN(amount)) return null;
+  return amount.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function severityLabel(highSeverityDisruption: boolean | null): string {
+  if (highSeverityDisruption === true) return "High severity";
+  if (highSeverityDisruption === false) return "Not high severity";
+  return "Severity unknown";
+}
+
+function sourcingLabel(singleSourceExposure: boolean | null): string {
+  if (singleSourceExposure === true) return "Single-sourced";
+  if (singleSourceExposure === false) return "Multi-sourced";
+  return "Sourcing unknown";
+}
+
+// WOW-I4-B1-R3 (operator: "the page should communicate WHAT IS AT RISK in
+// approximately five seconds"): a compact risk banner sitting directly on
+// the dark Observatory canvas -- not another white card -- built entirely
+// from real fields already available on `material`/`evidence`. No new
+// fetch, no computed business conclusion: severity/sourcing come straight
+// from the same governed tri-state facts BusinessImpactPanel's chain
+// already renders, and the exposure figure is the same real
+// `annualRevenueUsd` assertion value used throughout this route.
+// `governanceStanding` is the identical top-level field
+// HumanAuthorityBanner renders lower on the page -- threaded here only
+// for a truthful "Human decision required" cue, never a second/competing
+// recommendation (the actual outcome is revealed only in the Governed
+// Decision block below).
 export function RiskSignalPanel({
   supplierName,
+  material,
   evidence,
+  governanceStanding = null,
 }: {
   supplierName: string;
-  // Retained in the type so callers (including the standalone
-  // accessibility test) need no change -- the severity/sourcing this
-  // once drove now render as a structural chip on the Impact
-  // Intelligence chain's own Supplier hop instead (BusinessImpactPanel).
   material: MaterialEvaluationResult | undefined;
   evidence: EvidenceItem[];
+  governanceStanding?: string | null;
 }) {
   const severityEvidence = evidence.find(
     (item) => item.predicate === "severity",
   );
+  const revenueEvidence = evidence.find(
+    (item) => item.predicate === "annualRevenueUsd",
+  );
+  const revenue = currency(revenueEvidence?.value);
+  const highSeverity = material?.high_severity_disruption ?? null;
+
   return (
-    <div className="obs-sci-risk-strip" aria-label="Risk signal">
+    <div className="obs-sci-risk-banner" aria-label="Risk signal">
+      <div className="obs-sci-risk-banner-row">
+        <span
+          className={
+            highSeverity === true
+              ? "status-tag obs-sci-risk-tag obs-sci-risk-tag--conflict"
+              : "status-tag obs-sci-risk-tag"
+          }
+        >
+          {severityLabel(highSeverity)}
+        </span>
+        <span className="obs-sci-risk-supplier">{supplierName}</span>
+        {revenue && (
+          <span className="obs-sci-risk-exposure">{revenue} exposure</span>
+        )}
+      </div>
+      <div className="obs-sci-risk-banner-row obs-sci-risk-banner-row--sub">
+        <span className="obs-sci-risk-sourcing">
+          {sourcingLabel(material?.single_source_exposure ?? null)}
+        </span>
+        {governanceStanding === "HUMAN_APPROVAL_REQUIRED" && (
+          <span className="obs-sci-risk-authority">
+            Human decision required
+          </span>
+        )}
+      </div>
       <p className="obs-sci-risk-caption">
-        <strong>{supplierName}</strong> —{" "}
         {severityEvidence ? (
           <>
             Reported as &ldquo;{severityEvidence.value}&rdquo; by{" "}

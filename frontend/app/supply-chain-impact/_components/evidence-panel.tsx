@@ -5,7 +5,13 @@ import type { EvidenceItem } from "@/lib/supply-chain-impact/contracts";
 // §13/§15). WOW-I4-B1-R1: a denser evidence matrix (fact/value/source+time
 // as a compact grid, not a monotonous one-per-row stack), same four real
 // fields as before. The empty state is now a deliberately visible,
-// truthful statement rather than blank whitespace.
+// truthful statement rather than blank whitespace. WOW-I4-B1-R3 (operator:
+// "Evidence looks like six database/key-value tiles"): the same three real
+// fields (predicate/value/source+timestamp) reflow into a ruled ledger --
+// aligned columns with dividing rules, the way a governed record register
+// reads, not a card grid. `item.predicate` is still rendered verbatim
+// inside the literal fact cell (no relabeling) -- the raw governed
+// predicate name is itself real, traceable data.
 export function EvidencePanel({ evidence }: { evidence: EvidenceItem[] }) {
   return (
     <section className="panel" aria-label="Evidence">

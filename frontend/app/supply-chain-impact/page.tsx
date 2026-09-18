@@ -87,7 +87,7 @@ export default function SupplyChainImpactPage() {
     <div>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">Supply chain impact</span>
+          <span className="eyebrow">Supply chain intelligence</span>
           <h1>Governed supplier risk</h1>
           <p>
             A deterministic, governed walkthrough of the Gate F supply-chain
@@ -180,17 +180,19 @@ export default function SupplyChainImpactPage() {
 
       {result && (
         <>
+          <RiskSignalPanel
+            supplierName={result.impact.supplier_name}
+            material={material}
+            evidence={candidate?.evidence ?? []}
+            governanceStanding={result.governance_standing}
+          />
+
           <section
-            className="panel obs-sci-impact"
+            className="obs-sci-impact-surface"
             aria-label="Impact intelligence"
           >
-            <div className="eyebrow">Impact intelligence</div>
+            <div className="obs-eu-eyebrow">Impact intelligence</div>
             <h2>What is happening, and why it matters</h2>
-            <RiskSignalPanel
-              supplierName={result.impact.supplier_name}
-              material={material}
-              evidence={candidate?.evidence ?? []}
-            />
             <BusinessImpactPanel
               impact={result.impact}
               singleSourceExposure={material?.single_source_exposure ?? null}
@@ -213,6 +215,7 @@ export default function SupplyChainImpactPage() {
               candidate={candidate}
               policyReference={result.policy_reference}
               policyVersion={result.policy_version}
+              material={material}
             />
             <HumanAuthorityBanner
               governanceStanding={result.governance_standing}

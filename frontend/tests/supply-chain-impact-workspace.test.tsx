@@ -445,3 +445,91 @@ test("no business conclusion is computed client-side: only backend-returned outc
     screen.getByText(recommendedResponse.materials[0].candidates[0].narrative!),
   ).toBeInTheDocument();
 });
+
+test("WOW-I4-B1-R3: the risk banner shows only real severity/supplier/exposure/sourcing facts, and 'Human decision required' only when governance actually requires it", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Risk signal")).toBeInTheDocument(),
+  );
+  const banner = screen.getByLabelText("Risk signal");
+  expect(banner).toHaveTextContent("High severity");
+  expect(banner).toHaveTextContent("Demo Supplier");
+  expect(banner).toHaveTextContent("$12,000,000 exposure");
+  expect(banner).toHaveTextContent("Single-sourced");
+  expect(banner).toHaveTextContent("Human decision required");
+});
+
+test("WOW-I4-B1-R3: the risk banner never claims severity or a human-decision requirement it does not have (UNKNOWN scenario)", async () => {
+  evaluateMock.mockResolvedValue(unknownResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/Missing governed evidence/);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Risk signal")).toBeInTheDocument(),
+  );
+  const banner = screen.getByLabelText("Risk signal");
+  expect(banner).toHaveTextContent("Severity unknown");
+  expect(banner).not.toHaveTextContent("Human decision required");
+});
+
+test("WOW-I4-B1-R3: the Governed Decision block explains the real Gate F conditions truthfully across all three scenarios, with no fabricated condition and no forbidden business-conclusion language", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Governed conditions")).toBeInTheDocument(),
+  );
+  const recommendedConditions = screen.getByLabelText("Governed conditions");
+  expect(recommendedConditions).toHaveTextContent("High-severity disruption");
+  expect(recommendedConditions).toHaveTextContent("Single-source exposure");
+  expect(recommendedConditions).toHaveTextContent(
+    "Revenue exceeds materiality threshold",
+  );
+  expect(recommendedConditions).toHaveTextContent("Qualified alternate");
+  expect(recommendedConditions).toHaveTextContent(
+    "Sufficient alternate capacity",
+  );
+  expect(
+    screen.getAllByText("Satisfied", { exact: true }).length,
+  ).toBeGreaterThan(0);
+
+  evaluateMock.mockResolvedValue(unknownResponse);
+  clickScenario(/Missing governed evidence/);
+  await waitFor(() =>
+    expect(
+      screen.getByText("Insufficient governed evidence"),
+    ).toBeInTheDocument(),
+  );
+  const unknownConditions = screen.getByLabelText("Governed conditions");
+  // Severity is genuinely unasserted (Unknown), never a fabricated false.
+  expect(unknownConditions.textContent).not.toMatch(/No\b/);
+  expect(unknownConditions.textContent).not.toMatch(/Rejected/);
+  expect(unknownConditions.textContent).not.toMatch(/Safe/);
+  expect(
+    screen.getAllByText("Unknown", { exact: true }).length,
+  ).toBeGreaterThan(0);
+
+  evaluateMock.mockResolvedValue(rejectedResponse);
+  clickScenario(/Below the materiality threshold/);
+  await waitFor(() => expect(screen.getByText("Rejected")).toBeInTheDocument());
+  const rejectedConditions = screen.getByLabelText("Governed conditions");
+  expect(rejectedConditions).toHaveTextContent("Not satisfied");
+});
+
+test("WOW-I4-B1-R3: alternatives use only neutral, truthful framing -- never a discovery or optimality claim the current implementation cannot prove", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByText("What alternatives exist?")).toBeInTheDocument(),
+  );
+  const alternatives = screen
+    .getByText("What alternatives exist?")
+    .closest("section")!;
+  expect(alternatives).toHaveTextContent("Alternative under evaluation");
+  expect(alternatives.textContent).not.toMatch(/discovered/i);
+  expect(alternatives.textContent).not.toMatch(/optimal/i);
+  expect(alternatives.textContent).not.toMatch(/top candidate/i);
+});
