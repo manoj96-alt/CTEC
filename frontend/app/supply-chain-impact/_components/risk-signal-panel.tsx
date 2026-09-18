@@ -8,6 +8,10 @@ function severityLabel(highSeverityDisruption: boolean | null): string {
   return highSeverityDisruption ? "High severity" : "Not high severity";
 }
 
+// WOW-I4-B1 (CDD-085 §7.2): paired with BusinessImpactPanel in page.tsx's
+// "Signal + Impact" region -- same real fields, minor layout-only touch-up
+// (evidence citation now a compact metadata line, matching the pattern
+// used by EvidencePanel elsewhere on this page).
 export function RiskSignalPanel({
   supplierName,
   material,
@@ -30,7 +34,7 @@ export function RiskSignalPanel({
         </strong>
       </p>
       {severityEvidence ? (
-        <p>
+        <p className="obs-sci-evidence-meta">
           Reported as &ldquo;{severityEvidence.value}&rdquo; by{" "}
           {severityEvidence.source_system_name} on{" "}
           {new Date(severityEvidence.asserted_on).toLocaleString()}.

@@ -1552,3 +1552,165 @@ dialog textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   WOW-I4-B1 (CDD-085): Supply Chain Impact governed decision
+   workspace. Additive only -- no existing token renamed/reassigned.
+   Decision Context / Signal+Impact / Evidence+Alternatives stay
+   inside light `.panel` islands (light-context --muted/--line
+   tokens, matching the established two-surface contract). Only the
+   merged Governed Decision block is the dark `.obs-intelligence-
+   surface` (CDD-078 §3, the same frozen treatment already used for
+   Overview's hero and Ontology's orientation region) -- its own
+   inner text therefore uses --obs-* dark-context tokens.
+   ============================================================ */
+.obs-sci-context h2 {
+  margin-top: 0.25rem;
+}
+.obs-sci-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.obs-sci-pair > .panel {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .obs-sci-pair {
+    grid-template-columns: 1fr;
+  }
+}
+/* Dependency chain: hop-grouped columns, real names only, a decorative
+   arrow between hops -- never a claimed item-to-item edge (CDD-085 §7.2). */
+.obs-sci-chain-caption {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.35rem 0 0;
+}
+.obs-sci-chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 0.75rem;
+}
+.obs-sci-chain-hop {
+  position: relative;
+  flex: 1 1 9rem;
+  min-width: 9rem;
+  padding: 0.6rem 0.9rem;
+  border-left: 1px solid var(--line);
+}
+.obs-sci-chain-hop:first-child {
+  border-left: none;
+}
+.obs-sci-chain-arrow {
+  position: absolute;
+  left: -0.7rem;
+  top: 0.6rem;
+  color: var(--obs-intelligence);
+  font-weight: 700;
+}
+.obs-sci-chain-hop-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.obs-sci-chain-hop ul {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+@media (max-width: 760px) {
+  .obs-sci-chain {
+    flex-direction: column;
+  }
+  .obs-sci-chain-hop {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    padding: 0.6rem 0;
+  }
+  .obs-sci-chain-hop:first-child {
+    border-top: none;
+  }
+  .obs-sci-chain-arrow {
+    display: none;
+  }
+}
+/* Evidence: scannable evidence objects (fact / value / source+time). */
+.obs-sci-evidence-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.obs-sci-evidence-item {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  background: #f7fafc;
+  border-radius: 0.6rem;
+}
+.obs-sci-evidence-fact {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.obs-sci-evidence-value {
+  font-weight: 700;
+}
+.obs-sci-evidence-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+/* Alternatives: comparable cards, no ranking/score/winner. */
+.obs-sci-alt-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.obs-sci-alt-card {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+}
+/* Governed Decision: the page's dominant visual anchor. */
+.obs-sci-decision {
+  margin-top: 1.5rem;
+  color: var(--obs-text-primary);
+}
+.obs-sci-decision-block + .obs-sci-decision-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--obs-border-strong);
+}
+.obs-sci-decision p {
+  color: var(--obs-text-secondary);
+}
+.obs-sci-decision .standing {
+  color: var(--obs-text-primary);
+}
+.obs-sci-reasons {
+  border-left: 3px solid var(--obs-intelligence);
+  padding-left: 1rem;
+  margin-top: 0.75rem;
+}
+.obs-sci-reasons h3 {
+  color: var(--obs-text-primary);
+}
+.obs-sci-decision p.obs-sci-policy-ref {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--obs-text-muted);
+}
+.obs-sci-authority {
+  border-radius: 0.5rem;
+}

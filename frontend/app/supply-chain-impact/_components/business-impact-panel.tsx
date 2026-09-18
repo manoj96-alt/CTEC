@@ -26,6 +26,52 @@ function singleSourceLabel(singleSourceExposure: boolean | null): string {
   return singleSourceExposure ? "Single-sourced" : "Multi-sourced";
 }
 
+// WOW-I4-B1 (CDD-085 §7.2): hop-grouped, not per-edge. `impact.materials/
+// products/facilities/revenue_exposures` are already deduplicated, merged
+// arrays server-side (backend/app/application/supply_chain_impact_api.py)
+// -- the exposed contract does not preserve which product came from which
+// material. Grouping by relationship hop is truthful; drawing a specific
+// item-to-item line would not be, so this stays semantic
+// heading-plus-list markup (real, always-accessible text), never a
+// graph/diagram library or an implied one-to-one edge.
+function DependencyChain({ impact }: { impact: ImpactSummary }) {
+  const hops: Array<{ label: string; items: string[] }> = [
+    { label: "Supplier", items: [impact.supplier_name] },
+    {
+      label: "Materials",
+      items: impact.materials.map((m) => m.material_name),
+    },
+    { label: "Products", items: impact.products.map((p) => p.entity_name) },
+    {
+      label: "Facilities & revenue exposure",
+      items: [
+        ...impact.facilities.map((f) => f.entity_name),
+        ...impact.revenue_exposures.map((r) => r.entity_name),
+      ],
+    },
+  ].filter((hop) => hop.items.length > 0);
+
+  return (
+    <div className="obs-sci-chain" role="group" aria-label="Dependency chain">
+      {hops.map((hop, index) => (
+        <div className="obs-sci-chain-hop" key={hop.label}>
+          {index > 0 && (
+            <span className="obs-sci-chain-arrow" aria-hidden="true">
+              →
+            </span>
+          )}
+          <div className="obs-sci-chain-hop-label">{hop.label}</div>
+          <ul>
+            {hop.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Explanatory visualization only -- every node/edge below comes directly
 // from `impact` (already server-traversed); no traversal, inference, or
 // new ontology query happens here (CDD-016 §11).
@@ -58,25 +104,12 @@ export function BusinessImpactPanel({
       </dl>
       <div className="conditions">
         <h3>Dependency chain</h3>
-        <ol className="timeline">
-          <li>{impact.supplier_name}</li>
-          {impact.materials.map((material) => (
-            <li key={material.material_entity_id}>{material.material_name}</li>
-          ))}
-          {impact.products.map((product) => (
-            <li key={product.entity_id}>{product.entity_name}</li>
-          ))}
-          {impact.facilities.map((facility) => (
-            <li key={facility.entity_id}>{facility.entity_name}</li>
-          ))}
-        </ol>
-      </div>
-      {impact.revenue_exposures.length > 0 && (
-        <p>
-          Revenue exposure recorded against:{" "}
-          {impact.revenue_exposures.map((item) => item.entity_name).join(", ")}
+        <p className="obs-sci-chain-caption">
+          Grouped by real ontology relationship hop, not a specific item-to-item
+          traced path.
         </p>
-      )}
+        <DependencyChain impact={impact} />
+      </div>
     </section>
   );
 }

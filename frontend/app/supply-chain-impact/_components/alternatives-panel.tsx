@@ -19,6 +19,10 @@ function evidenceValue(
   );
 }
 
+// WOW-I4-B1 (CDD-085 §7.3): comparable cards using only the four real
+// fields the API returns -- no score, ranking, or "best alternative"
+// claim. Card order is exactly the API's own return order, never
+// re-sorted by any client-side preference.
 export function AlternativesPanel({
   candidates,
 }: {
@@ -31,9 +35,12 @@ export function AlternativesPanel({
       {candidates.length === 0 ? (
         <p>No candidate alternate suppliers were evaluated.</p>
       ) : (
-        <ul className="record-list">
+        <ul className="obs-sci-alt-list">
           {candidates.map((candidate, index) => (
-            <li key={candidate.alternate_supplier_entity_id ?? index}>
+            <li
+              key={candidate.alternate_supplier_entity_id ?? index}
+              className="obs-sci-alt-card"
+            >
               <strong>
                 {candidateLabel(candidate.alternate_supplier_entity_id)}
               </strong>
