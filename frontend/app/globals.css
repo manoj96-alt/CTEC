@@ -1602,52 +1602,37 @@ dialog textarea {
   color: var(--muted);
   font-size: 0.85rem;
 }
-/* Zone 2 -- Impact Intelligence: one flowing composition, not two
-   side-by-side cards. Risk strip -> flow arrow -> dependency/revenue. */
+/* Zone 2 -- Impact Intelligence: WOW-I4-B1-R2, one integrated
+   composition. The decorative standalone flow arrow is removed
+   (operator: reads as ornamental, not a governed relationship) --
+   progression is communicated by spacing/typography/the canvas
+   surface transition instead. Risk Signal is now a compact context
+   caption (not an independent header block); its real supplier name
+   and severity also appear as a structural chip on the chain's own
+   Supplier hop, below. */
 .obs-sci-impact h2 {
   margin-top: 0.25rem;
 }
-.obs-sci-flow-arrow {
-  display: block;
-  text-align: center;
-  color: var(--obs-intelligence);
-  font-size: 1.1rem;
-  margin: 0.5rem 0;
-}
-.obs-sci-risk-strip-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-.obs-sci-risk-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-.obs-sci-risk-supplier {
-  font-family: var(--font-sora), Sora, Arial, sans-serif;
-  font-weight: 700;
-  font-size: 1.15rem;
-}
-.obs-sci-impact-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.obs-sci-risk-strip {
   margin-top: 0.5rem;
 }
-/* Dependency chain: hop-grouped columns inside a dark canvas
-   sub-surface, real names only -- never a claimed item-to-item edge
-   (CDD-085 §5/§7.2). Chip/connector tokens match Ontology Explorer's
-   own node/edge treatment (reused as tokens, no component imported). */
+.obs-sci-risk-caption {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+/* Dependency chain: the full real hop sequence (Supplier through
+   Revenue Exposure) inside one dark canvas sub-surface -- real names
+   only, never a claimed item-to-item edge (CDD-085 §5/§7.2). Chip/
+   connector tokens match Ontology Explorer's own node/edge treatment
+   (reused as tokens, no component imported). The inline arrows between
+   hop GROUPS are presentation/progression only (operator §3/§6) -- not
+   the removed standalone page-level decorative arrows. */
 .obs-sci-chain-caption {
   color: var(--muted);
   font-size: 0.8rem;
-  margin: 0.5rem 0 0;
+  margin: 0 0 0.5rem;
 }
 .obs-sci-chain-canvas {
-  margin-top: 0.6rem;
   background: var(--obs-canvas);
   border-radius: 0.75rem;
   padding: 1rem;
@@ -1655,13 +1640,17 @@ dialog textarea {
 .obs-sci-chain {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0;
 }
 .obs-sci-chain-hop {
   position: relative;
   flex: 1 1 9rem;
   min-width: 9rem;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.85rem;
+}
+.obs-sci-chain-hop--terminal {
+  flex: 1 1 11rem;
 }
 .obs-sci-chain-arrow {
   position: absolute;
@@ -1689,12 +1678,34 @@ dialog textarea {
   color: var(--obs-text-primary);
   border: 1px solid var(--obs-border-strong);
   border-radius: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  padding: 0.4rem 0.6rem;
   font-size: 0.82rem;
+}
+.obs-sci-chain-hop--terminal .obs-sci-chain-chip {
+  background: color-mix(
+    in oklch,
+    var(--obs-intelligence) 16%,
+    var(--obs-surface-elevated)
+  );
+  border-color: var(--obs-intelligence);
+}
+.obs-sci-chain-chip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.obs-sci-chain-chip-value {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  color: var(--obs-text-primary);
 }
 @media (max-width: 760px) {
   .obs-sci-chain {
     flex-direction: column;
+    align-items: stretch;
   }
   .obs-sci-chain-hop {
     padding: 0.5rem 0;
@@ -1702,27 +1713,6 @@ dialog textarea {
   .obs-sci-chain-arrow {
     display: none;
   }
-}
-.obs-sci-revenue {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-.obs-sci-revenue-label {
-  color: var(--muted);
-  font-size: 0.85rem;
-  max-width: 28rem;
-}
-.obs-sci-revenue-value {
-  font-family: var(--font-sora), Sora, Arial, sans-serif;
-  font-weight: 700;
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
-  color: var(--accent-strong);
 }
 /* Zone label between Impact Intelligence and the Evidence/Alternative
    pair -- plain text, not a card, so it reads as a flow step. */
@@ -1733,9 +1723,15 @@ dialog textarea {
   letter-spacing: 0.08em;
   color: var(--muted);
 }
+/* WOW-I4-B1-R2 (operator: "large amount of meaningless empty white
+   space" beneath the single alternative): align-items: start so each
+   panel is sized to its own real content, not stretched to match its
+   taller sibling -- a content-driven composition, not a fabricated
+   fourth alternative to fill space. */
 .obs-sci-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 1rem;
   margin-top: 0.6rem;
 }
@@ -1814,19 +1810,15 @@ dialog textarea {
   margin: 0.15rem 0 0;
   font-weight: 700;
 }
-/* Connector between the evidence/alternative pair and the Governed
-   Decision hero -- decorative, aria-hidden, no new semantics. */
-.obs-sci-connector {
-  text-align: center;
-  color: var(--obs-intelligence);
-  font-size: 1.3rem;
-  margin: 0.5rem 0;
-}
 /* Governed Decision: the page's dominant visual anchor -- larger
    heading, generous padding, an accent bar, never outcome-colored
-   (would conflict with OQI's distinct verified/conflict vocabulary). */
+   (would conflict with OQI's distinct verified/conflict vocabulary).
+   WOW-I4-B1-R2: the decorative standalone arrow above this block is
+   removed (operator §6) -- the surface transition (light panels above
+   -> this dark intelligence surface) plus increased top margin now
+   carries the progression cue instead. */
 .obs-sci-decision {
-  margin-top: 0.5rem;
+  margin-top: 1.75rem;
   padding: 2rem 2.25rem;
   color: var(--obs-text-primary);
   border-left: 3px solid var(--obs-intelligence);

@@ -3,21 +3,22 @@ import type {
   MaterialEvaluationResult,
 } from "@/lib/supply-chain-impact/contracts";
 
-function severityLabel(highSeverityDisruption: boolean | null): string {
-  if (highSeverityDisruption === null) return "Unknown";
-  return highSeverityDisruption ? "High severity" : "Not high severity";
-}
-
-// WOW-I4-B1-R1 (operator visual rejection): no longer its own `.panel` --
-// a compact header strip inside the shared "Impact intelligence" surface
-// in page.tsx, the first step of the Risk -> Ontology impact -> Revenue
-// flow. Same real fields as before, denser presentation only.
+// WOW-I4-B1-R2 (operator: "excessive unused white space... between Risk
+// Signal and ontology impact"): a single compact context caption, not an
+// independent panel -- the real supplier name and severity now also
+// appear as a structural chip on the Impact Intelligence chain's own
+// Supplier hop (BusinessImpactPanel), so this caption's job is narrative
+// context (the actual evidence citation) rather than duplicating a
+// header. Same real fields, same props, as R1.
 export function RiskSignalPanel({
   supplierName,
-  material,
   evidence,
 }: {
   supplierName: string;
+  // Retained in the type so callers (including the standalone
+  // accessibility test) need no change -- the severity/sourcing this
+  // once drove now render as a structural chip on the Impact
+  // Intelligence chain's own Supplier hop instead (BusinessImpactPanel).
   material: MaterialEvaluationResult | undefined;
   evidence: EvidenceItem[];
 }) {
@@ -26,22 +27,18 @@ export function RiskSignalPanel({
   );
   return (
     <div className="obs-sci-risk-strip" aria-label="Risk signal">
-      <div className="obs-sci-risk-strip-head">
-        <span className="obs-sci-risk-label">Risk signal</span>
-        <span className="obs-sci-risk-supplier">{supplierName}</span>
-        <span className="status-tag">
-          {severityLabel(material?.high_severity_disruption ?? null)}
-        </span>
-      </div>
-      {severityEvidence ? (
-        <p className="obs-sci-evidence-meta">
-          Reported as &ldquo;{severityEvidence.value}&rdquo; by{" "}
-          {severityEvidence.source_system_name} on{" "}
-          {new Date(severityEvidence.asserted_on).toLocaleString()}.
-        </p>
-      ) : (
-        <p>No governed severity evidence is available for this supplier.</p>
-      )}
+      <p className="obs-sci-risk-caption">
+        <strong>{supplierName}</strong> —{" "}
+        {severityEvidence ? (
+          <>
+            Reported as &ldquo;{severityEvidence.value}&rdquo; by{" "}
+            {severityEvidence.source_system_name} on{" "}
+            {new Date(severityEvidence.asserted_on).toLocaleString()}.
+          </>
+        ) : (
+          "No governed severity evidence is available for this supplier."
+        )}
+      </p>
     </div>
   );
 }

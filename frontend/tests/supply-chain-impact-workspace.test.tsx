@@ -359,7 +359,7 @@ test("WOW-I4-B1-R1: the compact scenario selector shows only the active scenario
   ).not.toBeInTheDocument();
 });
 
-test("WOW-I4-B1-R1: Impact Intelligence renders exactly the real hop-grouped dependency structure (Material, Product, Facility), with no fabricated item-to-item edge", async () => {
+test("WOW-I4-B1-R2: Impact Intelligence renders the FULL real hop sequence (Supplier, Material, Product, Facility, Revenue Exposure) in one composition, with no fabricated item-to-item edge", async () => {
   evaluateMock.mockResolvedValue(recommendedResponse);
   render(<SupplyChainImpactPage />);
   clickScenario(/High-risk supplier/);
@@ -368,12 +368,23 @@ test("WOW-I4-B1-R1: Impact Intelligence renders exactly the real hop-grouped dep
     expect(screen.getByLabelText("Ontology impact")).toBeInTheDocument(),
   );
   const chain = screen.getByLabelText("Ontology impact");
+  // Supplier and Revenue Exposure are now inside the same composition
+  // as Material/Product/Facility -- the operator's core R2 requirement
+  // (previously they were outside the visual chain).
+  expect(chain).toHaveTextContent("Supplier");
+  expect(chain).toHaveTextContent("Demo Supplier");
   expect(chain).toHaveTextContent("Material");
   expect(chain).toHaveTextContent("Demo Material");
   expect(chain).toHaveTextContent("Product");
   expect(chain).toHaveTextContent("Demo Product");
   expect(chain).toHaveTextContent("Facility");
   expect(chain).toHaveTextContent("Demo Facility");
+  expect(chain).toHaveTextContent("Revenue exposure");
+  expect(chain).toHaveTextContent("Demo Revenue Exposure");
+  // The real revenue figure (12000000 from the mocked evidence value,
+  // rendered as USD currency) completes the chain rather than floating
+  // as a detached metric beneath it.
+  expect(chain).toHaveTextContent("$12,000,000");
   // The hop-grouping caption states the real limitation explicitly --
   // grouping by relationship hop, never a claimed traced edge.
   expect(
@@ -381,17 +392,18 @@ test("WOW-I4-B1-R1: Impact Intelligence renders exactly the real hop-grouped dep
   ).toBeInTheDocument();
 });
 
-test("WOW-I4-B1-R1: revenue exposure renders as a real, prominent figure derived only from the backend-returned evidence value", async () => {
+test("WOW-I4-B1-R2: the Supplier hop shows the real severity and sourcing state; the Revenue Exposure hop shows the real materiality state -- no fabricated field", async () => {
   evaluateMock.mockResolvedValue(recommendedResponse);
   render(<SupplyChainImpactPage />);
   clickScenario(/High-risk supplier/);
 
   await waitFor(() =>
-    expect(screen.getByText(/Demo Revenue Exposure/)).toBeInTheDocument(),
+    expect(screen.getByLabelText("Ontology impact")).toBeInTheDocument(),
   );
-  // 12000000 (the mocked evidence value) rendered as USD currency --
-  // never a recalculated or fabricated figure.
-  expect(screen.getByText("$12,000,000")).toBeInTheDocument();
+  const chain = screen.getByLabelText("Ontology impact");
+  expect(chain).toHaveTextContent("High severity");
+  expect(chain).toHaveTextContent("Single-sourced");
+  expect(chain).toHaveTextContent("Exceeds materiality threshold");
 });
 
 test("WOW-I4-B1-R1: no ranking, score, or winner is introduced for alternatives -- only the four real fields render", async () => {

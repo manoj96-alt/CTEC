@@ -26,23 +26,52 @@ function singleSourceLabel(singleSourceExposure: boolean | null): string {
   return singleSourceExposure ? "Single-sourced" : "Multi-sourced";
 }
 
-// WOW-I4-B1-R1: hop-grouped, not per-edge -- unchanged truth boundary from
-// R1 (CDD-085 §5/§7.2). `impact.materials/products/facilities/
-// revenue_exposures` are already deduplicated, merged arrays server-side
-// -- the exposed contract does not preserve which product came from which
-// material. Rendered inside a dark canvas sub-surface (reusing the exact
-// --obs-* tokens Ontology Explorer's own node/edge treatment already
-// established -- --obs-surface-elevated chips, --obs-intelligence
-// connectors -- as tokens only, no Explorer component imported), so this
-// reads as an ontology-grounded visualization rather than plain text
-// columns, per the operator's explicit comparison to Ontology Explorer's
-// quality bar. Still semantic heading-plus-list markup throughout, so it
-// remains inherently accessible without a separate duplicate fallback.
-function DependencyChain({ impact }: { impact: ImpactSummary }) {
-  const hops: Array<{ label: string; items: string[] }> = [
+function severityLabel(highSeverityDisruption: boolean | null): string {
+  if (highSeverityDisruption === null) return "Unknown";
+  return highSeverityDisruption ? "High severity" : "Not high severity";
+}
+
+interface Hop {
+  label: string;
+  items: string[];
+  terminal?: boolean;
+}
+
+// WOW-I4-B1-R2 (operator: "Supplier and Revenue Exposure are outside the
+// visual chain... this weakens Noetva's core differentiator"): the FULL
+// real hop sequence -- Supplier -> Material -> Product -> Facility ->
+// Revenue Exposure -- using only fields already present on `impact`/
+// `evidence` (no new API field, no new traversal). Severity/sourcing
+// attach to the Supplier hop; materiality + the real revenue figure
+// attach to the terminal Revenue Exposure hop -- every real fact now
+// lives inside the one composition instead of floating as separate
+// badges/metrics beside it. Still hop-grouped, not per-edge (CDD-085
+// §5/§7.2 truth boundary unchanged): the inline arrows between hop
+// GROUPS are presentation/progression only, never a claimed backend-
+// proven item-to-item traced edge -- the caption states this explicitly.
+function DependencyChain({
+  impact,
+  highSeverityDisruption,
+  singleSourceExposure,
+  revenueMateriality,
+  revenueValue,
+}: {
+  impact: ImpactSummary;
+  highSeverityDisruption: boolean | null;
+  singleSourceExposure: boolean | null;
+  revenueMateriality: boolean | null;
+  revenueValue: string | undefined;
+}) {
+  const hops: Hop[] = [
+    { label: "Supplier", items: [impact.supplier_name] },
     { label: "Material", items: impact.materials.map((m) => m.material_name) },
     { label: "Product", items: impact.products.map((p) => p.entity_name) },
     { label: "Facility", items: impact.facilities.map((f) => f.entity_name) },
+    {
+      label: "Revenue exposure",
+      items: impact.revenue_exposures.map((r) => r.entity_name),
+      terminal: true,
+    },
   ].filter((hop) => hop.items.length > 0);
 
   if (hops.length === 0) {
@@ -57,7 +86,14 @@ function DependencyChain({ impact }: { impact: ImpactSummary }) {
     <div className="obs-sci-chain-canvas">
       <div className="obs-sci-chain" role="group" aria-label="Ontology impact">
         {hops.map((hop, index) => (
-          <div className="obs-sci-chain-hop" key={hop.label}>
+          <div
+            className={
+              hop.terminal
+                ? "obs-sci-chain-hop obs-sci-chain-hop--terminal"
+                : "obs-sci-chain-hop"
+            }
+            key={hop.label}
+          >
             {index > 0 && (
               <span className="obs-sci-chain-arrow" aria-hidden="true">
                 →
@@ -67,7 +103,29 @@ function DependencyChain({ impact }: { impact: ImpactSummary }) {
             <ul>
               {hop.items.map((item) => (
                 <li className="obs-sci-chain-chip" key={item}>
-                  {item}
+                  <span>{item}</span>
+                  {hop.label === "Supplier" && (
+                    <span className="obs-sci-chain-chip-tags">
+                      <span className="status-tag">
+                        {severityLabel(highSeverityDisruption)}
+                      </span>
+                      <span className="status-tag">
+                        {singleSourceLabel(singleSourceExposure)}
+                      </span>
+                    </span>
+                  )}
+                  {hop.terminal && (
+                    <span className="obs-sci-chain-chip-tags">
+                      <span className="status-tag">
+                        {materialityLabel(revenueMateriality)}
+                      </span>
+                      {revenueValue && (
+                        <span className="obs-sci-chain-chip-value">
+                          {currency(revenueValue)}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -80,53 +138,39 @@ function DependencyChain({ impact }: { impact: ImpactSummary }) {
 
 // Explanatory visualization only -- every node/edge below comes directly
 // from `impact` (already server-traversed); no traversal, inference, or
-// new ontology query happens here (CDD-016 §11). WOW-I4-B1-R1: no longer
-// its own `.panel` -- the second and third steps of the Risk -> Ontology
-// impact -> Revenue flow inside the shared "Impact intelligence" surface.
+// new ontology query happens here (CDD-016 §11). WOW-I4-B1-R2: this is
+// now the single Impact Intelligence composition -- Supplier through
+// Material/Product/Facility to Revenue Exposure, one dark canvas, no
+// separate badge row and no metric floating below it.
 export function BusinessImpactPanel({
   impact,
   singleSourceExposure,
   revenueMateriality,
   evidence,
+  highSeverityDisruption = null,
 }: {
   impact: ImpactSummary;
   singleSourceExposure: boolean | null;
   revenueMateriality: boolean | null;
   evidence: EvidenceItem[];
+  highSeverityDisruption?: boolean | null;
 }) {
   const revenueEvidence = evidence.find(
     (item) => item.predicate === "annualRevenueUsd",
   );
   return (
     <div aria-label="Business impact" className="obs-sci-impact-body">
-      <div className="obs-sci-impact-badges">
-        <span className="status-tag">
-          {singleSourceLabel(singleSourceExposure)}
-        </span>
-        <span className="status-tag">
-          {materialityLabel(revenueMateriality)}
-        </span>
-      </div>
       <p className="obs-sci-chain-caption">
         Impact grouped by governed ontology relationship hop -- not a specific
         item-to-item traced path.
       </p>
-      <DependencyChain impact={impact} />
-      {impact.revenue_exposures.length > 0 && (
-        <div className="obs-sci-revenue">
-          <span className="obs-sci-revenue-label">
-            Revenue exposure recorded against{" "}
-            {impact.revenue_exposures
-              .map((item) => item.entity_name)
-              .join(", ")}
-          </span>
-          {revenueEvidence && (
-            <span className="obs-sci-revenue-value">
-              {currency(revenueEvidence.value)}
-            </span>
-          )}
-        </div>
-      )}
+      <DependencyChain
+        impact={impact}
+        highSeverityDisruption={highSeverityDisruption}
+        singleSourceExposure={singleSourceExposure}
+        revenueMateriality={revenueMateriality}
+        revenueValue={revenueEvidence?.value}
+      />
     </div>
   );
 }

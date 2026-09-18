@@ -191,14 +191,14 @@ export default function SupplyChainImpactPage() {
               material={material}
               evidence={candidate?.evidence ?? []}
             />
-            <span className="obs-sci-flow-arrow" aria-hidden="true">
-              ↓
-            </span>
             <BusinessImpactPanel
               impact={result.impact}
               singleSourceExposure={material?.single_source_exposure ?? null}
               revenueMateriality={material?.revenue_materiality ?? null}
               evidence={candidate?.evidence ?? []}
+              highSeverityDisruption={
+                material?.high_severity_disruption ?? null
+              }
             />
           </section>
 
@@ -206,10 +206,6 @@ export default function SupplyChainImpactPage() {
           <div className="obs-sci-pair">
             <EvidencePanel evidence={candidate?.evidence ?? []} />
             <AlternativesPanel candidates={material?.candidates ?? []} />
-          </div>
-
-          <div className="obs-sci-connector" aria-hidden="true">
-            ↓
           </div>
 
           <div className="obs-intelligence-surface obs-sci-decision">
