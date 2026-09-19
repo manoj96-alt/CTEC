@@ -592,10 +592,18 @@ def test_material_aware_discovery_finds_every_real_supplier_of_the_affected_mate
         OntologySeeder(session).load()
         session.commit()
         source_system_id = _seed_source_system(session, tenant_id)
-        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
-        material = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
-        supplier_b = _entity(session, tenant_id=tenant_id, name=f"SUP-B-{uuid4()}", type_name="Supplier")
-        supplier_c = _entity(session, tenant_id=tenant_id, name=f"SUP-C-{uuid4()}", type_name="Supplier")
+        supplier_a = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier"
+        )
+        material = _entity(
+            session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material"
+        )
+        supplier_b = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-B-{uuid4()}", type_name="Supplier"
+        )
+        supplier_c = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-C-{uuid4()}", type_name="Supplier"
+        )
         region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
         risk_event = _entity(
             session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
@@ -603,15 +611,29 @@ def test_material_aware_discovery_finds_every_real_supplier_of_the_affected_mate
 
         # Only A's edge is `supplies` (active sourcing). B and C are
         # `approvedSourceFor` (sourcing capability) -- never `supplies`.
-        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material)
         _relate(
-            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_b, to_id=material
+            session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material
         )
         _relate(
-            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_c, to_id=material
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_b,
+            to_id=material,
         )
-        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
-        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_c,
+            to_id=material,
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event
+        )
         _assert_literal(
             session,
             subject_entity_id=risk_event,
@@ -645,8 +667,8 @@ def test_material_aware_discovery_finds_every_real_supplier_of_the_affected_mate
     discovered = {c.alternate_supplier_entity_id for c in material_result.candidates}
     assert discovered == {supplier_b, supplier_c}
     assert supplier_a not in discovered
-    for candidate in material_result.candidates:
-        assert candidate.relevance_relationship == "approvedSourceFor"
+    for outcome in material_result.candidates:
+        assert outcome.relevance_relationship == "approvedSourceFor"
     # CDD-088's core invariant: two real candidates exist, yet Material M
     # still has exactly one currently-active `supplies` source (A) --
     # single-source exposure is unaffected by candidate discovery.
@@ -668,10 +690,18 @@ def test_unrelated_supplier_and_bare_alternate_supplier_type_are_not_discovered(
         OntologySeeder(session).load()
         session.commit()
         source_system_id = _seed_source_system(session, tenant_id)
-        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
-        material_m = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
-        material_x = _entity(session, tenant_id=tenant_id, name=f"MAT-X-{uuid4()}", type_name="Material")
-        supplier_d = _entity(session, tenant_id=tenant_id, name=f"SUP-D-{uuid4()}", type_name="Supplier")
+        supplier_a = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier"
+        )
+        material_m = _entity(
+            session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material"
+        )
+        material_x = _entity(
+            session, tenant_id=tenant_id, name=f"MAT-X-{uuid4()}", type_name="Material"
+        )
+        supplier_d = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-D-{uuid4()}", type_name="Supplier"
+        )
         bare_alternate = _entity(
             session,
             tenant_id=tenant_id,
@@ -683,7 +713,9 @@ def test_unrelated_supplier_and_bare_alternate_supplier_type_are_not_discovered(
             session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
         )
 
-        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material_m)
+        _relate(
+            session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material_m
+        )
         _relate(
             session,
             tenant_id=tenant_id,
@@ -691,8 +723,12 @@ def test_unrelated_supplier_and_bare_alternate_supplier_type_are_not_discovered(
             from_id=supplier_d,
             to_id=material_x,
         )
-        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
-        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _relate(
+            session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event
+        )
         _assert_literal(
             session,
             subject_entity_id=risk_event,
@@ -732,20 +768,36 @@ def test_relevant_candidate_with_explicit_failing_evidence_is_rejected_not_hidde
         OntologySeeder(session).load()
         session.commit()
         source_system_id = _seed_source_system(session, tenant_id)
-        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
-        material = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
-        supplier_e = _entity(session, tenant_id=tenant_id, name=f"SUP-E-{uuid4()}", type_name="Supplier")
+        supplier_a = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier"
+        )
+        material = _entity(
+            session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material"
+        )
+        supplier_e = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-E-{uuid4()}", type_name="Supplier"
+        )
         region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
         risk_event = _entity(
             session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
         )
 
-        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material)
         _relate(
-            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_e, to_id=material
+            session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material
         )
-        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
-        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_e,
+            to_id=material,
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event
+        )
         _assert_literal(
             session,
             subject_entity_id=risk_event,
@@ -777,7 +829,9 @@ def test_relevant_candidate_with_explicit_failing_evidence_is_rejected_not_hidde
     material_result = result.materials[0]
     discovered = {c.alternate_supplier_entity_id for c in material_result.candidates}
     assert supplier_e in discovered
-    candidate = next(c for c in material_result.candidates if c.alternate_supplier_entity_id == supplier_e)
+    candidate = next(
+        c for c in material_result.candidates if c.alternate_supplier_entity_id == supplier_e
+    )
     assert candidate.relevance_relationship == "approvedSourceFor"
     assert candidate.outcome == "Rejected"
     assert candidate.reason == "Rejected: candidate capacity is insufficient"
@@ -799,25 +853,49 @@ def test_changing_only_governed_relationships_changes_the_candidate_set(
         OntologySeeder(session).load()
         session.commit()
         source_system_id = _seed_source_system(session, tenant_id)
-        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
-        material = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
-        supplier_b = _entity(session, tenant_id=tenant_id, name=f"SUP-B-{uuid4()}", type_name="Supplier")
-        supplier_c = _entity(session, tenant_id=tenant_id, name=f"SUP-C-{uuid4()}", type_name="Supplier")
-        supplier_d = _entity(session, tenant_id=tenant_id, name=f"SUP-D-{uuid4()}", type_name="Supplier")
+        supplier_a = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier"
+        )
+        material = _entity(
+            session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material"
+        )
+        supplier_b = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-B-{uuid4()}", type_name="Supplier"
+        )
+        supplier_c = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-C-{uuid4()}", type_name="Supplier"
+        )
+        supplier_d = _entity(
+            session, tenant_id=tenant_id, name=f"SUP-D-{uuid4()}", type_name="Supplier"
+        )
         region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
         risk_event = _entity(
             session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
         )
 
-        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material)
         _relate(
-            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_b, to_id=material
+            session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material
+        )
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_b,
+            to_id=material,
         )
         c_relationship_id = _relate(
-            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_c, to_id=material
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_c,
+            to_id=material,
         )
-        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
-        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _relate(
+            session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event
+        )
         _assert_literal(
             session,
             subject_entity_id=risk_event,

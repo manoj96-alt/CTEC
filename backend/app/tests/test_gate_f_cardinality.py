@@ -237,9 +237,7 @@ def test_multi_material_multi_candidate_cardinality(migrated_engine: Engine) -> 
         # via its own explicit `approvedSourceFor` edge to each -- never
         # `supplies` (which would corrupt each material's single-source
         # exposure), and never a tenant-wide type scan.
-        alt_1 = _entity(
-            session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Supplier"
-        )
+        alt_1 = _entity(session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Supplier")
         _relate(
             session,
             tenant_id=tenant_id,
@@ -407,12 +405,8 @@ def test_multi_material_multi_candidate_with_full_evidence_cardinality(
             source_system_id=source_system_id,
         )
 
-        alt_1 = _entity(
-            session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Supplier"
-        )
-        alt_2 = _entity(
-            session, tenant_id=tenant_id, name=f"ALT2-{uuid4()}", type_name="Supplier"
-        )
+        alt_1 = _entity(session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Supplier")
+        alt_2 = _entity(session, tenant_id=tenant_id, name=f"ALT2-{uuid4()}", type_name="Supplier")
         for alt in (alt_1, alt_2):
             for material in (material_1, material_2):
                 _relate(

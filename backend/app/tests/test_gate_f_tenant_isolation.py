@@ -287,9 +287,7 @@ def test_cross_tenant_approved_source_supplier_is_excluded_from_candidate_discov
     # all (structural isolation, RFC-016), so no leak is even possible.
     material_result = result.materials[0]
     assert material_result.candidates[0].alternate_supplier_entity_id is None
-    assert supplier_b not in {
-        c.alternate_supplier_entity_id for c in material_result.candidates
-    }
+    assert supplier_b not in {c.alternate_supplier_entity_id for c in material_result.candidates}
     assert material_result.single_source_exposure is True
 
 
