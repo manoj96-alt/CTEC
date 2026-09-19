@@ -54,6 +54,7 @@ const recommendedResponse: SupplyChainImpactEvaluateResponse = {
       candidates: [
         {
           alternate_supplier_entity_id: "alt-11111111",
+          relevance_relationship: "approvedSourceFor",
           outcome: "Recommended",
           reason: "Recommended: all four governed conditions are satisfied",
           decision_record_identifier: "rec-1",
@@ -104,6 +105,7 @@ const unknownResponse: SupplyChainImpactEvaluateResponse = {
       candidates: [
         {
           alternate_supplier_entity_id: null,
+          relevance_relationship: null,
           outcome: null,
           reason: null,
           decision_record_identifier: null,
@@ -130,6 +132,7 @@ const rejectedResponse: SupplyChainImpactEvaluateResponse = {
       candidates: [
         {
           alternate_supplier_entity_id: "alt-22222222",
+          relevance_relationship: "approvedSourceFor",
           outcome: "Rejected",
           reason:
             "Rejected: revenue exposure does not exceed the materiality threshold",

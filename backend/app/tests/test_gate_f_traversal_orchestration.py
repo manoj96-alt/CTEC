@@ -243,8 +243,23 @@ def _build_scenario(
             source_system_id=source_system_id,
         )
 
+    # CDD-088: an ordinary Supplier with a real, governed
+    # `approvedSourceFor` relationship into the SAME material -- the sole
+    # discovery/relevance signal. Deliberately NOT `supplies` (CDD-088
+    # §1): that relationship means active, current sourcing and is the
+    # exact signal derive_single_source_exposure counts -- giving a
+    # candidate a `supplies` edge would falsify single-source exposure.
+    # No "Alternate Supplier" typing is used or required (CDD-086 §2:
+    # type alone must never establish relevance).
     alternate_supplier = _entity(
-        session, tenant_id=tenant_id, name=f"ALT-{uuid4()}", type_name="Alternate Supplier"
+        session, tenant_id=tenant_id, name=f"ALT-{uuid4()}", type_name="Supplier"
+    )
+    _relate(
+        session,
+        tenant_id=tenant_id,
+        type_name="approvedSourceFor",
+        from_id=alternate_supplier,
+        to_id=material,
     )
     if alternate_qualified is not None:
         _assert_literal(
@@ -518,7 +533,10 @@ def test_zero_alternates_is_known_rejected_not_unknown(migrated_engine: Engine) 
             object_value="Severe",
             source_system_id=source_system_id,
         )
-        # No Alternate Supplier entity exists in this tenant at all.
+        # No entity anywhere in this tenant has a `supplies` relationship
+        # into `material` -- zero viable candidates (CDD-086/CDD-087:
+        # type alone is never sufficient; a real `supplies` edge is the
+        # only discovery signal, and none exists here).
         session.commit()
 
     service = SupplyChainImpactApiService(factory, policy=POLICY)
@@ -555,6 +573,298 @@ def test_request_contract_carries_no_client_authoritative_decision_facts() -> No
 
     fields = dataclasses.fields(SupplyChainImpactEvaluateRequest)
     assert {field.name for field in fields} == {"supplier_entity_id"}
+
+
+def test_material_aware_discovery_finds_every_real_supplier_of_the_affected_material(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-088 §6/§9, R4-I1-R1 §14/§18: Supplier A (disrupted) is the SOLE
+    active `supplies` source of Material M; Supplier B and Supplier C are
+    both governed `approvedSourceFor` M (never `supplies` M). Both B and C
+    must be discovered as candidates; A must never be its own candidate
+    (self-exclusion); each discovered candidate's `relevance_relationship`
+    must truthfully name `approvedSourceFor`, never `supplies`; and --
+    the exact invariant CDD-088 exists to guarantee -- single-source
+    exposure must remain TRUE even though two real candidates exist."""
+    factory = sessionmaker(migrated_engine)
+    tenant_id = _tenant()
+    with factory() as session:
+        OntologySeeder(session).load()
+        session.commit()
+        source_system_id = _seed_source_system(session, tenant_id)
+        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
+        material = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
+        supplier_b = _entity(session, tenant_id=tenant_id, name=f"SUP-B-{uuid4()}", type_name="Supplier")
+        supplier_c = _entity(session, tenant_id=tenant_id, name=f"SUP-C-{uuid4()}", type_name="Supplier")
+        region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
+        risk_event = _entity(
+            session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
+        )
+
+        # Only A's edge is `supplies` (active sourcing). B and C are
+        # `approvedSourceFor` (sourcing capability) -- never `supplies`.
+        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material)
+        _relate(
+            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_b, to_id=material
+        )
+        _relate(
+            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_c, to_id=material
+        )
+        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
+        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _assert_literal(
+            session,
+            subject_entity_id=risk_event,
+            predicate="severity",
+            object_value="Severe",
+            source_system_id=source_system_id,
+        )
+        for candidate in (supplier_b, supplier_c):
+            _assert_literal(
+                session,
+                subject_entity_id=candidate,
+                predicate="qualification",
+                object_value="true",
+                source_system_id=source_system_id,
+            )
+            _assert_literal(
+                session,
+                subject_entity_id=candidate,
+                predicate="capacity",
+                object_value="true",
+                source_system_id=source_system_id,
+            )
+        session.commit()
+
+    service = SupplyChainImpactApiService(factory, policy=POLICY)
+    result = service.evaluate(
+        _principal(tenant_id), SupplyChainImpactEvaluateRequest(supplier_entity_id=supplier_a)
+    )
+
+    material_result = result.materials[0]
+    discovered = {c.alternate_supplier_entity_id for c in material_result.candidates}
+    assert discovered == {supplier_b, supplier_c}
+    assert supplier_a not in discovered
+    for candidate in material_result.candidates:
+        assert candidate.relevance_relationship == "approvedSourceFor"
+    # CDD-088's core invariant: two real candidates exist, yet Material M
+    # still has exactly one currently-active `supplies` source (A) --
+    # single-source exposure is unaffected by candidate discovery.
+    assert material_result.single_source_exposure is True
+
+
+def test_unrelated_supplier_and_bare_alternate_supplier_type_are_not_discovered(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-086 §2, CDD-088 §6: a real Supplier with a real
+    `approvedSourceFor` relationship into a DIFFERENT material must never
+    be discovered for Material M, and an entity typed "Alternate
+    Supplier" (the old, still-defined-for-backward-compatibility type,
+    CDD-087 §6) with no relationship at all must never be discovered
+    merely because of its type."""
+    factory = sessionmaker(migrated_engine)
+    tenant_id = _tenant()
+    with factory() as session:
+        OntologySeeder(session).load()
+        session.commit()
+        source_system_id = _seed_source_system(session, tenant_id)
+        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
+        material_m = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
+        material_x = _entity(session, tenant_id=tenant_id, name=f"MAT-X-{uuid4()}", type_name="Material")
+        supplier_d = _entity(session, tenant_id=tenant_id, name=f"SUP-D-{uuid4()}", type_name="Supplier")
+        bare_alternate = _entity(
+            session,
+            tenant_id=tenant_id,
+            name=f"ALT-BARE-{uuid4()}",
+            type_name="Alternate Supplier",
+        )
+        region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
+        risk_event = _entity(
+            session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
+        )
+
+        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material_m)
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_d,
+            to_id=material_x,
+        )
+        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
+        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _assert_literal(
+            session,
+            subject_entity_id=risk_event,
+            predicate="severity",
+            object_value="Severe",
+            source_system_id=source_system_id,
+        )
+        session.commit()
+
+    service = SupplyChainImpactApiService(factory, policy=POLICY)
+    result = service.evaluate(
+        _principal(tenant_id), SupplyChainImpactEvaluateRequest(supplier_entity_id=supplier_a)
+    )
+
+    discovered = {c.alternate_supplier_entity_id for c in result.materials[0].candidates}
+    assert supplier_d not in discovered
+    assert bare_alternate not in discovered
+    # Zero viable candidates for M -> known REJECTED (not Unknown).
+    assert result.materials[0].candidates[0].alternate_supplier_entity_id is None
+    assert result.materials[0].candidates[0].outcome == "Rejected"
+    assert result.materials[0].single_source_exposure is True
+
+
+def test_relevant_candidate_with_explicit_failing_evidence_is_rejected_not_hidden(
+    migrated_engine: Engine,
+) -> None:
+    """R4-I1-R1 §10/§16: a candidate genuinely relevant to Material M
+    (real `approvedSourceFor` edge) but with an EXISTING governed
+    condition explicitly, persistently FALSE (capacity=false, never
+    invented policy) must still be discovered and evaluated -- never
+    silently excluded -- and must receive Gate F's own real, existing
+    REJECTED_INSUFFICIENT_CAPACITY reason. Proves "relevant candidate !=
+    passing candidate" using only existing Gate F semantics."""
+    factory = sessionmaker(migrated_engine)
+    tenant_id = _tenant()
+    with factory() as session:
+        OntologySeeder(session).load()
+        session.commit()
+        source_system_id = _seed_source_system(session, tenant_id)
+        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
+        material = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
+        supplier_e = _entity(session, tenant_id=tenant_id, name=f"SUP-E-{uuid4()}", type_name="Supplier")
+        region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
+        risk_event = _entity(
+            session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
+        )
+
+        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material)
+        _relate(
+            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_e, to_id=material
+        )
+        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
+        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _assert_literal(
+            session,
+            subject_entity_id=risk_event,
+            predicate="severity",
+            object_value="Severe",
+            source_system_id=source_system_id,
+        )
+        _assert_literal(
+            session,
+            subject_entity_id=supplier_e,
+            predicate="qualification",
+            object_value="true",
+            source_system_id=source_system_id,
+        )
+        _assert_literal(
+            session,
+            subject_entity_id=supplier_e,
+            predicate="capacity",
+            object_value="false",
+            source_system_id=source_system_id,
+        )
+        session.commit()
+
+    service = SupplyChainImpactApiService(factory, policy=POLICY)
+    result = service.evaluate(
+        _principal(tenant_id), SupplyChainImpactEvaluateRequest(supplier_entity_id=supplier_a)
+    )
+
+    material_result = result.materials[0]
+    discovered = {c.alternate_supplier_entity_id for c in material_result.candidates}
+    assert supplier_e in discovered
+    candidate = next(c for c in material_result.candidates if c.alternate_supplier_entity_id == supplier_e)
+    assert candidate.relevance_relationship == "approvedSourceFor"
+    assert candidate.outcome == "Rejected"
+    assert candidate.reason == "Rejected: candidate capacity is insufficient"
+    assert material_result.single_source_exposure is True
+
+
+def test_changing_only_governed_relationships_changes_the_candidate_set(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-088 §9, R4-I1-R1 §19 -- the central proof that seeded
+    enterprise facts, not a seeded answer, drive discovery: B,C -> (remove
+    C's `approvedSourceFor` edge, add D's `approvedSourceFor` edge) ->
+    B,D, with zero application-code change between the two evaluate()
+    calls, and single-source exposure unaffected throughout because only
+    `approvedSourceFor` edges are ever touched."""
+    factory = sessionmaker(migrated_engine)
+    tenant_id = _tenant()
+    with factory() as session:
+        OntologySeeder(session).load()
+        session.commit()
+        source_system_id = _seed_source_system(session, tenant_id)
+        supplier_a = _entity(session, tenant_id=tenant_id, name=f"SUP-A-{uuid4()}", type_name="Supplier")
+        material = _entity(session, tenant_id=tenant_id, name=f"MAT-M-{uuid4()}", type_name="Material")
+        supplier_b = _entity(session, tenant_id=tenant_id, name=f"SUP-B-{uuid4()}", type_name="Supplier")
+        supplier_c = _entity(session, tenant_id=tenant_id, name=f"SUP-C-{uuid4()}", type_name="Supplier")
+        supplier_d = _entity(session, tenant_id=tenant_id, name=f"SUP-D-{uuid4()}", type_name="Supplier")
+        region = _entity(session, tenant_id=tenant_id, name=f"REG-{uuid4()}", type_name="Region")
+        risk_event = _entity(
+            session, tenant_id=tenant_id, name=f"RISK-{uuid4()}", type_name="Risk Event"
+        )
+
+        _relate(session, tenant_id=tenant_id, type_name="supplies", from_id=supplier_a, to_id=material)
+        _relate(
+            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_b, to_id=material
+        )
+        c_relationship_id = _relate(
+            session, tenant_id=tenant_id, type_name="approvedSourceFor", from_id=supplier_c, to_id=material
+        )
+        _relate(session, tenant_id=tenant_id, type_name="locatedIn", from_id=supplier_a, to_id=region)
+        _relate(session, tenant_id=tenant_id, type_name="exposedTo", from_id=region, to_id=risk_event)
+        _assert_literal(
+            session,
+            subject_entity_id=risk_event,
+            predicate="severity",
+            object_value="Severe",
+            source_system_id=source_system_id,
+        )
+        session.commit()
+
+    service = SupplyChainImpactApiService(factory, policy=POLICY)
+    first = service.evaluate(
+        _principal(tenant_id), SupplyChainImpactEvaluateRequest(supplier_entity_id=supplier_a)
+    )
+    assert {c.alternate_supplier_entity_id for c in first.materials[0].candidates} == {
+        supplier_b,
+        supplier_c,
+    }
+    assert first.materials[0].single_source_exposure is True
+
+    # Mutate ONLY governed `approvedSourceFor` relationships -- no
+    # application code, entity type, Gate F, or policy change; the `A -->
+    # supplies --> M` edge is never touched.
+    with factory() as session:
+        existing = session.get(InstitutionalRelationship, c_relationship_id)
+        assert existing is not None
+        session.delete(existing)
+        session.commit()
+    with factory() as session:
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=supplier_d,
+            to_id=material,
+        )
+        session.commit()
+
+    second = service.evaluate(
+        _principal(tenant_id), SupplyChainImpactEvaluateRequest(supplier_entity_id=supplier_a)
+    )
+    assert {c.alternate_supplier_entity_id for c in second.materials[0].candidates} == {
+        supplier_b,
+        supplier_d,
+    }
+    # The crown invariant: single-source exposure is unchanged before and
+    # after this mutation, because only `approvedSourceFor` edges moved.
+    assert second.materials[0].single_source_exposure is True
 
 
 def test_no_traversal_result_is_persisted_as_a_new_canonical_artifact() -> None:

@@ -289,6 +289,7 @@ def _candidate_response(
         narrative=narrative,
         confidence=confidence,
         evidence=evidence,
+        relevance_relationship=candidate.relevance_relationship,
     )
 
 

@@ -1,7 +1,8 @@
 """Explicit, idempotent, demo-only seeder for the Gate F Supply Chain
 Impact demonstration scenarios (F-I4, governed by the merged CDD-015
 Deterministic Demo Data and Read-Projection Clarification and
-Remediation Report).
+Remediation Report; topology corrected per CDD-088's Alternative Sourcing
+Semantics Governance Correction).
 
 Never invoked by normal production bootstrap: app.main.lifespan only
 ever builds the dependency Container (see app/main.py) -- nothing there,
@@ -16,44 +17,103 @@ F scenarios through the real, authorized mechanism -- institutional_
 relationships and assertions, tenant-scoped per RFC-016 -- using only the
 ten pre-existing RFC-017 SS1 concepts and the RFC-017 SS3 relationship
 types Gate F F-I1 already seeded (assembledAt, coveredBy, candidateFor)
-alongside the seven pre-existing ones:
+alongside the seven pre-existing ones, plus CDD-088's one additive
+relationship type (approvedSourceFor):
 
     RECOMMENDED scenario:
-        Supplier(R) --locatedIn--> Region(R) --exposedTo--> RiskEvent(R,
+        Supplier A (R) --locatedIn--> Region(R) --exposedTo--> RiskEvent(R,
         severity=Severe)
-        Supplier(R) --supplies--> Material(R) --usedIn--> BOM(R)
-            --defines--> Product(R) --assembledAt--> Facility(R)
+        Supplier A (R) --supplies--> Material M (R) -- the ONE, SOLE,
+        currently-ACTIVE source (CDD-088 §1/§5: `supplies` means active,
+        current sourcing, and is the exact signal
+        krm.py::derive_single_source_exposure counts for condition 2 --
+        never touched by anything below).
+        Material M (R) --usedIn--> BOM(R) --defines--> Product(R)
+            --assembledAt--> Facility(R)
         Product(R) --generatesRevenue--> RevenueExposure(R,
         annualRevenueUsd=12,000,000)
-        AlternateSupplier(shared) with qualification=true, capacity=true
+
+        Candidate B (ordinary Supplier) --approvedSourceFor--> Material M
+        (R) -- a governed, durable sourcing-CAPABILITY fact, NOT an
+        active-sourcing fact (CDD-088 §4) -- with qualification=true,
+        capacity=true, leadTimeDays=21, costUsd=185000: RELEVANT and
+        fully ELIGIBLE -> Recommended.
+
+        Candidate C (ordinary Supplier) --approvedSourceFor--> Material M
+        (R), with qualification=true but NO capacity assertion at all
+        (genuinely absent, never asserted false): RELEVANT (a real
+        governed `approvedSourceFor` relationship makes it a candidate)
+        while its capacity/eligibility remains truthfully UNKNOWN.
+        Proves "relevant candidate != eligible candidate."
+
+        Candidate E (ordinary Supplier) --approvedSourceFor--> Material M
+        (R), with qualification=true but capacity=false (an EXPLICIT,
+        real, persisted governed fact -- never invented policy):
+        RELEVANT but FAILS the existing capacity condition ->
+        Rejected: candidate capacity is insufficient. Proves "relevant
+        candidate != passing candidate," using Gate F's own existing
+        REJECTED_INSUFFICIENT_CAPACITY reason, never a new one.
+
+        Unrelated Supplier D (ordinary Supplier) --approvedSourceFor-->
+        Unrelated Material X (R) -- a real Supplier with a real
+        `approvedSourceFor` edge, but never to Material M, so it must
+        never appear in this scenario's candidate set.
+
+        None of B/C/E/D ever has a `supplies` edge to Material M --
+        Material M's only currently-active `supplies` relationship
+        remains Supplier A's, so `single_source_exposure` stays TRUE
+        throughout, regardless of how many `approvedSourceFor` candidates
+        exist or how their evidence varies (CDD-088 §5/§18).
 
     UNKNOWN scenario:
-        Same shape, its own Region/RiskEvent -- but the RiskEvent carries
-        NO severity assertion (evidence genuinely absent, never asserted
-        false).
+        Same shape, its own Region/RiskEvent/Material/Candidate -- but the
+        RiskEvent carries NO severity assertion (evidence genuinely
+        absent, never asserted false). Its one candidate
+        (--approvedSourceFor-->) is fully qualified/capacitated;
+        irrelevant to the outcome, since condition 1 (severity) is
+        already Unknown regardless of candidate evidence.
 
     REJECTED scenario:
-        Same shape, its own Region/RiskEvent (severity=Severe) -- but its
-        RevenueExposure carries annualRevenueUsd=5,000,000 (asserted,
-        real, below the frozen $10,000,000 materiality threshold).
-        Rejected via the governed REJECTED_NOT_MATERIAL path, not via
-        "zero viable alternate": Gate F's alternate-supplier discovery is
-        tenant-wide, not material-scoped (F-I2, unmodified) -- the single
-        AlternateSupplier entity seeded for the RECOMMENDED scenario is
-        therefore also discoverable as a candidate against this
-        scenario's Material. REJECTED_NOT_MATERIAL short-circuits ahead
-        of the no-viable-alternate check in GateFDecisionAdapter._classify
-        (backend/app/integration/adapters/gate_f/drm.py), so this
-        scenario's outcome is correct and deterministic regardless of
-        that shared-tenant alternate-discovery behavior -- unlike a
-        "zero viable alternate" design, which a shared alternate supplier
-        would silently turn into RECOMMENDED instead. This is a scenario
-        DESIGN choice made to fit Gate F's existing, frozen, unmodified
-        business logic; it does not change or work around that logic.
+        Same shape, its own Region/RiskEvent (severity=Severe)/Material/
+        Candidate -- but its RevenueExposure carries annualRevenueUsd=
+        5,000,000 (asserted, real, below the frozen $10,000,000
+        materiality threshold). Rejected via the governed
+        REJECTED_NOT_MATERIAL path (GateFDecisionAdapter._classify,
+        backend/app/integration/adapters/gate_f/drm.py), which
+        short-circuits ahead of any candidate check -- this scenario's one
+        candidate (--approvedSourceFor-->) is fully qualified/capacitated
+        and irrelevant to the outcome for the same reason.
+
+    Candidate discovery itself is a material-aware, relationship-driven
+    derivation, never a tenant-wide "Alternate Supplier" entity-type scan
+    (CDD-086 §1-§2's diagnosed defect) and never a reuse of `supplies`
+    (CDD-088 §1's diagnosed defect -- reusing the active-sourcing signal
+    for discovery would make discovering ANY candidate falsify
+    single-source exposure). Each scenario's candidates are ordinary
+    Supplier entities, discoverable solely via their real
+    `approvedSourceFor` relationship into that scenario's own Material
+    (backend/app/domain/ontology_copilot/traversal.py::
+    discover_candidates_supplying, called per-material by
+    backend/app/application/supply_chain_impact_api.py). Because
+    discovery is material-scoped, each scenario seeds its own independent
+    candidate(s) -- no candidate is, or needs to be, shared across
+    scenarios.
+
+    No seeded field or relationship anywhere below encodes an expected
+    outcome, a winner, or a candidate list directly -- every discoverable
+    candidate, and every governed result Gate F produces for it, is a
+    derived consequence of the real `supplies`/`approvedSourceFor`
+    relationships and real assertions seeded here (CDD-088 §7 standing
+    synthetic-data rule).
 
 Calls OntologySeeder(session).load() first (idempotent) to guarantee every
 entity type and relationship type this seeder depends on already exists,
-regardless of invocation order.
+regardless of invocation order. The "Alternate Supplier" entity type
+remains defined by OntologySeeder for backward compatibility (CDD-087
+§6) -- this seeder simply no longer creates an instance of it or relies
+on its type name for discovery. `candidateFor` remains untouched here --
+it is created only at evaluation time, by Gate F's own KRM
+(krm.py::derive_candidate_evidence), never by this seeder.
 
 Idempotent: every id used is deterministic (uuid5, namespaced under the
 existing BOOTSTRAP_SEED_NAMESPACE), and every write is preceded by an
@@ -99,7 +159,6 @@ _REQUIRED_ENTITY_TYPES = (
     "Revenue Exposure",
     "Region",
     "Risk Event",
-    "Alternate Supplier",
 )
 _REQUIRED_RELATIONSHIP_TYPES = (
     "supplies",
@@ -109,6 +168,7 @@ _REQUIRED_RELATIONSHIP_TYPES = (
     "generatesRevenue",
     "locatedIn",
     "exposedTo",
+    "approvedSourceFor",
 )
 
 
@@ -128,6 +188,11 @@ class DemoGateFScenarioSummary:
     supplier_entity_id: UUID
     material_entity_id: UUID
     risk_event_entity_id: UUID
+    # Ordinary Supplier entities discoverable as candidates for this
+    # scenario's own material via a real `approvedSourceFor` relationship
+    # (CDD-088) -- never a seeded answer, a consequence of the
+    # relationships seeded below.
+    candidate_supplier_entity_ids: tuple[UUID, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +202,6 @@ class DemoGateFSeedSummary:
     recommended: DemoGateFScenarioSummary
     unknown: DemoGateFScenarioSummary
     rejected: DemoGateFScenarioSummary
-    alternate_supplier_entity_id: UUID
     relationships_created: int
     assertions_created: int
 
@@ -169,45 +233,6 @@ class DemoGateFSeeder:
         relationships_created = 0
         assertions_created = 0
 
-        alternate_supplier = self._entity(
-            tenant_id,
-            "gate-f-demo:alternate-supplier",
-            "Demo Alternate Supplier (Gate F)",
-            entity_type_ids["Alternate Supplier"],
-        )
-        assertions_created += self._assert_literal(
-            tenant_id,
-            "gate-f-demo:alternate-supplier:qualification",
-            subject_entity_id=alternate_supplier.entity_id,
-            predicate="qualification",
-            object_value="true",
-            source_system_id=supplier_source_id,
-        )
-        assertions_created += self._assert_literal(
-            tenant_id,
-            "gate-f-demo:alternate-supplier:capacity",
-            subject_entity_id=alternate_supplier.entity_id,
-            predicate="capacity",
-            object_value="true",
-            source_system_id=supplier_source_id,
-        )
-        assertions_created += self._assert_literal(
-            tenant_id,
-            "gate-f-demo:alternate-supplier:lead-time-days",
-            subject_entity_id=alternate_supplier.entity_id,
-            predicate="leadTimeDays",
-            object_value="21",
-            source_system_id=supplier_source_id,
-        )
-        assertions_created += self._assert_literal(
-            tenant_id,
-            "gate-f-demo:alternate-supplier:cost-usd",
-            subject_entity_id=alternate_supplier.entity_id,
-            predicate="costUsd",
-            object_value="185000",
-            source_system_id=supplier_source_id,
-        )
-
         recommended, created, asserted = self._seed_scenario(
             tenant_id,
             label="recommended",
@@ -221,6 +246,104 @@ class DemoGateFSeeder:
         relationships_created += created
         assertions_created += asserted
 
+        # Candidate B: relevant AND fully eligible -> Recommended.
+        candidate_b_id, created, asserted = self._seed_candidate(
+            tenant_id,
+            scenario_label="recommended",
+            suffix="candidate-b",
+            name="Demo Candidate Supplier B (recommended)",
+            material_entity_id=recommended.material_entity_id,
+            supplier_type_id=entity_type_ids["Supplier"],
+            approved_source_for_relationship_type_id=relationship_type_ids["approvedSourceFor"],
+            source_system_id=supplier_source_id,
+            qualification="true",
+            capacity="true",
+            lead_time_days="21",
+            cost_usd="185000",
+        )
+        relationships_created += created
+        assertions_created += asserted
+
+        # Candidate C: relevant (real `approvedSourceFor` edge to the same
+        # Material) but capacity is genuinely never asserted -- proves
+        # relevance survives missing eligibility evidence; Gate F must
+        # evaluate this candidate as UNKNOWN on capacity, never False,
+        # never absent from the response.
+        candidate_c_id, created, asserted = self._seed_candidate(
+            tenant_id,
+            scenario_label="recommended",
+            suffix="candidate-c",
+            name="Demo Candidate Supplier C (recommended)",
+            material_entity_id=recommended.material_entity_id,
+            supplier_type_id=entity_type_ids["Supplier"],
+            approved_source_for_relationship_type_id=relationship_type_ids["approvedSourceFor"],
+            source_system_id=supplier_source_id,
+            qualification="true",
+            capacity=None,
+            lead_time_days="35",
+            cost_usd="170000",
+        )
+        relationships_created += created
+        assertions_created += asserted
+
+        # Candidate E: relevant (real `approvedSourceFor` edge) but an
+        # EXISTING governed condition is explicitly, persistently FALSE
+        # (capacity=false, a real asserted fact -- never invented policy)
+        # -> Rejected: candidate capacity is insufficient
+        # (GateFOutcomeReason.REJECTED_INSUFFICIENT_CAPACITY, unchanged).
+        # Proves "relevant candidate != passing candidate."
+        candidate_e_id, created, asserted = self._seed_candidate(
+            tenant_id,
+            scenario_label="recommended",
+            suffix="candidate-e",
+            name="Demo Candidate Supplier E (recommended)",
+            material_entity_id=recommended.material_entity_id,
+            supplier_type_id=entity_type_ids["Supplier"],
+            approved_source_for_relationship_type_id=relationship_type_ids["approvedSourceFor"],
+            source_system_id=supplier_source_id,
+            qualification="true",
+            capacity="false",
+            lead_time_days="45",
+            cost_usd="200000",
+        )
+        relationships_created += created
+        assertions_created += asserted
+
+        # Unrelated Supplier: a real Supplier with a real
+        # `approvedSourceFor` relationship, but to a different Material
+        # entirely -- must never appear in `recommended`'s candidate set
+        # (material-aware relevance: an ordinary Supplier approved only
+        # for an unrelated Material is not discovered for this one).
+        unrelated_material = self._entity(
+            tenant_id,
+            "gate-f-demo:recommended:unrelated-material",
+            "Demo Unrelated Material (recommended)",
+            entity_type_ids["Material"],
+        )
+        _unrelated_supplier_id, created, asserted = self._seed_candidate(
+            tenant_id,
+            scenario_label="recommended",
+            suffix="unrelated-supplier",
+            name="Demo Unrelated Supplier (recommended)",
+            material_entity_id=unrelated_material.entity_id,
+            supplier_type_id=entity_type_ids["Supplier"],
+            approved_source_for_relationship_type_id=relationship_type_ids["approvedSourceFor"],
+            source_system_id=supplier_source_id,
+            qualification="true",
+            capacity="true",
+            lead_time_days="14",
+            cost_usd="150000",
+        )
+        relationships_created += created
+        assertions_created += asserted
+
+        recommended = DemoGateFScenarioSummary(
+            supplier_entity_id=recommended.supplier_entity_id,
+            material_entity_id=recommended.material_entity_id,
+            risk_event_entity_id=recommended.risk_event_entity_id,
+            candidate_supplier_entity_ids=(candidate_b_id, candidate_c_id, candidate_e_id),
+        )
+
         unknown, created, asserted = self._seed_scenario(
             tenant_id,
             label="unknown",
@@ -233,6 +356,28 @@ class DemoGateFSeeder:
         )
         relationships_created += created
         assertions_created += asserted
+        unknown_candidate_id, created, asserted = self._seed_candidate(
+            tenant_id,
+            scenario_label="unknown",
+            suffix="candidate",
+            name="Demo Candidate Supplier (unknown)",
+            material_entity_id=unknown.material_entity_id,
+            supplier_type_id=entity_type_ids["Supplier"],
+            approved_source_for_relationship_type_id=relationship_type_ids["approvedSourceFor"],
+            source_system_id=supplier_source_id,
+            qualification="true",
+            capacity="true",
+            lead_time_days="21",
+            cost_usd="185000",
+        )
+        relationships_created += created
+        assertions_created += asserted
+        unknown = DemoGateFScenarioSummary(
+            supplier_entity_id=unknown.supplier_entity_id,
+            material_entity_id=unknown.material_entity_id,
+            risk_event_entity_id=unknown.risk_event_entity_id,
+            candidate_supplier_entity_ids=(unknown_candidate_id,),
+        )
 
         rejected, created, asserted = self._seed_scenario(
             tenant_id,
@@ -246,6 +391,28 @@ class DemoGateFSeeder:
         )
         relationships_created += created
         assertions_created += asserted
+        rejected_candidate_id, created, asserted = self._seed_candidate(
+            tenant_id,
+            scenario_label="rejected",
+            suffix="candidate",
+            name="Demo Candidate Supplier (rejected)",
+            material_entity_id=rejected.material_entity_id,
+            supplier_type_id=entity_type_ids["Supplier"],
+            approved_source_for_relationship_type_id=relationship_type_ids["approvedSourceFor"],
+            source_system_id=supplier_source_id,
+            qualification="true",
+            capacity="true",
+            lead_time_days="21",
+            cost_usd="185000",
+        )
+        relationships_created += created
+        assertions_created += asserted
+        rejected = DemoGateFScenarioSummary(
+            supplier_entity_id=rejected.supplier_entity_id,
+            material_entity_id=rejected.material_entity_id,
+            risk_event_entity_id=rejected.risk_event_entity_id,
+            candidate_supplier_entity_ids=(rejected_candidate_id,),
+        )
 
         return DemoGateFSeedSummary(
             tenant_id=tenant_id,
@@ -253,7 +420,6 @@ class DemoGateFSeeder:
             recommended=recommended,
             unknown=unknown,
             rejected=rejected,
-            alternate_supplier_entity_id=alternate_supplier.entity_id,
             relationships_created=relationships_created,
             assertions_created=assertions_created,
         )
@@ -305,6 +471,10 @@ class DemoGateFSeeder:
         )
 
         relationships_created = 0
+        # `supplies` here is the material's ONE, SOLE, currently-active
+        # source -- the only `supplies` edge this seeder ever creates
+        # into this material (CDD-088 §1/§18). Every candidate below uses
+        # `approvedSourceFor` instead, never `supplies`.
         for suffix, relationship_type_name, from_id, to_id in (
             ("locatedIn", "locatedIn", supplier.entity_id, region.entity_id),
             ("exposedTo", "exposedTo", region.entity_id, risk_event.entity_id),
@@ -348,12 +518,79 @@ class DemoGateFSeeder:
             source_system_id=revenue_source_id,
         )
 
+        # `candidate_supplier_entity_ids` is filled in by the caller once
+        # this scenario's candidate(s) are seeded (they need
+        # `material.entity_id`, produced here) -- left empty in this
+        # intermediate summary.
         summary = DemoGateFScenarioSummary(
             supplier_entity_id=supplier.entity_id,
             material_entity_id=material.entity_id,
             risk_event_entity_id=risk_event.entity_id,
+            candidate_supplier_entity_ids=(),
         )
         return summary, relationships_created, assertions_created
+
+    def _seed_candidate(
+        self,
+        tenant_id: str,
+        *,
+        scenario_label: str,
+        suffix: str,
+        name: str,
+        material_entity_id: UUID,
+        supplier_type_id: UUID,
+        approved_source_for_relationship_type_id: UUID,
+        source_system_id: UUID,
+        qualification: str | None,
+        capacity: str | None,
+        lead_time_days: str | None,
+        cost_usd: str | None,
+    ) -> tuple[UUID, int, int]:
+        """Seeds one ordinary Supplier entity with a real
+        `approvedSourceFor` relationship into `material_entity_id` -- the
+        sole discovery/relevance signal (CDD-088 §4/§6). Deliberately
+        NEVER `supplies` -- that relationship means active, current
+        sourcing and is the exact signal
+        krm.py::derive_single_source_exposure counts; giving a candidate a
+        `supplies` edge would falsify single-source exposure the moment
+        any candidate exists. No entity type other than `Supplier` is
+        used; relevance is entirely a consequence of the
+        `approvedSourceFor` edge, never of typing. A `None` or explicit
+        `"false"` evidence value is asserted exactly as given -- never
+        silently changed -- so a candidate can be relevant while a
+        specific eligibility fact remains truthfully Unknown (`None`) or
+        truthfully failing (`"false"`)."""
+        label = f"gate-f-demo:{scenario_label}:{suffix}"
+        candidate = self._entity(tenant_id, label, name, supplier_type_id)
+        relationships_created = 0
+        if self._relate(
+            tenant_id,
+            f"{label}:approved-source-for",
+            f"Demo: approvedSourceFor ({scenario_label}:{suffix})",
+            approved_source_for_relationship_type_id,
+            candidate.entity_id,
+            material_entity_id,
+        ):
+            relationships_created += 1
+
+        assertions_created = 0
+        for predicate, value in (
+            ("qualification", qualification),
+            ("capacity", capacity),
+            ("leadTimeDays", lead_time_days),
+            ("costUsd", cost_usd),
+        ):
+            if value is None:
+                continue
+            assertions_created += self._assert_literal(
+                tenant_id,
+                f"{label}:{predicate}",
+                subject_entity_id=candidate.entity_id,
+                predicate=predicate,
+                object_value=value,
+                source_system_id=source_system_id,
+            )
+        return candidate.entity_id, relationships_created, assertions_created
 
     def _entity_type_ids(self, names: tuple[str, ...]) -> dict[str, UUID]:
         rows = self._session.execute(
