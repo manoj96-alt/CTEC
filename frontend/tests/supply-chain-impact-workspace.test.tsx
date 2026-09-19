@@ -334,6 +334,99 @@ test("network failure that is not a SupplyChainImpactApiError shows the same una
   );
 });
 
+test("WOW-I4-B1-R1: the compact scenario selector shows only the active scenario's description, not all three at once", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+
+  // Before any selection, no description is shown (compact idle state).
+  expect(
+    screen.queryByText(/Single-sourced, high-severity disruption/),
+  ).not.toBeInTheDocument();
+
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(
+      screen.getByText(/Single-sourced, high-severity disruption/),
+    ).toBeInTheDocument(),
+  );
+  // Only the selected scenario's own description renders, not the other two.
+  expect(
+    screen.queryByText(/Required disruption-severity evidence/),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/does not exceed the governed \$10,000,000/),
+  ).not.toBeInTheDocument();
+});
+
+test("WOW-I4-B1-R2: Impact Intelligence renders the FULL real hop sequence (Supplier, Material, Product, Facility, Revenue Exposure) in one composition, with no fabricated item-to-item edge", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByLabelText("Ontology impact")).toBeInTheDocument(),
+  );
+  const chain = screen.getByLabelText("Ontology impact");
+  // Supplier and Revenue Exposure are now inside the same composition
+  // as Material/Product/Facility -- the operator's core R2 requirement
+  // (previously they were outside the visual chain).
+  expect(chain).toHaveTextContent("Supplier");
+  expect(chain).toHaveTextContent("Demo Supplier");
+  expect(chain).toHaveTextContent("Material");
+  expect(chain).toHaveTextContent("Demo Material");
+  expect(chain).toHaveTextContent("Product");
+  expect(chain).toHaveTextContent("Demo Product");
+  expect(chain).toHaveTextContent("Facility");
+  expect(chain).toHaveTextContent("Demo Facility");
+  expect(chain).toHaveTextContent("Revenue exposure");
+  expect(chain).toHaveTextContent("Demo Revenue Exposure");
+  // The real revenue figure (12000000 from the mocked evidence value,
+  // rendered as USD currency) completes the chain rather than floating
+  // as a detached metric beneath it.
+  expect(chain).toHaveTextContent("$12,000,000");
+  // The hop-grouping caption states the real limitation explicitly --
+  // grouping by relationship hop, never a claimed traced edge.
+  expect(
+    screen.getByText(/Impact grouped by governed ontology relationship hop/),
+  ).toBeInTheDocument();
+});
+
+test("WOW-I4-B1-R2: the Supplier hop shows the real severity and sourcing state; the Revenue Exposure hop shows the real materiality state -- no fabricated field", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByLabelText("Ontology impact")).toBeInTheDocument(),
+  );
+  const chain = screen.getByLabelText("Ontology impact");
+  expect(chain).toHaveTextContent("High severity");
+  expect(chain).toHaveTextContent("Single-sourced");
+  expect(chain).toHaveTextContent("Exceeds materiality threshold");
+});
+
+test("WOW-I4-B1-R1: no ranking, score, or winner is introduced for alternatives -- only the four real fields render", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByText("What alternatives exist?")).toBeInTheDocument(),
+  );
+  const alternatives = screen
+    .getByText("What alternatives exist?")
+    .closest("section")!;
+  expect(alternatives).toHaveTextContent("Qualification");
+  expect(alternatives).toHaveTextContent("Capacity");
+  expect(alternatives).toHaveTextContent("Lead time");
+  expect(alternatives).toHaveTextContent("Cost context");
+  expect(alternatives.textContent).not.toMatch(/score/i);
+  expect(alternatives.textContent).not.toMatch(/rank/i);
+  expect(alternatives.textContent).not.toMatch(/best/i);
+  expect(alternatives.textContent).not.toMatch(/winner/i);
+});
+
 test("no business conclusion is computed client-side: only backend-returned outcome/reason/narrative/confidence are ever rendered", async () => {
   evaluateMock.mockResolvedValue(recommendedResponse);
   render(<SupplyChainImpactPage />);
@@ -351,4 +444,92 @@ test("no business conclusion is computed client-side: only backend-returned outc
   expect(
     screen.getByText(recommendedResponse.materials[0].candidates[0].narrative!),
   ).toBeInTheDocument();
+});
+
+test("WOW-I4-B1-R3: the risk banner shows only real severity/supplier/exposure/sourcing facts, and 'Human decision required' only when governance actually requires it", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Risk signal")).toBeInTheDocument(),
+  );
+  const banner = screen.getByLabelText("Risk signal");
+  expect(banner).toHaveTextContent("High severity");
+  expect(banner).toHaveTextContent("Demo Supplier");
+  expect(banner).toHaveTextContent("$12,000,000 exposure");
+  expect(banner).toHaveTextContent("Single-sourced");
+  expect(banner).toHaveTextContent("Human decision required");
+});
+
+test("WOW-I4-B1-R3: the risk banner never claims severity or a human-decision requirement it does not have (UNKNOWN scenario)", async () => {
+  evaluateMock.mockResolvedValue(unknownResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/Missing governed evidence/);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Risk signal")).toBeInTheDocument(),
+  );
+  const banner = screen.getByLabelText("Risk signal");
+  expect(banner).toHaveTextContent("Severity unknown");
+  expect(banner).not.toHaveTextContent("Human decision required");
+});
+
+test("WOW-I4-B1-R3: the Governed Decision block explains the real Gate F conditions truthfully across all three scenarios, with no fabricated condition and no forbidden business-conclusion language", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Governed conditions")).toBeInTheDocument(),
+  );
+  const recommendedConditions = screen.getByLabelText("Governed conditions");
+  expect(recommendedConditions).toHaveTextContent("High-severity disruption");
+  expect(recommendedConditions).toHaveTextContent("Single-source exposure");
+  expect(recommendedConditions).toHaveTextContent(
+    "Revenue exceeds materiality threshold",
+  );
+  expect(recommendedConditions).toHaveTextContent("Qualified alternate");
+  expect(recommendedConditions).toHaveTextContent(
+    "Sufficient alternate capacity",
+  );
+  expect(
+    screen.getAllByText("Satisfied", { exact: true }).length,
+  ).toBeGreaterThan(0);
+
+  evaluateMock.mockResolvedValue(unknownResponse);
+  clickScenario(/Missing governed evidence/);
+  await waitFor(() =>
+    expect(
+      screen.getByText("Insufficient governed evidence"),
+    ).toBeInTheDocument(),
+  );
+  const unknownConditions = screen.getByLabelText("Governed conditions");
+  // Severity is genuinely unasserted (Unknown), never a fabricated false.
+  expect(unknownConditions.textContent).not.toMatch(/No\b/);
+  expect(unknownConditions.textContent).not.toMatch(/Rejected/);
+  expect(unknownConditions.textContent).not.toMatch(/Safe/);
+  expect(
+    screen.getAllByText("Unknown", { exact: true }).length,
+  ).toBeGreaterThan(0);
+
+  evaluateMock.mockResolvedValue(rejectedResponse);
+  clickScenario(/Below the materiality threshold/);
+  await waitFor(() => expect(screen.getByText("Rejected")).toBeInTheDocument());
+  const rejectedConditions = screen.getByLabelText("Governed conditions");
+  expect(rejectedConditions).toHaveTextContent("Not satisfied");
+});
+
+test("WOW-I4-B1-R3: alternatives use only neutral, truthful framing -- never a discovery or optimality claim the current implementation cannot prove", async () => {
+  evaluateMock.mockResolvedValue(recommendedResponse);
+  render(<SupplyChainImpactPage />);
+  clickScenario(/High-risk supplier/);
+
+  await waitFor(() =>
+    expect(screen.getByText("What alternatives exist?")).toBeInTheDocument(),
+  );
+  const alternatives = screen
+    .getByText("What alternatives exist?")
+    .closest("section")!;
+  expect(alternatives).toHaveTextContent("Alternative under evaluation");
+  expect(alternatives.textContent).not.toMatch(/discovered/i);
+  expect(alternatives.textContent).not.toMatch(/optimal/i);
+  expect(alternatives.textContent).not.toMatch(/top candidate/i);
 });

@@ -53,6 +53,9 @@ type WorkspaceState =
 
 export default function SupplyChainImpactPage() {
   const [state, setState] = useState<WorkspaceState>({ status: "idle" });
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const activeScenario =
+    DEMO_SCENARIOS.find((scenario) => scenario.key === selectedKey) ?? null;
 
   async function runScenario(supplierEntityId: string) {
     setState({ status: "loading" });
@@ -84,7 +87,7 @@ export default function SupplyChainImpactPage() {
     <div>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">Supply chain impact</span>
+          <span className="eyebrow">Supply chain intelligence</span>
           <h1>Governed supplier risk</h1>
           <p>
             A deterministic, governed walkthrough of the Gate F supply-chain
@@ -95,28 +98,40 @@ export default function SupplyChainImpactPage() {
         </div>
       </div>
 
-      <section className="panel" aria-label="Scenario selection">
-        <div className="eyebrow">Choose a governed scenario</div>
-        <div className="action-row" style={{ flexWrap: "wrap" }}>
+      <section
+        className="panel obs-sci-context"
+        aria-label="Scenario selection"
+      >
+        <div className="eyebrow">Decision context</div>
+        <div
+          className="obs-sci-scenario-segmented"
+          role="group"
+          aria-label="Choose a governed scenario"
+        >
           {DEMO_SCENARIOS.map((scenario) => (
             <button
               key={scenario.key}
-              className="button"
               type="button"
+              className={
+                selectedKey === scenario.key
+                  ? "obs-sci-scenario-chip obs-sci-scenario-chip--active"
+                  : "obs-sci-scenario-chip"
+              }
               disabled={state.status === "loading"}
-              onClick={() => void runScenario(scenario.supplierEntityId)}
+              onClick={() => {
+                setSelectedKey(scenario.key);
+                void runScenario(scenario.supplierEntityId);
+              }}
             >
               {scenario.label}
             </button>
           ))}
         </div>
-        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-          {DEMO_SCENARIOS.map((scenario) => (
-            <span key={scenario.key} style={{ display: "block" }}>
-              <strong>{scenario.label}:</strong> {scenario.description}
-            </span>
-          ))}
-        </p>
+        {activeScenario && (
+          <p className="obs-sci-scenario-description">
+            {activeScenario.description}
+          </p>
+        )}
       </section>
 
       {state.status === "loading" && (
@@ -169,23 +184,43 @@ export default function SupplyChainImpactPage() {
             supplierName={result.impact.supplier_name}
             material={material}
             evidence={candidate?.evidence ?? []}
-          />
-          <BusinessImpactPanel
-            impact={result.impact}
-            singleSourceExposure={material?.single_source_exposure ?? null}
-            revenueMateriality={material?.revenue_materiality ?? null}
-            evidence={candidate?.evidence ?? []}
-          />
-          <EvidencePanel evidence={candidate?.evidence ?? []} />
-          <AlternativesPanel candidates={material?.candidates ?? []} />
-          <RecommendationPanel
-            candidate={candidate}
-            policyReference={result.policy_reference}
-            policyVersion={result.policy_version}
-          />
-          <HumanAuthorityBanner
             governanceStanding={result.governance_standing}
           />
+
+          <section
+            className="obs-sci-impact-surface"
+            aria-label="Impact intelligence"
+          >
+            <div className="obs-eu-eyebrow">Impact intelligence</div>
+            <h2>What is happening, and why it matters</h2>
+            <BusinessImpactPanel
+              impact={result.impact}
+              singleSourceExposure={material?.single_source_exposure ?? null}
+              revenueMateriality={material?.revenue_materiality ?? null}
+              evidence={candidate?.evidence ?? []}
+              highSeverityDisruption={
+                material?.high_severity_disruption ?? null
+              }
+            />
+          </section>
+
+          <p className="obs-sci-zone-label">Decision evidence</p>
+          <div className="obs-sci-pair">
+            <EvidencePanel evidence={candidate?.evidence ?? []} />
+            <AlternativesPanel candidates={material?.candidates ?? []} />
+          </div>
+
+          <div className="obs-intelligence-surface obs-sci-decision">
+            <RecommendationPanel
+              candidate={candidate}
+              policyReference={result.policy_reference}
+              policyVersion={result.policy_version}
+              material={material}
+            />
+            <HumanAuthorityBanner
+              governanceStanding={result.governance_standing}
+            />
+          </div>
         </>
       )}
     </div>
