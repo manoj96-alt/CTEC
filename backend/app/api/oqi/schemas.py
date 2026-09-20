@@ -333,3 +333,34 @@ class PrepareRemediationResponse(BaseModel):
     instructions: tuple[RemediationInstructionResponseView, ...]
     authorizations: tuple[RemediationAuthorizationResponseView, ...]
     agent_reasoning_status: str
+
+
+class UniquenessCandidateMemberView(BaseModel):
+    """CDD-084 §30: one pair member -- both members always populated
+    equally (never a "primary" subject at this endpoint)."""
+
+    entity_id: UUID
+    entity_name: str
+    impact_outcome: str
+
+
+class UniquenessCandidateDetailResponse(BaseModel):
+    """CDD-084 §30: read-only. No merge/deactivate/confirm/reject field of
+    any kind is writable through this response shape -- `finding_status`
+    and `latest_adjudication_*` report exactly what is persisted, never a
+    proven-duplicate claim (`DUPLICATE CANDIDATE ≠ DUPLICATE FACT`)."""
+
+    finding_id: UUID
+    candidate_id: UUID
+    finding_status: str
+    finding_state_revision: int
+    member_a: UniquenessCandidateMemberView
+    member_b: UniquenessCandidateMemberView
+    matched_normalized_name: str
+    policy_id: UUID
+    policy_version: int
+    candidate_created_on: datetime
+    latest_adjudication_action: str | None
+    latest_adjudication_actor_id: str | None
+    latest_adjudication_rationale: str | None
+    latest_adjudication_decided_on: datetime | None

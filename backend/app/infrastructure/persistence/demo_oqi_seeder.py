@@ -78,6 +78,7 @@ from app.application.oqi_ontology_impact_evaluation_service import (
 )
 from app.application.oqi_reference_evidence_service import OqiReferenceEvidenceService
 from app.application.oqi_timeliness_evaluation_service import OqiTimelinessEvaluationService
+from app.application.oqi_uniqueness_evaluation_service import OqiUniquenessEvaluationService
 from app.core.bootstrap import (
     AZURE_DEV_DEMO_TENANT_ID,
     BOOTSTRAP_BUSINESS_DOMAIN_ID,
@@ -138,6 +139,7 @@ from app.domain.oqi_integrity.requirement import (
 )
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
 from app.domain.oqi_timeliness.policy import new_timeliness_policy
+from app.domain.oqi_uniqueness.policy import new_uniqueness_policy
 from app.domain.semantic_mapping.model import SemanticMapping
 from app.domain.shared.enums import GovernanceStatus, LifecycleState
 from app.domain.shared.value_objects import CanonicalName, Description, Identifier
@@ -199,6 +201,15 @@ from app.infrastructure.persistence.oqi_timeliness_evaluation_repository import 
 )
 from app.infrastructure.persistence.oqi_timeliness_policy_repository import (
     OqiTimelinessPolicyRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_candidate_repository import (
+    OqiUniquenessCandidateRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_evaluation_repository import (
+    OqiUniquenessEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_policy_repository import (
+    OqiUniquenessPolicyRepositoryImpl,
 )
 from app.infrastructure.persistence.semantic_mapping_repository import SemanticMappingRepositoryImpl
 from app.infrastructure.persistence.source_field_repository import SourceFieldRepositoryImpl
@@ -316,6 +327,21 @@ _H5_SAP_POLICY_ID = _uid("h5-sap-shipment-eta-policy")
 _H5_CARRIER_POLICY_ID = _uid("h5-carrier-shipment-eta-policy")
 _H5_FRESHNESS_WINDOW_SECONDS = 1800  # 30 minutes, governed per policy (CDD-051 §8)
 
+# CDD-084 §12 (main), AA row 13: two entities sharing an identical
+# canonical_name() (raw names deliberately distinct -- EnterpriseEntity's
+# own UNIQUE(tenant_id, enterprise_entity_name) constraint, CDD-084 §16's
+# own discovery, forbids two identical raw names) become a candidate +
+# open Finding; a third, genuinely distinct name completes a bounded
+# search with zero candidates (SATISFIED).
+_H6_PRODUCT_A_ID = _uid("h6-demo-product-a")
+_H6_PRODUCT_B_ID = _uid("h6-demo-product-b")
+_H6_PRODUCT_C_ID = _uid("h6-demo-product-c")
+_H6_PRODUCT_A_NAME = "H6 Demo Duplicate Widget"
+_H6_PRODUCT_B_NAME = "H6 DEMO DUPLICATE WIDGET"
+_H6_PRODUCT_C_NAME = "H6 Demo Distinct Gadget"
+_H6_POLICY_ID = _uid("h6-demo-product-uniqueness-policy")
+_H6_BUCKET_MAX_SIZE = 10
+
 
 class DemoTenantRequiredError(Exception):
     """Raised when the seeder is asked to seed any tenant other than the
@@ -342,6 +368,9 @@ class DemoOqiSeedSummary:
     h5_sap_stale_outcome: str | None
     h5_carrier_fresh_outcome: str | None
     h5_unmonitored_evaluated: bool
+    h6_product_a_outcome: str | None
+    h6_product_b_outcome: str | None
+    h6_product_c_outcome: str | None
 
 
 class DemoOqiSeeder:
@@ -608,6 +637,7 @@ class DemoOqiSeeder:
         self._seed_h3_context(tenant_id)
         self._seed_h4_context(tenant_id)
         self._seed_h5_context(tenant_id)
+        self._seed_h6_context(tenant_id)
         return dependency.dependency_id
 
     def _seed_h2_context(self, tenant_id: str) -> None:
@@ -1454,6 +1484,69 @@ class DemoOqiSeeder:
             )
         self.session.flush()
 
+    def _seed_h6_context(self, tenant_id: str) -> None:
+        """CDD-084 §12 (main document), AA row 13: reuses the already-
+        governed `Product` EntityType (OntologySeeder, unmodified). Product
+        A/B share an identical `canonical_name()` (distinct raw names,
+        CDD-084 §16); Product C is genuinely distinct. One ACTIVE
+        `UniquenessPolicy` anchored to `Product`'s own `entity_type_id`. No
+        Uniqueness candidate/evaluation/Finding row is directly inserted
+        here -- those arise only through `_evaluate_h6`'s call to the real
+        `OqiUniquenessEvaluationService` (CDD-084 §34/AA row 13, mirroring
+        CDD-051 §27's identical precedent)."""
+        product_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _H4_PRODUCT_ENTITY_TYPE_NAME
+            )
+        )
+        assert product_type_id is not None, (
+            f"Required governed entity type not found: {_H4_PRODUCT_ENTITY_TYPE_NAME!r} -- "
+            "OntologySeeder must run before DemoOqiSeeder"
+        )
+
+        def _entity(entity_id: UUID, name: str) -> None:
+            existing = self.session.get(EnterpriseEntity, entity_id)
+            if existing is not None:
+                return
+            self.session.add(
+                EnterpriseEntity(
+                    enterprise_entity_id=entity_id,
+                    tenant_id=tenant_id,
+                    enterprise_entity_name=name,
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    entity_type_id=product_type_id,
+                    business_domain_id=BOOTSTRAP_BUSINESS_DOMAIN_ID,
+                )
+            )
+
+        _entity(_H6_PRODUCT_A_ID, _H6_PRODUCT_A_NAME)
+        _entity(_H6_PRODUCT_B_ID, _H6_PRODUCT_B_NAME)
+        _entity(_H6_PRODUCT_C_ID, _H6_PRODUCT_C_NAME)
+        self.session.flush()
+
+        policy_repo = OqiUniquenessPolicyRepositoryImpl(self.session)
+        if (
+            policy_repo.get_active_policy_for_entity_type(
+                tenant_id=tenant_id, entity_type_id=product_type_id
+            )
+            is None
+        ):
+            policy_repo.insert_policy(
+                new_uniqueness_policy(
+                    policy_id=_H6_POLICY_ID,
+                    tenant_id=tenant_id,
+                    entity_type_id=product_type_id,
+                    bucket_max_size=_H6_BUCKET_MAX_SIZE,
+                    created_by="demo-seeder",
+                    created_on=SEED_TIMESTAMP,
+                )
+            )
+        self.session.flush()
+
     # ------------------------------------------------------------------
     # Real, unmodified production evaluators -- never a directly-persisted
     # conclusion. Re-run every invocation; each is independently
@@ -1508,6 +1601,7 @@ class DemoOqiSeeder:
         h5_sap_stale, h5_carrier_fresh, h5_unmonitored_evaluated = self._evaluate_h5(
             tenant_id, clock
         )
+        h6_product_a, h6_product_b, h6_product_c = self._evaluate_h6(tenant_id, clock)
 
         return DemoOqiSeedSummary(
             tenant_id=tenant_id,
@@ -1528,6 +1622,9 @@ class DemoOqiSeeder:
             h5_sap_stale_outcome=h5_sap_stale,
             h5_carrier_fresh_outcome=h5_carrier_fresh,
             h5_unmonitored_evaluated=h5_unmonitored_evaluated,
+            h6_product_a_outcome=h6_product_a,
+            h6_product_b_outcome=h6_product_b,
+            h6_product_c_outcome=h6_product_c,
         )
 
     def _evaluate_h2(
@@ -1790,6 +1887,53 @@ class DemoOqiSeeder:
             None if not sap_results else sap_results[0].outcome.value,
             None if not carrier_results else carrier_results[0].outcome.value,
             len(unmonitored_results) > 0,
+        )
+
+    def _evaluate_h6(
+        self, tenant_id: str, clock: Callable[[], datetime]
+    ) -> tuple[str | None, str | None, str | None]:
+        """CDD-084 §34, AA row 13: calls the real, unmodified-by-reuse
+        OQI-H6 `OqiUniquenessEvaluationService.evaluate_entity_type` once
+        for the governed `Product` entity_type -- so Product A/B's real
+        `VIOLATED` (candidate + open Finding) and Product C's real
+        `SATISFIED` (bounded search, zero candidates) are genuine evaluator
+        output over real seeded `EnterpriseEntity` rows, never a directly-
+        persisted conclusion."""
+        product_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _H4_PRODUCT_ENTITY_TYPE_NAME
+            )
+        )
+        assert product_type_id is not None
+
+        service = OqiUniquenessEvaluationService(
+            policy_lookup=OqiUniquenessPolicyRepositoryImpl(self.session),
+            candidate_repository=OqiUniquenessCandidateRepositoryImpl(self.session),
+            evaluation_repository=OqiUniquenessEvaluationRepositoryImpl(self.session),
+            clock=clock,
+        )
+        results = service.evaluate_entity_type(
+            tenant_id=tenant_id, entity_type_id=product_type_id, moment=SEED_TIMESTAMP
+        )
+        self.session.flush()
+
+        by_entity = {r.enterprise_entity_id: r for r in results}
+        return (
+            (
+                None
+                if _H6_PRODUCT_A_ID not in by_entity
+                else by_entity[_H6_PRODUCT_A_ID].outcome.value
+            ),
+            (
+                None
+                if _H6_PRODUCT_B_ID not in by_entity
+                else by_entity[_H6_PRODUCT_B_ID].outcome.value
+            ),
+            (
+                None
+                if _H6_PRODUCT_C_ID not in by_entity
+                else by_entity[_H6_PRODUCT_C_ID].outcome.value
+            ),
         )
 
 

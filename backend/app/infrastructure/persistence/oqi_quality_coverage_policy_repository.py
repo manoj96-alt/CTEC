@@ -57,6 +57,9 @@ from app.infrastructure.persistence.oqi_quality_evaluation_repository import (
 from app.infrastructure.persistence.oqi_timeliness_evaluation_repository import (
     OqiTimelinessEvaluationRepositoryImpl,
 )
+from app.infrastructure.persistence.oqi_uniqueness_evaluation_repository import (
+    OqiUniquenessEvaluationRepositoryImpl,
+)
 
 #: CDD-047 §11, Artifact Authorization §4: distinct from every existing
 #: OQI advisory-lock seed (1=OQI1, 2=OQI2, 3=OQI3, 4=OQI6) -- the exactly
@@ -313,9 +316,24 @@ class OqiQualityCoveragePolicyRepositoryImpl:
             return OqiTimelinessEvaluationRepositoryImpl(self.session).has_qualifying_coverage(
                 tenant_id=tenant_id, source_object_ids=source_object_ids
             )
-        # UNIQUENESS: no evaluator exists (CDD-047 §14, unchanged). Never
-        # query, never infer, never synthesize -- unconditionally
-        # uncovered.
+        # CDD-084 §28: UNIQUENESS is subject-scoped, existence-only -- at
+        # least one persisted Uniqueness evaluation row (SATISFIED,
+        # VIOLATED, or a persisted NOT_EVALUABLE/BUCKET_EXCEEDED_CAP row --
+        # never the zero-row no-policy case) exists for one of the
+        # anchor's own resolved EnterpriseEntity ids. Mirrors INTEGRITY
+        # Structural's own resolution mechanism exactly: the anchor's
+        # `source_object_ids` are resolved to `enterprise_entity_id`s
+        # through the same already-governed ER mechanism, never a new
+        # resolution, never an inferred target. A candidate row alone, an
+        # open Finding alone, or an adjudication alone never qualifies --
+        # only the evaluation ledger does (CDD-084 §7, §28).
+        if dimension is CoverageDimension.UNIQUENESS:
+            entity_ids = self._resolve_entity_ids_for_source_objects(
+                tenant_id=tenant_id, source_object_ids=source_object_ids
+            )
+            return OqiUniquenessEvaluationRepositoryImpl(self.session).has_qualifying_coverage(
+                tenant_id=tenant_id, enterprise_entity_ids=entity_ids
+            )
         return False
 
     def _resolve_entity_ids_for_source_objects(

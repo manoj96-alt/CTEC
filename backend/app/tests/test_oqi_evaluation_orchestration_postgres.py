@@ -133,7 +133,7 @@ def test_evaluate_with_no_governed_configuration_returns_all_not_evaluable(
             business_process_id=uuid4(),
             business_process_version=1,
         )
-    assert len(result.dimensions) == 9
+    assert len(result.dimensions) == 10
     assert all(d.status == "NOT_EVALUABLE" for d in result.dimensions)
     assert result.ontology_impact.status == "NOT_ATTEMPTED"
     assert result.business_impact == ()
@@ -1373,5 +1373,5 @@ def test_evaluate_route_with_correct_scope_returns_202(migrated_engine: Engine) 
     )
     assert response.status_code == 202
     body = response.json()
-    assert len(body["dimensions"]) == 9
+    assert len(body["dimensions"]) == 10
     assert all(d["status"] == "NOT_EVALUABLE" for d in body["dimensions"])

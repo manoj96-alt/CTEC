@@ -62,6 +62,17 @@ vi.mock("@/lib/oqi/api-client", () => ({
   },
 }));
 
+// CDD-084 §30 AA row 9: the pair-detail fetch deliberately bypasses
+// `@/lib/oqi/api-client` (not an authorized path for this phase) and calls
+// `fetch` directly, reusing `accessToken`/`browserAuthConfig` -- mocked
+// here the same way, never a new auth pathway.
+vi.mock("@/lib/auth/browser-session", () => ({
+  accessToken: vi.fn().mockResolvedValue("test-token"),
+}));
+vi.mock("@/lib/auth/config", () => ({
+  browserAuthConfig: () => ({ apiOrigin: "https://api.test.invalid" }),
+}));
+
 import FindingDetailPage from "@/app/quality/findings/[findingId]/page";
 
 const BASE_FINDING = {
@@ -1075,5 +1086,132 @@ describe("OQI Finding Detail — WOW-I3-A-R5 investigation tab visual state", ()
     });
     expect(nav.querySelector("ol")).toBeNull();
     expect(nav.querySelector(".stepper-list")).toBeNull();
+  });
+});
+
+// CDD-084 §7/§28/§30, AA row 9: the Uniqueness pair-detail panel -- both
+// entities visible under candidate language, never "duplicate" as
+// established fact, and never paired with a merge/deactivate control
+// (none exists anywhere in this product surface, CDD-084 §2 PO-2).
+describe("OQI Finding Detail — Uniqueness pair detail", () => {
+  const UNIQUENESS_CANDIDATE_DETAIL = {
+    finding_id: "22222222-2222-2222-2222-222222222222",
+    candidate_id: "cand-1",
+    finding_status: "OPEN",
+    finding_state_revision: 1,
+    member_a: {
+      entity_id: "aaaaaaaa-0000-0000-0000-000000000001",
+      entity_name: "Acme Widget Co",
+      impact_outcome: "IMPACTED",
+    },
+    member_b: {
+      entity_id: "bbbbbbbb-0000-0000-0000-000000000002",
+      entity_name: "ACME WIDGET CO",
+      impact_outcome: "IMPACTED",
+    },
+    matched_normalized_name: "acme widget co",
+    policy_id: "policy-1",
+    policy_version: 1,
+    candidate_created_on: "2026-01-01T00:00:00Z",
+    latest_adjudication_action: null,
+    latest_adjudication_actor_id: null,
+    latest_adjudication_rationale: null,
+    latest_adjudication_decided_on: null,
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => UNIQUENESS_CANDIDATE_DETAIL,
+      }),
+    );
+  });
+
+  it("renders both entities under candidate language, never 'duplicate' as established fact", async () => {
+    mockAll({
+      finding: {
+        finding_family: "UNIQUENESS",
+        condition_label: "DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE",
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(await screen.findByText("Acme Widget Co")).toBeInTheDocument();
+    expect(screen.getByText("ACME WIDGET CO")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Candidate — not established fact. Governed evidence placed these two entities together for steward review.",
+      ),
+    ).toBeInTheDocument();
+    // "candidate" framing only -- never a bare, unqualified "duplicate"
+    // assertion presented as fact.
+    expect(screen.queryByText(/^duplicate$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/these are duplicates/i)).not.toBeInTheDocument();
+  });
+
+  it("never renders a merge or deactivate control", async () => {
+    mockAll({
+      finding: {
+        finding_family: "UNIQUENESS",
+        condition_label: "DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE",
+      },
+    });
+    await renderTab("Evidence");
+    await screen.findByText("Acme Widget Co");
+
+    expect(
+      screen.queryByRole("button", { name: /merge/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /deactivate/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/merge/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/deactivate/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a governed-evidence-only adjudication label when a steward has confirmed the candidate, never as resolved proof", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...UNIQUENESS_CANDIDATE_DETAIL,
+          latest_adjudication_action: "CONFIRM_DUPLICATE",
+          latest_adjudication_actor_id: "steward-1",
+          latest_adjudication_rationale: "Same legal entity, different casing.",
+          latest_adjudication_decided_on: "2026-01-05T00:00:00Z",
+        }),
+      }),
+    );
+    mockAll({
+      finding: {
+        finding_family: "UNIQUENESS",
+        condition_label: "DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE",
+      },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      await screen.findByText(
+        "Steward confirmed as a possible duplicate — not yet resolved",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Same legal entity, different casing."),
+    ).toBeInTheDocument();
+  });
+
+  it("every other Finding family's Evidence tab is completely unaffected (still the standard Evidence panel)", async () => {
+    mockAll({
+      finding: { finding_family: "OQI2" },
+      evidence: { participants: [], candidate: null },
+    });
+    await renderTab("Evidence");
+
+    expect(
+      screen.queryByText("Possible Duplicate Enterprise Entities"),
+    ).not.toBeInTheDocument();
   });
 });

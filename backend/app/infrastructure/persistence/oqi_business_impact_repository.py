@@ -62,6 +62,7 @@ from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import
 )
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
 from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
+from app.infrastructure.persistence.models.oqi_uniqueness import UniquenessFindingORM
 from app.infrastructure.persistence.oqi_business_rule_evaluation_repository import (
     OqiBusinessRuleEvaluationRepositoryImpl,
 )
@@ -353,6 +354,35 @@ class OqiBusinessImpactRepositoryImpl:
                 CurrentOntologyImpactORM.status == CurrentImpactStatus.ACTIVE.value,
                 CurrentOntologyImpactORM.finding_family == FindingStorageFamily.TIMELINESS.value,
                 TimelinessFindingORM.status == "OPEN",
+            )
+        )
+        # CDD-084 §27: one new indirect-path branch -- a Uniqueness
+        # Finding's subject is a PAIR (CDD-084 §11), so both `member_a_id`
+        # and `member_b_id` each independently produce their own
+        # `CurrentOntologyImpactORM` row referencing the SAME `finding_id`
+        # (CDD-084 §26). Filtering this branch by ONE specific `ontology_
+        # element_id` (this method's own caller-supplied subject) naturally
+        # returns at most one row for that subject -- no double-counting,
+        # no pair-aware logic required here (CDD-084 §16 of the main
+        # document).
+        selects.append(
+            select(
+                literal(FindingStorageFamily.UNIQUENESS.value).label("family"),
+                UniquenessFindingORM.finding_id,
+                UniquenessFindingORM.state_revision,
+            )
+            .select_from(CurrentOntologyImpactORM)
+            .join(
+                UniquenessFindingORM,
+                UniquenessFindingORM.finding_id == CurrentOntologyImpactORM.finding_id,
+            )
+            .where(
+                CurrentOntologyImpactORM.tenant_id == tenant_id,
+                CurrentOntologyImpactORM.ontology_element_type == ontology_element_type.value,
+                CurrentOntologyImpactORM.ontology_element_id == ontology_element_id,
+                CurrentOntologyImpactORM.status == CurrentImpactStatus.ACTIVE.value,
+                CurrentOntologyImpactORM.finding_family == FindingStorageFamily.UNIQUENESS.value,
+                UniquenessFindingORM.status == "OPEN",
             )
         )
 
