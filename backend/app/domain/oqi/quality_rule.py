@@ -62,7 +62,13 @@ class QualityDimension(StrEnum):
     `QualityRule`-shaped backing: Timeliness Findings are governed
     freshness/ingestion-latency outcomes evaluated against a
     `TimelinessPolicy`, persisted in their own `FindingStorageFamily.
-    TIMELINESS` tables (CDD-051 §28), never a `QualityRule`/OQI1 Finding."""
+    TIMELINESS` tables (CDD-051 §28), never a `QualityRule`/OQI1 Finding.
+    CDD-084 §8 additively extends this a sixth time with `UNIQUENESS` --
+    like `INTEGRITY`/`TIMELINESS`, zero `QualityRule`-shaped backing:
+    Uniqueness Findings are governed duplicate-candidate outcomes evaluated
+    against a `UniquenessPolicy`, persisted in their own
+    `FindingStorageFamily.UNIQUENESS` tables (CDD-084 §29), never a
+    `QualityRule`/OQI1 Finding."""
 
     COMPLETENESS = "COMPLETENESS"
     VALIDITY = "VALIDITY"
@@ -71,6 +77,7 @@ class QualityDimension(StrEnum):
     CONFORMITY = "CONFORMITY"
     INTEGRITY = "INTEGRITY"
     TIMELINESS = "TIMELINESS"
+    UNIQUENESS = "UNIQUENESS"
 
 
 class QualityFindingType(StrEnum):

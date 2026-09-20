@@ -74,13 +74,17 @@ class FindingStorageFamily(StrEnum):
     WHERE a Finding is physically stored, never WHAT quality dimension it
     represents. CDD-051 §22 additively extends this a second time with
     `TIMELINESS`, mirroring `INTEGRITY`'s own precedent exactly -- a new
-    physical storage family, never a `FindingFamily` member."""
+    physical storage family, never a `FindingFamily` member. CDD-084 §9
+    additively extends this a third time with `UNIQUENESS`, mirroring the
+    identical precedent again -- a new physical storage family
+    (`oqi_uniqueness_findings`), never a `FindingFamily` member."""
 
     OQI1 = "OQI1"
     OQI2 = "OQI2"
     OQI3 = "OQI3"
     INTEGRITY = "INTEGRITY"
     TIMELINESS = "TIMELINESS"
+    UNIQUENESS = "UNIQUENESS"
 
 
 def storage_family_from_finding_family(finding_family: FindingFamily) -> FindingStorageFamily:

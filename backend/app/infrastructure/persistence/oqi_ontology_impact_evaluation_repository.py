@@ -61,6 +61,7 @@ from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import
 )
 from app.infrastructure.persistence.models.oqi_quality_finding import QualityFindingORM
 from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
+from app.infrastructure.persistence.models.oqi_uniqueness import UniquenessFindingORM
 from app.infrastructure.persistence.oqi_cross_source_correspondence_repository import (
     OqiCrossSourceCorrespondenceRepositoryImpl,
 )
@@ -361,6 +362,68 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
             )
         return self.resolve_direct_impact(
             tenant_id=tenant_id, source_object_ids=(model.source_object_id,)
+        )
+
+    # ------------------------------------------------------------------
+    # OQI-H6 Uniqueness origin/subject resolution (CDD-084 §9, §26) --
+    # additive, read-only, mirroring H4/H5's own additive precedent exactly
+    # (CDD-050 §20, CDD-051 §22). Never touching `resolve_finding_subject`/
+    # `resolve_finding_origin` above, which stay FindingFamily-typed and
+    # serve OQI1/2/3 only (FindingFamily itself stays permanently closed).
+    # These two methods are added ONLY to this concrete class, never to the
+    # `OqiOntologyImpactEvaluationRepository` Protocol above -- identical
+    # precedent to every existing `resolve_integrity_*`/`resolve_
+    # timeliness_*` method and to `get_current_impacts_for_subject`'s own
+    # documented rationale (this file, above): adding a dimension-specific
+    # method to the Protocol would force every fake/test double already
+    # structurally typed against it to implement a method it has no use
+    # for. A Uniqueness Finding's subject is a PAIR (CDD-084 §11, §26) --
+    # unlike every prior dimension's single-entity subject, both
+    # `EnterpriseEntity` members already carry a known, FK-guaranteed
+    # `enterprise_entity_id` (never a `source_object_id` requiring ER
+    # resolution, unlike Reference Integrity/Timeliness's own subject
+    # shape) -- so `resolve_uniqueness_finding_subject` returns BOTH
+    # members' independent `DirectImpactResult`s as a 2-tuple, mirroring
+    # Structural Integrity's own "already-known entity, unconditional
+    # IMPACTED" pattern exactly, for EACH member independently.
+    # ------------------------------------------------------------------
+
+    def resolve_uniqueness_finding_origin(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> QualityFindingOrigin:
+        model = self.session.get(UniquenessFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Uniqueness Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return QualityFindingOrigin(
+            tenant_id=tenant_id,
+            finding_storage_family=FindingStorageFamily.UNIQUENESS,
+            quality_dimension=QualityDimension.UNIQUENESS.value,
+            finding_id=finding_id,
+            finding_state_revision=model.state_revision,
+        )
+
+    def resolve_uniqueness_finding_subject(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> tuple[DirectImpactResult, DirectImpactResult]:
+        """CDD-084 §11, §26: both pair members independently resolved --
+        never an arbitrary primary subject. Both `member_a_id`/
+        `member_b_id` are structurally guaranteed to reference an existing,
+        same-tenant `EnterpriseEntity` (the tenant-qualified composite FKs
+        on `oqi_uniqueness_findings`, CDD-084 §13/AA §9) -- unlike
+        Reference Integrity/Timeliness, no ER lookup is ever performed and
+        `ImpactOutcome.IMPACT_UNKNOWN` is therefore structurally
+        unreachable through this method (CDD-084 §26/§34's own discovery,
+        disclosed in the OQI-H6-I1 final report)."""
+        model = self.session.get(UniquenessFindingORM, finding_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise FindingNotFoundError(
+                f"No Uniqueness Finding {finding_id} for tenant {tenant_id!r}"
+            )
+        return (
+            DirectImpactResult(ImpactOutcome.IMPACTED, None, model.member_a_id),
+            DirectImpactResult(ImpactOutcome.IMPACTED, None, model.member_b_id),
         )
 
     # ------------------------------------------------------------------

@@ -289,7 +289,7 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
         ).scalar_one()
     # CDD-048 (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I
     # final report; OQI-H3-I-R1 amendment): mechanically re-pinned from 109 to 114.
-    assert table_count == 126
+    assert table_count == 131
     alembic.command.downgrade(config, "0022_oqi3_business_rule")
     with migrated_engine.connect() as connection:
         table_count = connection.execute(
@@ -309,7 +309,7 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
             )
         ).scalar_one()
-    assert table_count == 126
+    assert table_count == 131
 
 
 # --- one-ACTIVE-policy-per-triple database constraint ---
@@ -1918,7 +1918,7 @@ def test_oqi4r1ti10_migration_upgrade_after_downgrade_restores_protected_schema(
                 ).scalar_one()
             )
 
-    assert _table_count() == 126  # OQI4-R1-TI-10
+    assert _table_count() == 131  # OQI4-R1-TI-10
     alembic.command.downgrade(config, "0043_oqi6_r3_current_tenancy")
     # Historical boundary at 0043 -- correctly pinned at the pre-CDD-059,
     # pre-0044/0045 count. CDD-059's own migration 0045 (which added the 3
@@ -1929,7 +1929,7 @@ def test_oqi4r1ti10_migration_upgrade_after_downgrade_restores_protected_schema(
     # changes" instruction, discovered during REAL-ENTERPRISE-INGESTION-I).
     assert _table_count() == 123
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 126
+    assert _table_count() == 131
     with migrated_engine.connect() as connection:
         new_fk = connection.execute(
             text(
