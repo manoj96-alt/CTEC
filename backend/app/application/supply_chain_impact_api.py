@@ -44,6 +44,7 @@ from app.domain.ontology_copilot.traversal import (
     GraphEdge,
     GraphEntity,
     TraversalPath,
+    discover_candidates_supplying,
     find_paths_to_target_type,
 )
 from app.domain.shared.exceptions import ValidationException
@@ -61,7 +62,14 @@ FACILITY_ENTITY_TYPE_NAME = "Facility"
 REVENUE_EXPOSURE_ENTITY_TYPE_NAME = "Revenue Exposure"
 REGION_ENTITY_TYPE_NAME = "Region"
 RISK_EVENT_ENTITY_TYPE_NAME = "Risk Event"
-ALTERNATE_SUPPLIER_ENTITY_TYPE_NAME = "Alternate Supplier"
+# CDD-088: `supplies` means ACTIVE, current sourcing -- it is the exact
+# signal `krm.py::derive_single_source_exposure` counts, and is never used
+# for candidate discovery (that would make discovering any candidate
+# falsify single-source exposure). Candidate discovery/relevance uses the
+# separate, additive `approvedSourceFor` relationship (CDD-088 §4) --
+# a durable sourcing-CAPABILITY fact, independent of current active
+# sourcing.
+APPROVED_SOURCE_FOR_RELATIONSHIP_NAME = "approvedSourceFor"
 
 _SUPPLIER_TO_MATERIAL_DEPTH = 1
 _MATERIAL_TO_PRODUCT_DEPTH = 2
@@ -110,6 +118,11 @@ class CandidateOutcome:
     outcome: str | None
     reason: str | None
     decision_record_identifier: UUID | None
+    # The real governed relationship (e.g. "supplies") that connected this
+    # candidate to the affected material -- why it was considered, never
+    # why it was recommended (CDD-086 §6 item 1, CDD-087 §9). None only in
+    # the pre-existing "no candidate at all" shape.
+    relevance_relationship: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,16 +190,6 @@ class SupplyChainImpactApiService:
 
         impact = self._traverse_impact(supplier, entities_by_id, edges)
         risk_event_entity_id = self._find_risk_event(supplier, entities_by_id, edges)
-        alternate_supplier_ids = tuple(
-            sorted(
-                (
-                    entity.entity_id
-                    for entity in entities_by_id.values()
-                    if entity.entity_type_name == ALTERNATE_SUPPLIER_ENTITY_TYPE_NAME
-                ),
-                key=str,
-            )
-        )
 
         decision_evaluation_id = uuid4()
         DecisionEvaluationRepositoryImpl(session).create_group(
@@ -214,9 +217,34 @@ class SupplyChainImpactApiService:
                 threshold_usd=self._policy.materiality_threshold_usd,
             )
 
+            # Material-aware candidate discovery (CDD-086 §5, CDD-087 §5,
+            # corrected by CDD-088 §6): every ordinary Supplier with a
+            # real, governed `approvedSourceFor` relationship into THIS
+            # material, excluding the disrupted supplier itself. Computed
+            # per material -- a supplier approved only for a different
+            # material must never appear here. Pure, read-only, no new
+            # query: operates on the tenant graph already loaded above.
+            # Deliberately NOT `supplies` (CDD-088 §1): that relationship
+            # is the exact signal `derive_single_source_exposure` counts
+            # for condition 2 -- reusing it here would make discovering
+            # any candidate falsify single-source exposure.
+            candidate_supplier_ids = discover_candidates_supplying(
+                entities_by_id=entities_by_id,
+                edges=edges,
+                material_entity_id=material.material_entity_id,
+                exclude_entity_id=supplier.entity_id,
+                candidate_entity_type_name=SUPPLIER_ENTITY_TYPE_NAME,
+                relationship_name=APPROVED_SOURCE_FOR_RELATIONSHIP_NAME,
+            )
+
             candidates: list[CandidateOutcome] = []
-            targets = alternate_supplier_ids or (None,)
+            targets = candidate_supplier_ids or (None,)
             for alternate_supplier_entity_id in targets:
+                relevance_relationship = (
+                    APPROVED_SOURCE_FOR_RELATIONSHIP_NAME
+                    if alternate_supplier_entity_id is not None
+                    else None
+                )
                 candidate_evidence = (
                     adapters.krm.derive_candidate_evidence(
                         tenant_id=tenant_id,
@@ -243,7 +271,13 @@ class SupplyChainImpactApiService:
                 )
                 if decision is None:
                     candidates.append(
-                        CandidateOutcome(alternate_supplier_entity_id, None, None, None)
+                        CandidateOutcome(
+                            alternate_supplier_entity_id,
+                            None,
+                            None,
+                            None,
+                            relevance_relationship,
+                        )
                     )
                     continue
                 any_decision_recorded = True
@@ -253,6 +287,7 @@ class SupplyChainImpactApiService:
                         decision.outcome.value,
                         decision.reason.value,
                         decision.record_identifier,
+                        relevance_relationship,
                     )
                 )
 

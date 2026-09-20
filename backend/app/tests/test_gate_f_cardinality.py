@@ -233,8 +233,24 @@ def test_multi_material_multi_candidate_cardinality(migrated_engine: Engine) -> 
             source_system_id=source_system_id,
         )
 
-        alt_1 = _entity(
-            session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Alternate Supplier"
+        # CDD-088: an ordinary Supplier, discoverable for BOTH materials
+        # via its own explicit `approvedSourceFor` edge to each -- never
+        # `supplies` (which would corrupt each material's single-source
+        # exposure), and never a tenant-wide type scan.
+        alt_1 = _entity(session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Supplier")
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=alt_1,
+            to_id=material_1,
+        )
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=alt_1,
+            to_id=material_2,
         )
         _assert_literal(
             session,
@@ -264,6 +280,11 @@ def test_multi_material_multi_candidate_cardinality(migrated_engine: Engine) -> 
     for material_result in result.materials:
         assert material_result.revenue_materiality is None
         assert material_result.candidates[0].outcome is None
+        # Single-source exposure is unaffected by candidate discovery --
+        # `supplier` remains each material's sole active `supplies`
+        # source regardless of how many `approvedSourceFor` candidates
+        # exist (CDD-088).
+        assert material_result.single_source_exposure is True
     assert result.governance_standing is None
 
     with factory() as session:
@@ -273,10 +294,15 @@ def test_multi_material_multi_candidate_cardinality(migrated_engine: Engine) -> 
 
         # candidateFor relationships were still created (KRM's job), one
         # per (material, candidate) pair, each with its own attached
-        # assertions -- non-colliding.
+        # assertions -- non-colliding. Filtered to candidateFor
+        # specifically: alt_1 also carries its own pre-existing
+        # `approvedSourceFor` edges (CDD-088), a separate relationship
+        # type this query must not count.
+        candidate_for_type_id = _relationship_type_id(session, "candidateFor")
         relationships = session.scalars(
             select(InstitutionalRelationship).where(
                 InstitutionalRelationship.from_entity_id == alt_1,
+                InstitutionalRelationship.relationship_type_id == candidate_for_type_id,
             )
         ).all()
         assert len(relationships) == 2
@@ -379,13 +405,17 @@ def test_multi_material_multi_candidate_with_full_evidence_cardinality(
             source_system_id=source_system_id,
         )
 
-        alt_1 = _entity(
-            session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Alternate Supplier"
-        )
-        alt_2 = _entity(
-            session, tenant_id=tenant_id, name=f"ALT2-{uuid4()}", type_name="Alternate Supplier"
-        )
+        alt_1 = _entity(session, tenant_id=tenant_id, name=f"ALT1-{uuid4()}", type_name="Supplier")
+        alt_2 = _entity(session, tenant_id=tenant_id, name=f"ALT2-{uuid4()}", type_name="Supplier")
         for alt in (alt_1, alt_2):
+            for material in (material_1, material_2):
+                _relate(
+                    session,
+                    tenant_id=tenant_id,
+                    type_name="approvedSourceFor",
+                    from_id=alt,
+                    to_id=material,
+                )
             _assert_literal(
                 session,
                 subject_entity_id=alt,
@@ -411,6 +441,15 @@ def test_multi_material_multi_candidate_with_full_evidence_cardinality(
     all_outcomes = [c.outcome for m in result.materials for c in m.candidates]
     assert len(all_outcomes) == 4
     assert all(outcome == "Recommended" for outcome in all_outcomes)
+    assert all(
+        c.relevance_relationship == "approvedSourceFor"
+        for m in result.materials
+        for c in m.candidates
+    )
+    # 4 real candidates exist across both materials, yet each material's
+    # single-source exposure remains TRUE -- `supplier` is still each
+    # material's only currently-active `supplies` source (CDD-088).
+    assert all(m.single_source_exposure is True for m in result.materials)
 
     with factory() as session:
         repository = DecisionEvaluationRepositoryImpl(session)

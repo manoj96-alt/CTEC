@@ -63,6 +63,15 @@ REQUIRED_RELATIONSHIPS: tuple[tuple[str, str, str], ...] = (
     ("assembledAt", "Product", "Facility"),
     ("coveredBy", "Material", "Contract"),
     ("candidateFor", "Alternate Supplier", "Material"),
+    # CDD-088 (Alternative Sourcing Semantics Governance Correction):
+    # governed, durable sourcing-CAPABILITY fact -- Supplier S is an
+    # approved potential source for Material M, independent of whether S
+    # currently, actively supplies M (`supplies`) and independent of any
+    # specific decision's per-evaluation `candidateFor` artifact. Additive
+    # only -- no existing tuple/concept/binding above is changed;
+    # ONTOLOGY_SEED_VERSION is not bumped (matching the precedent that
+    # added assembledAt/coveredBy/candidateFor above, CDD-015 §31/§33).
+    ("approvedSourceFor", "Supplier", "Material"),
 )
 
 

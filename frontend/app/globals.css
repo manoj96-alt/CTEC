@@ -1552,3 +1552,489 @@ dialog textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   WOW-I4-B1-R1 (CDD-085, operator visual refinement round):
+   Supply Chain Impact governed decision workspace. Additive only
+   -- no existing token renamed/reassigned. Three visual zones:
+   Decision Context (compact) / Impact Intelligence (one flowing
+   Risk -> Ontology impact -> Revenue composition, dark canvas
+   sub-surface reusing Ontology Explorer's own node/edge tokens) /
+   Decision Evidence -> Governed Decision (paired evidence+
+   alternative converging into the dark `.obs-intelligence-surface`
+   hero, CDD-078 §3). Zones stay inside light `.panel` islands
+   (light-context --muted/--line tokens) except the two explicitly
+   dark sub-surfaces noted above, matching the established
+   two-surface contract throughout.
+   ============================================================ */
+/* Zone 1 -- Decision Context: compact segmented control, not a
+   full-width button row + all-scenario description stack. */
+.obs-sci-scenario-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.obs-sci-scenario-chip {
+  background: white;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.obs-sci-scenario-chip:hover:not(:disabled) {
+  border-color: var(--obs-intelligence);
+}
+.obs-sci-scenario-chip--active {
+  background: color-mix(in oklch, var(--obs-intelligence) 14%, white);
+  border-color: var(--obs-intelligence);
+  font-weight: 700;
+}
+.obs-sci-scenario-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.obs-sci-scenario-description {
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+/* Zone 2 -- Impact Intelligence: WOW-I4-B1-R3, the page's flagship
+   intelligence centerpiece (operator: "Impact Intelligence is a small
+   visualization placed inside a white container rather than the primary
+   intelligence canvas"). The risk banner and the impact surface both sit
+   directly on `.observatory-main`'s own dark canvas -- no white `.panel`
+   wrapper, one fewer nested rectangle -- matching the two-surface
+   contract's dark-investigation-surface half instead of its light-panel
+   half. */
+.obs-sci-risk-banner {
+  margin-top: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--obs-border);
+}
+.obs-sci-risk-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem 1.25rem;
+}
+.obs-sci-risk-banner-row--sub {
+  margin-top: 0.4rem;
+}
+.obs-sci-risk-supplier {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  color: var(--obs-text-primary);
+}
+.obs-sci-risk-exposure {
+  margin-left: auto;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  color: var(--obs-text-primary);
+}
+.obs-sci-risk-sourcing {
+  color: var(--obs-text-secondary);
+  font-size: 0.85rem;
+}
+.obs-sci-risk-authority {
+  color: var(--obs-intelligence);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.obs-sci-risk-tag {
+  background: var(--obs-surface-elevated);
+  border-color: var(--obs-border-strong);
+  color: var(--obs-text-secondary);
+}
+.obs-sci-risk-tag--conflict {
+  background: color-mix(
+    in oklch,
+    var(--obs-conflict) 22%,
+    var(--obs-surface-elevated)
+  );
+  border-color: var(--obs-conflict);
+  color: var(--obs-text-primary);
+}
+.obs-sci-risk-caption {
+  margin-top: 0.6rem;
+  color: var(--obs-text-muted);
+  font-size: 0.82rem;
+}
+.obs-sci-impact-surface {
+  margin-top: 1.25rem;
+  padding: 1.75rem 2rem 2rem;
+  background: var(--obs-canvas);
+  border: 1px solid var(--obs-border);
+  border-radius: calc(var(--obs-radius) * 2);
+}
+.obs-sci-impact-surface h2 {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
+  color: var(--obs-text-primary);
+}
+/* Dependency chain: the full real hop sequence (Supplier through
+   Revenue Exposure) -- real names only, never a claimed item-to-item edge
+   (CDD-085 §5/§7.2). Chip/connector tokens match Ontology Explorer's own
+   node/edge treatment (reused as tokens, no component imported). The
+   inline arrows between hop GROUPS are presentation/progression only
+   (operator §3/§6) -- not the removed standalone page-level decorative
+   arrows. The disclaimer caption is deliberately legible, not shrunk to
+   microcopy (operator §5 of the R3 governing prompt). */
+.obs-sci-chain-caption {
+  color: var(--obs-text-secondary);
+  font-size: 0.85rem;
+  margin: 0.9rem 0 1.1rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--obs-border-strong);
+}
+.obs-sci-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+}
+.obs-sci-chain-hop {
+  position: relative;
+  flex: 1 1 10rem;
+  min-width: 10rem;
+  padding: 0.65rem 1rem;
+}
+.obs-sci-chain-hop--terminal {
+  flex: 1 1 12rem;
+}
+.obs-sci-chain-hop--origin {
+  border-left: 2px solid var(--obs-conflict);
+  padding-left: 0.85rem;
+}
+.obs-sci-chain-arrow {
+  position: absolute;
+  left: -0.7rem;
+  top: 0.75rem;
+  color: var(--obs-intelligence);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.obs-sci-chain-hop-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--obs-text-muted);
+}
+.obs-sci-chain-hop ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.obs-sci-chain-chip {
+  background: var(--obs-surface-elevated);
+  color: var(--obs-text-primary);
+  border: 1px solid var(--obs-border-strong);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+}
+.obs-sci-chain-hop--terminal .obs-sci-chain-chip {
+  background: color-mix(
+    in oklch,
+    var(--obs-intelligence) 16%,
+    var(--obs-surface-elevated)
+  );
+  border-color: var(--obs-intelligence);
+}
+.obs-sci-chain-chip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.obs-sci-chain-chip-value {
+  font-family: var(--font-sora), Sora, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.6rem, 3.4vw, 2.3rem);
+  color: var(--obs-text-primary);
+}
+@media (max-width: 760px) {
+  .obs-sci-chain {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .obs-sci-chain-hop {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--obs-border);
+  }
+  .obs-sci-chain-hop:last-child {
+    border-bottom: none;
+  }
+  .obs-sci-chain-hop--origin {
+    padding-left: 0.85rem;
+  }
+  .obs-sci-chain-arrow {
+    display: none;
+  }
+}
+/* Zone label between Impact Intelligence and the Evidence/Alternative
+   pair -- plain text, not a card, so it reads as a flow step. */
+.obs-sci-zone-label {
+  margin: 1.5rem 0 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+/* WOW-I4-B1-R2 (operator: "large amount of meaningless empty white
+   space" beneath the single alternative): align-items: start so each
+   panel is sized to its own real content, not stretched to match its
+   taller sibling -- a content-driven composition, not a fabricated
+   fourth alternative to fill space. */
+.obs-sci-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 1rem;
+  margin-top: 0.6rem;
+}
+.obs-sci-pair > .panel {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .obs-sci-pair {
+    grid-template-columns: 1fr;
+  }
+}
+.obs-sci-empty-evidence {
+  padding: 0.75rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.6rem;
+  color: var(--muted);
+}
+/* Evidence: WOW-I4-B1-R3 (operator: "Evidence looks like six database/
+   key-value tiles"). A ruled ledger -- fact / value / source+time as
+   aligned grid columns with dividing rules, not a card grid. `<li>`
+   becomes a transparent grid row (`display: contents`) so its three
+   children lay directly into the parent grid's three columns; each cell
+   carries its own bottom rule. `item.predicate` inside `<strong>` is
+   still rendered verbatim -- unchanged text, only the surrounding layout
+   is restyled. */
+.obs-sci-evidence-list {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) minmax(6rem, 1fr) minmax(
+      11rem,
+      auto
+    );
+  column-gap: 1.25rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.obs-sci-evidence-item {
+  display: contents;
+}
+.obs-sci-evidence-fact,
+.obs-sci-evidence-value,
+.obs-sci-evidence-meta {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+}
+.obs-sci-evidence-fact {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.obs-sci-evidence-value {
+  font-weight: 700;
+}
+.obs-sci-evidence-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  justify-content: flex-end;
+  text-align: right;
+}
+@media (max-width: 640px) {
+  .obs-sci-evidence-list {
+    grid-template-columns: 1fr;
+  }
+  .obs-sci-evidence-item {
+    display: block;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .obs-sci-evidence-fact,
+  .obs-sci-evidence-value,
+  .obs-sci-evidence-meta {
+    display: block;
+    padding: 0.1rem 0;
+    border-bottom: none;
+    text-align: left;
+  }
+}
+/* Alternatives: comparable cards sized to their real data, no
+   ranking/score/winner. WOW-I4-B1-R3: an explicit, neutral
+   "Alternative under evaluation" framing (operator §4 of the governing
+   prompt's own proposed truthful wording) plus a closing note tying the
+   real fields to the real governed policy that reads them -- still no
+   score/rank/best/winner/discovery claim. */
+.obs-sci-alt-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.obs-sci-alt-card {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+}
+.obs-sci-alt-eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  color: var(--accent);
+}
+.obs-sci-alt-name {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+}
+.obs-sci-alt-grid {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+}
+.obs-sci-alt-grid dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.obs-sci-alt-grid dd {
+  margin: 0.15rem 0 0;
+  font-weight: 700;
+}
+.obs-sci-alt-note {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+/* Governed Decision: the page's dominant visual anchor -- larger
+   heading, generous padding, an accent bar, never outcome-colored
+   (would conflict with OQI's distinct verified/conflict vocabulary).
+   WOW-I4-B1-R2: the decorative standalone arrow above this block is
+   removed (operator §6) -- the surface transition (light panels above
+   -> this dark intelligence surface) plus increased top margin now
+   carries the progression cue instead. */
+.obs-sci-decision {
+  margin-top: 1.75rem;
+  padding: 2rem 2.25rem;
+  color: var(--obs-text-primary);
+  border-left: 3px solid var(--obs-intelligence);
+}
+.obs-sci-decision-outcome {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  margin-top: 0.4rem;
+}
+.obs-sci-decision-block + .obs-sci-decision-block {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--obs-border-strong);
+}
+.obs-sci-decision p {
+  color: var(--obs-text-secondary);
+}
+.obs-sci-decision .standing {
+  color: var(--obs-text-primary);
+  font-size: 1.1rem;
+}
+/* WOW-I4-B1-R3 (operator: "make the recommendation more explainable...
+   use the actual governed conditions"): the real Gate F four-condition
+   policy (backend/app/integration/adapters/gate_f/drm.py) as five
+   independently observable governed facts. Tone colors are truthful,
+   restrained semantics (operator §6): --obs-verified only for a
+   positively-true condition, --obs-conflict only for a positively-false
+   one, neutral otherwise for Unknown -- never implying a color-only
+   outcome. */
+.obs-sci-conditions {
+  margin-top: 1.1rem;
+}
+.obs-sci-conditions ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.obs-sci-conditions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--obs-border);
+  color: var(--obs-text-secondary);
+  font-size: 0.88rem;
+}
+.obs-sci-condition-tag {
+  border-color: var(--obs-border-strong);
+  background: var(--obs-surface-elevated);
+  color: var(--obs-text-secondary);
+}
+.obs-sci-condition-tag--pass {
+  border-color: var(--obs-verified);
+  background: color-mix(
+    in oklch,
+    var(--obs-verified) 20%,
+    var(--obs-surface-elevated)
+  );
+  color: var(--obs-text-primary);
+}
+.obs-sci-condition-tag--fail {
+  border-color: var(--obs-conflict);
+  background: color-mix(
+    in oklch,
+    var(--obs-conflict) 20%,
+    var(--obs-surface-elevated)
+  );
+  color: var(--obs-text-primary);
+}
+.obs-sci-condition-tag--unknown {
+  border-color: var(--obs-border-strong);
+  background: var(--obs-surface-elevated);
+  color: var(--obs-text-muted);
+}
+.obs-sci-reasons {
+  border-left: 3px solid var(--obs-border-strong);
+  padding-left: 1rem;
+  margin-top: 0.75rem;
+}
+.obs-sci-reasons h3 {
+  color: var(--obs-text-primary);
+}
+.obs-sci-decision p.obs-sci-policy-ref {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--obs-text-muted);
+}
+@media (max-width: 760px) {
+  .obs-sci-decision {
+    padding: 1.5rem 1.5rem;
+  }
+}

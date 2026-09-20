@@ -468,8 +468,19 @@ def _build_scenario(
 
     result = {"supplier": supplier, "material": material, "risk_event": risk_event}
     if with_alternate:
+        # CDD-088: an ordinary Supplier, discoverable via a real
+        # `approvedSourceFor` edge into the SAME material -- never
+        # `supplies` (would corrupt single-source exposure), never type
+        # alone.
         alternate_supplier = _entity(
-            session, tenant_id=tenant_id, name=f"ALT-{uuid4()}", type_name="Alternate Supplier"
+            session, tenant_id=tenant_id, name=f"ALT-{uuid4()}", type_name="Supplier"
+        )
+        _relate(
+            session,
+            tenant_id=tenant_id,
+            type_name="approvedSourceFor",
+            from_id=alternate_supplier,
+            to_id=material,
         )
         if alternate_qualified is not None:
             _assert_literal(

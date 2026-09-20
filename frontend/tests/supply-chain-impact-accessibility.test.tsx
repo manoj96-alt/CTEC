@@ -23,6 +23,7 @@ const evidence = [
 
 const candidate: CandidateOutcome = {
   alternate_supplier_entity_id: "11111111-1111-1111-1111-111111111111",
+  relevance_relationship: "approvedSourceFor",
   outcome: "Recommended",
   reason: "All four governed conditions are satisfied",
   decision_record_identifier: "22222222-2222-2222-2222-222222222222",

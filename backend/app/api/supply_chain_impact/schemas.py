@@ -79,6 +79,12 @@ class CandidateOutcomeResponse(BaseModel):
     narrative: str | None
     confidence: str | None
     evidence: list[EvidenceItemResponse]
+    # F-I5 (CDD-086 §6 item 1, CDD-087 §9): the real governed relationship
+    # (e.g. "supplies") that connected this candidate to the affected
+    # material -- why it was considered, never a ranking or a claim about
+    # eligibility/recommendation. Additive; None only when
+    # alternate_supplier_entity_id is also None.
+    relevance_relationship: str | None
 
 
 class MaterialEvaluationResultResponse(BaseModel):

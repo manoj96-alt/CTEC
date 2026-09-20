@@ -41,6 +41,9 @@ export interface CandidateOutcome {
   narrative: string | null;
   confidence: string | null;
   evidence: EvidenceItem[];
+  // I1 (CDD-086/CDD-087): the real governed relationship that connected
+  // this candidate to the affected material -- why it was considered.
+  relevance_relationship: string | null;
 }
 
 export interface MaterialEvaluationResult {

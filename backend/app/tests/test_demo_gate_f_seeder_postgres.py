@@ -57,7 +57,6 @@ def test_seeder_is_idempotent(migrated_engine: Engine) -> None:
     assert first.recommended == second.recommended
     assert first.unknown == second.unknown
     assert first.rejected == second.rejected
-    assert first.alternate_supplier_entity_id == second.alternate_supplier_entity_id
     assert second.relationships_created == 0
     assert second.assertions_created == 0
 
@@ -69,7 +68,10 @@ def test_seeder_deterministic_identifiers_across_runs(migrated_engine: Engine) -
     assert first.recommended.supplier_entity_id == second.recommended.supplier_entity_id
     assert first.unknown.supplier_entity_id == second.unknown.supplier_entity_id
     assert first.rejected.supplier_entity_id == second.rejected.supplier_entity_id
-    assert first.alternate_supplier_entity_id == second.alternate_supplier_entity_id
+    assert (
+        first.recommended.candidate_supplier_entity_ids
+        == second.recommended.candidate_supplier_entity_ids
+    )
 
 
 def test_seeder_scopes_every_entity_to_the_demo_tenant(migrated_engine: Engine) -> None:
@@ -82,7 +84,7 @@ def test_seeder_scopes_every_entity_to_the_demo_tenant(migrated_engine: Engine) 
             summary.recommended.risk_event_entity_id,
             summary.unknown.supplier_entity_id,
             summary.rejected.supplier_entity_id,
-            summary.alternate_supplier_entity_id,
+            *summary.recommended.candidate_supplier_entity_ids,
         )
         tenants = (
             session.execute(
@@ -121,6 +123,12 @@ def test_seeder_assertions_carry_real_provenance(migrated_engine: Engine) -> Non
 def test_recommended_scenario_reaches_recommended_via_real_evaluation(
     migrated_engine: Engine,
 ) -> None:
+    """Also proves the full B/C/E multi-candidate story via the real,
+    seeded PostgreSQL data: B is relevant and fully eligible
+    (Recommended); C is relevant with genuinely missing capacity evidence
+    (Unknown -- no outcome); E is relevant with an explicit, persisted
+    failing capacity fact (Rejected: insufficient capacity). None of this
+    affects single-source exposure, which remains True throughout."""
     factory = sessionmaker(migrated_engine)
     summary = _seed(factory)
     service = SupplyChainImpactApiService(factory)
@@ -134,8 +142,16 @@ def test_recommended_scenario_reaches_recommended_via_real_evaluation(
     assert material.high_severity_disruption is True
     assert material.single_source_exposure is True
     assert material.revenue_materiality is True
-    [candidate] = material.candidates
-    assert candidate.outcome == "Recommended"
+
+    candidates_by_id = {c.alternate_supplier_entity_id: c for c in material.candidates}
+    assert set(candidates_by_id) == set(summary.recommended.candidate_supplier_entity_ids)
+    candidate_b, candidate_c, candidate_e = summary.recommended.candidate_supplier_entity_ids
+    assert candidates_by_id[candidate_b].outcome == "Recommended"
+    assert candidates_by_id[candidate_c].outcome is None  # genuinely missing capacity -> Unknown
+    assert candidates_by_id[candidate_e].outcome == "Rejected"
+    assert candidates_by_id[candidate_e].reason == "Rejected: candidate capacity is insufficient"
+    for candidate in material.candidates:
+        assert candidate.relevance_relationship == "approvedSourceFor"
 
 
 def test_unknown_scenario_stays_unknown_via_real_evaluation(migrated_engine: Engine) -> None:
@@ -157,11 +173,11 @@ def test_unknown_scenario_stays_unknown_via_real_evaluation(migrated_engine: Eng
 def test_rejected_scenario_reaches_rejected_not_material_via_real_evaluation(
     migrated_engine: Engine,
 ) -> None:
-    """Rejected via REJECTED_NOT_MATERIAL, not zero-alternate: Gate F's
-    alternate-supplier discovery is tenant-wide (F-I2, unmodified), so the
-    shared demo Alternate Supplier is also discoverable here -- the
-    materiality short-circuit in GateFDecisionAdapter._classify makes the
-    outcome correct and deterministic regardless."""
+    """Rejected via REJECTED_NOT_MATERIAL, not zero-candidate: this
+    scenario seeds its own real `approvedSourceFor` candidate (CDD-088),
+    material-scoped to this scenario's own Material -- the materiality
+    short-circuit in GateFDecisionAdapter._classify makes the outcome
+    correct and deterministic regardless of that candidate's evidence."""
     factory = sessionmaker(migrated_engine)
     summary = _seed(factory)
     service = SupplyChainImpactApiService(factory)

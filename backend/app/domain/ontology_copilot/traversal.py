@@ -127,3 +127,39 @@ def find_paths_to_target_type(
 
     results.sort(key=lambda p: (p.target_entity_name, str(p.target_entity_id)))
     return tuple(results)
+
+
+def discover_candidates_supplying(
+    *,
+    entities_by_id: dict[UUID, GraphEntity],
+    edges: tuple[GraphEdge, ...],
+    material_entity_id: UUID,
+    exclude_entity_id: UUID,
+    candidate_entity_type_name: str,
+    relationship_name: str = "supplies",
+) -> tuple[UUID, ...]:
+    """Material-aware candidate discovery (CDD-086 §5, CDD-087 §5): every
+    entity of type `candidate_entity_type_name` that has a real, already-
+    persisted `relationship_name` edge directly into `material_entity_id`,
+    excluding `exclude_entity_id` (the disrupted supplier itself). Pure and
+    read-only, exactly like `find_paths_to_target_type` above: operates
+    only on the supplied, already tenant-scoped graph -- no database
+    query, no inspection of evidence/eligibility/policy, no ranking. A
+    candidate's relevance here is entirely a consequence of the governed
+    relationships present in `edges`; changing those relationships (not
+    this function) changes the result. Sorted by id only for stable,
+    repeatable ordering -- never a ranking.
+    """
+    candidate_ids: set[UUID] = set()
+    for edge in edges:
+        if edge.relationship_name != relationship_name:
+            continue
+        if edge.to_entity_id != material_entity_id:
+            continue
+        if edge.from_entity_id == exclude_entity_id:
+            continue
+        candidate = entities_by_id.get(edge.from_entity_id)
+        if candidate is None or candidate.entity_type_name != candidate_entity_type_name:
+            continue
+        candidate_ids.add(edge.from_entity_id)
+    return tuple(sorted(candidate_ids, key=str))

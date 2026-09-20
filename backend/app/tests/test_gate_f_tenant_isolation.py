@@ -233,9 +233,16 @@ def test_cross_tenant_material_is_excluded_from_traversal(migrated_engine: Engin
     assert material_b not in {m.material_entity_id for m in result.impact.materials}
 
 
-def test_cross_tenant_alternate_supplier_is_excluded_from_candidate_discovery(
+def test_cross_tenant_approved_source_supplier_is_excluded_from_candidate_discovery(
     migrated_engine: Engine,
 ) -> None:
+    """CDD-088 §12/§14: `discover_candidates_supplying` operates only on
+    `InstitutionalRelationshipStore.load_tenant_graph(tenant_id)`'s
+    already tenant-scoped graph. A real Supplier in tenant_b with a real
+    `approvedSourceFor` edge into a same-named (but tenant_b-scoped,
+    different-id) Material must never be discoverable from tenant_a's
+    evaluation, even though the relationship shape is identical to a
+    genuine same-tenant candidate."""
     factory = sessionmaker(migrated_engine)
     tenant_a = _tenant("a")
     tenant_b = _tenant("b")
@@ -251,8 +258,22 @@ def test_cross_tenant_alternate_supplier_is_excluded_from_candidate_discovery(
         _relate(
             session, tenant_id=tenant_a, type_name="supplies", from_id=supplier_a, to_id=material_a
         )
-        # An Alternate Supplier entity that exists only in tenant_b.
-        _entity(session, tenant_id=tenant_b, name=f"ALT-{uuid4()}", type_name="Alternate Supplier")
+        # A real Supplier + Material pair, and a real `approvedSourceFor`
+        # edge between them, entirely within tenant_b -- the exact shape
+        # a genuine candidate would have, but in a different tenant.
+        supplier_b = _entity(
+            session, tenant_id=tenant_b, name=f"ALT-{uuid4()}", type_name="Supplier"
+        )
+        material_b = _entity(
+            session, tenant_id=tenant_b, name=f"MAT-{uuid4()}", type_name="Material"
+        )
+        _relate(
+            session,
+            tenant_id=tenant_b,
+            type_name="approvedSourceFor",
+            from_id=supplier_b,
+            to_id=material_b,
+        )
         session.commit()
 
     service = SupplyChainImpactApiService(factory, policy=POLICY)
@@ -260,10 +281,14 @@ def test_cross_tenant_alternate_supplier_is_excluded_from_candidate_discovery(
         _principal(tenant_a), SupplyChainImpactEvaluateRequest(supplier_entity_id=supplier_a)
     )
 
-    # tenant_a has zero governed Alternate Supplier entities of its own ->
-    # zero-alternate semantics apply, not a leak of tenant_b's candidate.
+    # tenant_a has zero governed `approvedSourceFor` relationships of its
+    # own into material_a -> zero-candidate semantics apply; tenant_b's
+    # supplier_b/material_b never enter tenant_a's tenant-scoped graph at
+    # all (structural isolation, RFC-016), so no leak is even possible.
     material_result = result.materials[0]
     assert material_result.candidates[0].alternate_supplier_entity_id is None
+    assert supplier_b not in {c.alternate_supplier_entity_id for c in material_result.candidates}
+    assert material_result.single_source_exposure is True
 
 
 def test_cross_tenant_severity_assertion_is_not_read(migrated_engine: Engine) -> None:
