@@ -16,7 +16,7 @@ type AskState =
   | { status: "error"; message: string }
   | { status: "result"; response: AskResponse };
 
-const EXAMPLE_QUESTION = "Which products depend on TSMC?";
+const EXAMPLE_QUESTION = "Which products depend on Meridian Cell Components?";
 
 export function AskCtecWorkspace() {
   const [question, setQuestion] = useState("");
