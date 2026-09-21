@@ -95,6 +95,13 @@ class EntityResolutionStore:
     def append(self, record: EnterpriseEntityResolutionRecord) -> None:
         self._assert_source_objects_owned_by_tenant(record)
         self.session.add(self._to_model(record))
+        # Force the new record's INSERT to hit the database before the
+        # history row's INSERT/UPDATE, which references it via a foreign key
+        # (fk_eer_history_tenant_active_record). The two mapped classes have
+        # no ORM relationship() between them, so SQLAlchemy's automatic
+        # flush-ordering cannot be relied on here -- same hazard
+        # append_decision() below already guards against.
+        self.session.flush()
         key = self.understanding_key(record.supporting_source_object_ids)
         record_history = self.session.get(EnterpriseEntityResolutionHistoryModel, key)
         if record_history is None:

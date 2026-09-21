@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StatusIndicator } from "@/components/design-system/status-indicator";
 import type { EvidenceResponse } from "@/lib/oqi/contracts";
 
@@ -77,6 +78,19 @@ export function EvidencePanel({
   return (
     <div>
       <h3>Source Evidence</h3>
+
+      {/* CDD-085 §14 (Demo Readiness): the one authorized contextual
+          navigation link -- shown only for OQI2 (the only family this
+          page's own evidence comparison genuinely represents multiple
+          governed sources for), pointing forward to Entity Resolution so
+          the presenter never has to hunt through the primary menu to
+          continue the same investigation. Purely additive; no other
+          Finding family's rendering path changes. */}
+      {findingFamily === "OQI2" ? (
+        <p className="obs-evidence-contextual-link">
+          <Link href="/data/entity-resolution">View resolved entity</Link>
+        </p>
+      ) : null}
 
       {evidence.participants.length === 0 ? (
         <p role="status">
