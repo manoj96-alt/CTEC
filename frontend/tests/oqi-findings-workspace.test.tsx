@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 // CDD-045 §10/§25-26/§29: Finding list respects API-owned pagination and
@@ -100,5 +100,42 @@ describe("OQI Findings workspace", () => {
     listFindingsMock.mockReturnValue(new Promise(() => {}));
     render(<FindingsPage />);
     expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  // CDD-084 §30/§34: the UNIQUENESS filter option exists and a UNIQUENESS
+  // row renders with its own label and condition, never claiming
+  // "duplicate" as fact in this list view (that language lives only in
+  // the pair-detail panel, under explicit candidate framing).
+  it("offers Uniqueness as a selectable quality family and renders a Uniqueness row with its own label", async () => {
+    listFindingsMock.mockResolvedValue({
+      items: [
+        {
+          finding_id: "33333333-3333-3333-3333-333333333333",
+          finding_family: "UNIQUENESS",
+          condition_label: "DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE",
+          status: "OPEN",
+          first_seen_at: "2026-01-01T00:00:00Z",
+          last_seen_at: "2026-01-02T00:00:00Z",
+          affected_entity_id: "44444444-4444-4444-4444-444444444444",
+          affected_entity_type: "ENTITY",
+          highest_criticality: null,
+          reliance_state: null,
+        },
+      ],
+      next_cursor: null,
+    });
+
+    render(<FindingsPage />);
+
+    const familySelect = screen.getByLabelText("Quality family");
+    expect(
+      within(familySelect).getByRole("option", { name: "Uniqueness" }),
+    ).toHaveValue("UNIQUENESS");
+
+    expect(
+      await screen.findByText("DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Uniqueness").length).toBeGreaterThan(0);
+    expect(screen.getByText("UNIQUENESS")).toBeInTheDocument();
   });
 });

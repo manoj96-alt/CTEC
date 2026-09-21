@@ -187,7 +187,7 @@ def test_connector_ingestion_introduces_exactly_three_new_tables(migrated_engine
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
     tables = set(inspect(migrated_engine).get_table_names()) - {"alembic_version"}
-    assert len(tables) == 126
+    assert len(tables) == 131
     assert {
         "oqi_connector_configurations",
         "oqi_connector_field_mappings",

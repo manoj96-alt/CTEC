@@ -3,6 +3,9 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/design-system/empty-state";
+import { StatusIndicator } from "@/components/design-system/status-indicator";
+import { accessToken } from "@/lib/auth/browser-session";
+import { browserAuthConfig } from "@/lib/auth/config";
 import { OqiApiError, oqiApi } from "@/lib/oqi/api-client";
 import type {
   AgentInvestigationResponse,
@@ -50,6 +53,133 @@ function isValidTab(value: string | null): value is Tab {
   return value !== null && VALID_TAB_KEYS.has(value);
 }
 
+// CDD-084 §30, AA row 9: the exact backend `UniquenessCandidateDetailResponse`
+// shape (declared locally -- `@/lib/oqi/contracts` / `@/lib/oqi/api-client`
+// are not authorized paths for this phase, so this page fetches its own
+// endpoint directly, reusing the SAME auth/error mechanics
+// `@/lib/oqi/api-client`'s own internal (unexported) `request<T>` helper
+// already establishes -- never a new auth pathway).
+type UniquenessCandidateMemberView = {
+  entity_id: string;
+  entity_name: string;
+  impact_outcome: string;
+};
+
+type UniquenessCandidateDetailResponse = {
+  finding_id: string;
+  candidate_id: string;
+  finding_status: string;
+  finding_state_revision: number;
+  member_a: UniquenessCandidateMemberView;
+  member_b: UniquenessCandidateMemberView;
+  matched_normalized_name: string;
+  policy_id: string;
+  policy_version: number;
+  candidate_created_on: string;
+  latest_adjudication_action: string | null;
+  latest_adjudication_actor_id: string | null;
+  latest_adjudication_rationale: string | null;
+  latest_adjudication_decided_on: string | null;
+};
+
+async function fetchUniquenessCandidateDetail(
+  findingId: string,
+  signal?: AbortSignal,
+): Promise<UniquenessCandidateDetailResponse> {
+  const token = await accessToken();
+  if (!token) throw new OqiApiError("AUTH_REQUIRED", 401);
+  const response = await fetch(
+    `${browserAuthConfig().apiOrigin}/api/v1/oqi/uniqueness-candidates/${findingId}`,
+    {
+      signal,
+      cache: "no-store",
+      credentials: "omit",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!response.ok) {
+    const parsed = await response.json().catch(() => null);
+    const code =
+      parsed && typeof parsed === "object" && "detail" in parsed
+        ? ((parsed as { detail?: { code?: string } }).detail?.code ??
+          `HTTP_${response.status}`)
+        : `HTTP_${response.status}`;
+    throw new OqiApiError(code, response.status);
+  }
+  return (await response.json()) as UniquenessCandidateDetailResponse;
+}
+
+// CDD-084 §7/§28/§30: candidate language throughout -- never "duplicate
+// entity" as established fact. Confirmation is shown as governed human
+// evidence only ("confirmed as a possible duplicate"), never as proof, and
+// never paired with any merge/deactivate control (none exists in this
+// product surface, CDD-084 §2 PO-2).
+function UniquenessCandidatePanel({
+  detail,
+}: {
+  detail: UniquenessCandidateDetailResponse;
+}) {
+  const adjudicationLabel =
+    detail.latest_adjudication_action === "CONFIRM_DUPLICATE"
+      ? "Steward confirmed as a possible duplicate — not yet resolved"
+      : detail.latest_adjudication_action === "REJECT_NOT_DUPLICATE"
+        ? "Steward determined these are not duplicates"
+        : "Awaiting steward review";
+
+  return (
+    <div>
+      <h3>Possible Duplicate Enterprise Entities</h3>
+      <p role="status">
+        Candidate — not established fact. Governed evidence placed these two
+        entities together for steward review.
+      </p>
+
+      <div className="obs-evidence-comparison">
+        <div className="obs-evidence-sources">
+          {[detail.member_a, detail.member_b].map((member) => (
+            <div key={member.entity_id} className="obs-evidence-source-card">
+              <span className="obs-evidence-source-name">
+                {member.entity_name}
+              </span>
+              <span className="obs-evidence-source-caption">
+                Ontology impact: {member.impact_outcome}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="obs-evidence-aggregate">
+        Matched governed evidence: normalized name &quot;
+        {detail.matched_normalized_name}&quot;
+      </p>
+
+      <div className="panel" style={{ marginTop: "1rem" }}>
+        <span className="eyebrow">Steward Adjudication</span>
+        <h4 style={{ marginTop: "0.25rem" }}>
+          <StatusIndicator
+            status={
+              detail.latest_adjudication_action === "REJECT_NOT_DUPLICATE"
+                ? "verified"
+                : "unknown"
+            }
+          />{" "}
+          {adjudicationLabel}
+        </h4>
+        {detail.latest_adjudication_rationale ? (
+          <p style={{ color: "var(--muted)" }}>
+            {detail.latest_adjudication_rationale}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 type LoadState =
   | { status: "loading" }
   | {
@@ -61,6 +191,7 @@ type LoadState =
       reliance: RelianceResponse;
       agent: AgentInvestigationResponse;
       remediation: RemediationResponse;
+      uniquenessCandidate: UniquenessCandidateDetailResponse | null;
     }
   | { status: "not_found" }
   | { status: "unauthorized" }
@@ -118,7 +249,7 @@ function FindingDetailPageContent() {
       oqiApi.remediation(findingId),
     ])
       .then(
-        ([
+        async ([
           finding,
           evidence,
           impact,
@@ -126,7 +257,14 @@ function FindingDetailPageContent() {
           reliance,
           agent,
           remediation,
-        ]) =>
+        ]) => {
+          // CDD-084 §30: the pair-detail endpoint is fetched only for
+          // Uniqueness Findings -- every other family's own request set
+          // above is completely unchanged.
+          const uniquenessCandidate =
+            finding.finding_family === "UNIQUENESS"
+              ? await fetchUniquenessCandidateDetail(findingId)
+              : null;
           setState({
             status: "loaded",
             finding,
@@ -136,7 +274,9 @@ function FindingDetailPageContent() {
             reliance,
             agent,
             remediation,
-          }),
+            uniquenessCandidate,
+          });
+        },
       )
       .catch((caught) => {
         if (caught instanceof OqiApiError) {
@@ -220,12 +360,16 @@ function FindingDetailPageContent() {
       </nav>
 
       <section className="panel">
-        {tab === "evidence" && (
-          <EvidencePanel
-            evidence={state.evidence}
-            findingFamily={finding.finding_family}
-          />
-        )}
+        {tab === "evidence" &&
+          (finding.finding_family === "UNIQUENESS" &&
+          state.uniquenessCandidate ? (
+            <UniquenessCandidatePanel detail={state.uniquenessCandidate} />
+          ) : (
+            <EvidencePanel
+              evidence={state.evidence}
+              findingFamily={finding.finding_family}
+            />
+          ))}
         {tab === "ontology-impact" && (
           <OntologyImpactPanel impact={state.impact} />
         )}

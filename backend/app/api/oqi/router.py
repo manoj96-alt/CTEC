@@ -56,6 +56,8 @@ from app.api.oqi.schemas import (
     RemediationResponse,
     ReportExecutionRequest,
     SpecialistAssessmentView,
+    UniquenessCandidateDetailResponse,
+    UniquenessCandidateMemberView,
 )
 from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.api.supplier_risk.dependencies import container, correlation_id, principal
@@ -276,6 +278,51 @@ def get_finding_detail(
         state_revision=row.state_revision,
         first_seen_at=row.first_seen_at,
         last_seen_at=row.last_seen_at,
+    )
+
+
+@router.get("/uniqueness-candidates/{finding_id}", response_model=UniquenessCandidateDetailResponse)
+def get_uniqueness_candidate_detail(
+    finding_id: UUID,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+    service: Annotated[OqiProductExperienceService, Depends(oqi_service)],
+) -> UniquenessCandidateDetailResponse:
+    """CDD-084 §30, AA row 6: read-only. Tenant-scoped exclusively via
+    `authenticated.tenant_id` (never a client-supplied parameter) --
+    identical convention to every other read route in this file. A
+    cross-tenant `finding_id` guess returns the identical 404 as a
+    genuinely unknown one; no existence leakage."""
+    _require_read(authenticated, dependencies, correlation)
+    row = service.get_uniqueness_candidate_detail(
+        tenant_id=authenticated.tenant_id, finding_id=finding_id
+    )
+    if row is None:
+        raise HTTPException(404, detail={"code": "OQI_FINDING_NOT_FOUND"})
+    return UniquenessCandidateDetailResponse(
+        finding_id=row.finding_id,
+        candidate_id=row.candidate_id,
+        finding_status=row.finding_status,
+        finding_state_revision=row.finding_state_revision,
+        member_a=UniquenessCandidateMemberView(
+            entity_id=row.member_a.entity_id,
+            entity_name=row.member_a.entity_name,
+            impact_outcome=row.member_a.impact_outcome,
+        ),
+        member_b=UniquenessCandidateMemberView(
+            entity_id=row.member_b.entity_id,
+            entity_name=row.member_b.entity_name,
+            impact_outcome=row.member_b.impact_outcome,
+        ),
+        matched_normalized_name=row.matched_normalized_name,
+        policy_id=row.policy_id,
+        policy_version=row.policy_version,
+        candidate_created_on=row.candidate_created_on,
+        latest_adjudication_action=row.latest_adjudication_action,
+        latest_adjudication_actor_id=row.latest_adjudication_actor_id,
+        latest_adjudication_rationale=row.latest_adjudication_rationale,
+        latest_adjudication_decided_on=row.latest_adjudication_decided_on,
     )
 
 

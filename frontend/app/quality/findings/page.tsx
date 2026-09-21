@@ -42,6 +42,7 @@ const FAMILY_LABEL: Record<string, string> = {
   OQI3: "Business Rules",
   INTEGRITY: "Integrity",
   TIMELINESS: "Timeliness",
+  UNIQUENESS: "Uniqueness",
 };
 
 type LoadState =
@@ -147,6 +148,7 @@ function FindingsPageContent() {
             <option value="OQI3">Business Rules</option>
             <option value="INTEGRITY">Integrity</option>
             <option value="TIMELINESS">Timeliness</option>
+            <option value="UNIQUENESS">Uniqueness</option>
           </select>
         </label>
         <label>

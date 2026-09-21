@@ -1447,7 +1447,9 @@ def test_oqi4_ontology_impact_orms_have_single_construction_site() -> None:
     established pattern."""
     backend_root = REPOSITORY_ROOT / "backend" / "app"
 
-    def _construction_sites(class_name: str) -> list[str]:
+    def _construction_sites(
+        class_name: str, *, extra_excluded: frozenset[str] = frozenset()
+    ) -> list[str]:
         sites = [
             path
             for path in backend_root.rglob("*.py")
@@ -1457,13 +1459,26 @@ def test_oqi4_ontology_impact_orms_have_single_construction_site() -> None:
                 "oqi_ontology_impact_policy.py",
                 "oqi_ontology_impact_evaluation.py",
             }
+            | extra_excluded
         ]
         return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    # CDD-084 §27 (OQI-H6 Uniqueness, Artifact Authorization row 14): the
+    # H6 platform-integration crown test constructs `OntologyImpactEvaluationORM`
+    # / `CurrentOntologyImpactORM` directly via minimal ORM rows to prove the
+    # OQI6 UNIQUENESS visibility SQL branch, since no production code path
+    # constructs these for INTEGRITY/TIMELINESS/UNIQUENESS Findings (`FindingFamily`
+    # is closed to OQI1/2/3, CDD-042 §10) -- a pre-existing, inherited gap,
+    # not new to H6, mirrored by H4's/H5's own equivalent absence of a real
+    # write-path exercise for this same chain.
+    _h6_platform_integration_test = frozenset({"test_oqi_h6_uniqueness_platform_integration.py"})
 
     assert _construction_sites("ImpactPropagationPolicyORM") == [
         "infrastructure/persistence/oqi_ontology_impact_policy_repository.py"
     ], "ImpactPropagationPolicyORM constructed outside its single authorized site"
-    assert _construction_sites("OntologyImpactEvaluationORM") == [
+    assert _construction_sites(
+        "OntologyImpactEvaluationORM", extra_excluded=_h6_platform_integration_test
+    ) == [
         "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
     ], "OntologyImpactEvaluationORM constructed outside its single authorized site"
     assert _construction_sites("OntologyImpactObservationORM") == [
@@ -1472,7 +1487,9 @@ def test_oqi4_ontology_impact_orms_have_single_construction_site() -> None:
     assert _construction_sites("OntologyImpactPathORM") == [
         "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
     ], "OntologyImpactPathORM constructed outside its single authorized site"
-    assert _construction_sites("CurrentOntologyImpactORM") == [
+    assert _construction_sites(
+        "CurrentOntologyImpactORM", extra_excluded=_h6_platform_integration_test
+    ) == [
         "infrastructure/persistence/oqi_ontology_impact_evaluation_repository.py"
     ], "CurrentOntologyImpactORM constructed outside its single authorized site"
 
@@ -1565,6 +1582,52 @@ def test_oqi_h5_timeliness_orms_have_single_construction_site() -> None:
     assert _construction_sites("TimelinessFindingORM") == [
         "infrastructure/persistence/oqi_timeliness_evaluation_repository.py"
     ], "TimelinessFindingORM constructed outside its single authorized site"
+
+
+def test_oqi_h6_uniqueness_orms_have_single_construction_site() -> None:
+    """CDD-084 Artifact Authorization row 12: single-construction-site
+    firewall for the 5 new OQI-H6 Uniqueness ORM classes, mirroring H4's/
+    H5's own firewall-extension precedent exactly -- each has exactly one
+    authorized repository construction site."""
+    backend_root = REPOSITORY_ROOT / "backend" / "app"
+
+    def _construction_sites(class_name: str) -> list[str]:
+        sites = [
+            path
+            for path in backend_root.rglob("*.py")
+            if f"{class_name}(" in path.read_text(encoding="utf-8")
+            and path.name
+            not in {
+                "oqi_uniqueness.py",
+                # test_oqi_h6_uniqueness_authorization_and_tenant_isolation.py's
+                # own adversarial tests deliberately construct raw
+                # oqi_uniqueness ORM rows, bypassing every repository/domain
+                # validation, in exactly the tests proving the database-
+                # level CHECK/FK constraints reject a violation even when
+                # the application layer is bypassed -- the identical
+                # established pattern as test_oqi_h5_timeliness_
+                # authorization_and_tenant_isolation.py's own raw
+                # oqi_timeliness ORM construction.
+                "test_oqi_h6_uniqueness_authorization_and_tenant_isolation.py",
+            }
+        ]
+        return sorted(str(p.relative_to(backend_root)) for p in sites)
+
+    assert _construction_sites("UniquenessPolicyORM") == [
+        "infrastructure/persistence/oqi_uniqueness_policy_repository.py"
+    ], "UniquenessPolicyORM constructed outside its single authorized site"
+    assert _construction_sites("UniquenessEvaluationORM") == [
+        "infrastructure/persistence/oqi_uniqueness_evaluation_repository.py"
+    ], "UniquenessEvaluationORM constructed outside its single authorized site"
+    assert _construction_sites("UniquenessCandidateORM") == [
+        "infrastructure/persistence/oqi_uniqueness_candidate_repository.py"
+    ], "UniquenessCandidateORM constructed outside its single authorized site"
+    assert _construction_sites("UniquenessAdjudicationORM") == [
+        "infrastructure/persistence/oqi_uniqueness_candidate_repository.py"
+    ], "UniquenessAdjudicationORM constructed outside its single authorized site"
+    assert _construction_sites("UniquenessFindingORM") == [
+        "infrastructure/persistence/oqi_uniqueness_evaluation_repository.py"
+    ], "UniquenessFindingORM constructed outside its single authorized site"
 
 
 def test_oqi5_i2_agent_orms_have_single_construction_site() -> None:

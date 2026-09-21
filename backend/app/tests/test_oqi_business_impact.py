@@ -351,11 +351,11 @@ def test_migration_round_trips_94_100_94_100(migrated_engine: Engine) -> None:
     # from 109 to 114 (+5 new tables from migrations 0031-0033). The
     # historical 94 boundary (at 0025, before OQI6) is correctly pinned and
     # unaffected -- it must NOT change.
-    assert _table_count() == 126
+    assert _table_count() == 131
     alembic.command.downgrade(config, "0025_oqi5_agent_reasoning")
     assert _table_count() == 94
     alembic.command.upgrade(config, "head")
-    assert _table_count() == 126
+    assert _table_count() == 131
 
 
 # =====================================================================
@@ -1992,7 +1992,7 @@ def test_r3tim01_to_m03_migration_round_trip(migrated_engine: Engine) -> None:
                 ).scalar_one()
             )
 
-    assert _table_count() == 126
+    assert _table_count() == 131
     alembic.command.downgrade(config, "0042_oqi6_r2_evaluation_tenancy")  # R3-TI-M02
     # Historical boundary at 0042 -- correctly pinned at the pre-CDD-059,
     # pre-0043/0044/0045 count; those later migrations (CDD-059's own 0045
@@ -2003,7 +2003,7 @@ def test_r3tim01_to_m03_migration_round_trip(migrated_engine: Engine) -> None:
     # REAL-ENTERPRISE-INGESTION-I).
     assert _table_count() == 123
     alembic.command.upgrade(config, "head")  # R3-TI-M01/M03
-    assert _table_count() == 126
+    assert _table_count() == 131
 
 
 def test_r3tim04_to_m06_invalid_legacy_current_business_impact_fails_closed(

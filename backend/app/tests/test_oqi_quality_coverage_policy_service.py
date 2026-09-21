@@ -218,45 +218,17 @@ def test_empty_source_object_ids_short_circuits_to_false_without_querying() -> N
 # ---------------------------------------------------------------------
 # Unsupported (future) dimension dispatch (CDD-047 §14). CDD-048 §23
 # (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final report):
-# ACCURACY, REASONABLENESS, and INTEGRITY (CDD-050 §24) are removed from
-# this parametrize list -- they now have live evaluators/dispatch and are
-# proven to dispatch correctly (not unconditionally False) by the tests
-# immediately below this class. TIMELINESS is likewise removed (CDD-051
-# §25; CDD-051-Artifact-Authorization-I2-Coverage-Test-Parametrization-
-# Correction.md). UNIQUENESS remains genuinely unsupported.
+# ACCURACY, REASONABLENESS, and INTEGRITY (CDD-050 §24) were removed from
+# this parametrize list as each gained live dispatch. TIMELINESS was
+# likewise removed (CDD-051 §25; CDD-051-Artifact-Authorization-I2-
+# Coverage-Test-Parametrization-Correction.md). UNIQUENESS is the last
+# member of the closed, exactly-nine `CoverageDimension` vocabulary (CDD-
+# 084 §28; Artifact Authorization row 1) to gain dispatch -- proven
+# supported, not unconditionally False, by
+# test_uniqueness_dispatches_to_uniqueness_evaluation_repository below.
+# This class-of-test is now moot: every `CoverageDimension` member has
+# live dispatch, so no "unsupported dimension" parametrize case remains.
 # ---------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "dimension",
-    [
-        # CDD-051-Artifact-Authorization-I2-Coverage-Test-Parametrization-
-        # Correction.md: TIMELINESS is no longer unsupported as of CDD-051
-        # §25 -- removed from this list, proven supported instead by
-        # test_timeliness_dispatches_to_timeliness_evaluation_repository.
-        CoverageDimension.UNIQUENESS,
-    ],
-)
-def test_unsupported_dimension_dispatch_returns_false_without_querying(
-    dimension: CoverageDimension,
-) -> None:
-    repo = _repo()
-    with (
-        patch(
-            "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
-            "OqiQualityEvaluationRepositoryImpl"
-        ) as oqi1_cls,
-        patch(
-            "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
-            "OqiCrossSourceEvaluationRepositoryImpl"
-        ) as oqi2_cls,
-    ):
-        result = repo.has_qualifying_coverage_for_dimension(
-            tenant_id=TENANT, source_object_ids=(uuid4(),), dimension=dimension
-        )
-    assert result is False
-    oqi1_cls.assert_not_called()
-    oqi2_cls.assert_not_called()
 
 
 def test_completeness_and_validity_dispatch_to_oqi1() -> None:
@@ -375,6 +347,31 @@ def test_timeliness_dispatches_to_timeliness_evaluation_repository() -> None:
         )
     assert result is True
     timeliness_cls.return_value.has_qualifying_coverage.assert_called_once()
+
+
+def test_uniqueness_dispatches_to_uniqueness_evaluation_repository() -> None:
+    """CDD-084 §28: UNIQUENESS is existence-only, subject-scoped, mirroring
+    TIMELINESS's own dispatch discipline exactly -- resolves the anchor's
+    `source_object_ids` to `enterprise_entity_id`s (Structural Integrity's
+    own established mechanism), then dispatches to
+    `OqiUniquenessEvaluationRepositoryImpl`, never unconditionally False."""
+    repo = _repo()
+    entity_id = uuid4()
+    with (
+        patch.object(repo, "_resolve_entity_ids_for_source_objects", return_value=(entity_id,)),
+        patch(
+            "app.infrastructure.persistence.oqi_quality_coverage_policy_repository."
+            "OqiUniquenessEvaluationRepositoryImpl"
+        ) as uniqueness_cls,
+    ):
+        uniqueness_cls.return_value.has_qualifying_coverage.return_value = True
+        result = repo.has_qualifying_coverage_for_dimension(
+            tenant_id=TENANT, source_object_ids=(uuid4(),), dimension=CoverageDimension.UNIQUENESS
+        )
+    assert result is True
+    uniqueness_cls.return_value.has_qualifying_coverage.assert_called_once_with(
+        tenant_id=TENANT, enterprise_entity_ids=(entity_id,)
+    )
 
 
 # ---------------------------------------------------------------------

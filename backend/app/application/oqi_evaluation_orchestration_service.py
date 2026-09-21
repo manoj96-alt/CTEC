@@ -76,6 +76,7 @@ from app.application.oqi_ontology_impact_evaluation_service import (
 from app.application.oqi_quality_evaluation_service import OqiQualityEvaluationService
 from app.application.oqi_reference_evidence_service import OqiReferenceEvidenceService
 from app.application.oqi_timeliness_evaluation_service import OqiTimelinessEvaluationService
+from app.application.oqi_uniqueness_evaluation_service import OqiUniquenessEvaluationService
 from app.domain.oqi.evaluation import (
     EvaluationSubject,
     SourceRecordLineageIdentity,
@@ -90,7 +91,14 @@ from app.domain.oqi_integrity.reference import derive_reference_finding_id
 from app.domain.oqi_integrity.structural import derive_structural_finding_id
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
 from app.domain.oqi_timeliness.evaluation import derive_timeliness_finding_id
+from app.domain.oqi_uniqueness.evaluation import (
+    UniquenessOutcome,
+    derive_uniqueness_finding_id,
+)
 from app.infrastructure.persistence.entity_resolution_store import EntityResolutionStore
+from app.infrastructure.persistence.models.enterprise_entity import (
+    EnterpriseEntity as EnterpriseEntityORM,
+)
 from app.infrastructure.persistence.models.oqi_business_rule import (
     BusinessRuleInputBindingORM,
     BusinessRuleORM,
@@ -147,6 +155,15 @@ from app.infrastructure.persistence.oqi_timeliness_evaluation_repository import 
 )
 from app.infrastructure.persistence.oqi_timeliness_policy_repository import (
     OqiTimelinessPolicyRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_candidate_repository import (
+    OqiUniquenessCandidateRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_evaluation_repository import (
+    OqiUniquenessEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_policy_repository import (
+    OqiUniquenessPolicyRepositoryImpl,
 )
 from app.infrastructure.persistence.semantic_mapping_repository import (
     SemanticMappingRepository,
@@ -287,6 +304,18 @@ class OqiEvaluationOrchestrationService:
         if record is None:
             return None
         return record.enterprise_entity_id
+
+    def _resolve_entity_type_id(self, *, tenant_id: str, enterprise_entity_id: UUID) -> UUID | None:
+        """CDD-084 §29: the one small additional resolution H6's dispatch
+        stage needs beyond what Integrity Structural already resolves --
+        `UniquenessPolicy` is anchored to `entity_type_id` (CDD-084 §15),
+        never to the entity id itself. Read-only, creates nothing."""
+        return self.session.scalar(
+            select(EnterpriseEntityORM.entity_type_id).where(
+                EnterpriseEntityORM.tenant_id == tenant_id,
+                EnterpriseEntityORM.enterprise_entity_id == enterprise_entity_id,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Public orchestration entry point.
@@ -751,6 +780,82 @@ class OqiEvaluationOrchestrationService:
         except Exception:  # noqa: BLE001
             self.session.rollback()
             dimension_results.append(DimensionResult("TIMELINESS", "FAILED"))
+
+        # --- 10. UNIQUENESS -- never an OQI4 input via the generic
+        # propagation service, same closed-FindingFamily reason as
+        # INTEGRITY/TIMELINESS; own separate Finding storage family; own
+        # transaction (CDD-056 SS22). Reuses the SAME already-resolved
+        # `enterprise_entity_id` the Integrity Structural stage above
+        # resolved (CDD-084 §29) -- no new ER lookup. The only additional
+        # resolution H6 needs is the entity's own `entity_type_id`, since
+        # `UniquenessPolicy` anchors there, never to the entity id itself
+        # (CDD-084 §15). Dispatches to `OqiUniquenessEvaluationService.
+        # evaluate_entity_type` -- the single, bounded, already-proven
+        # source of truth for candidate generation (CDD-084 §16-§17) --
+        # never a reimplementation of its bucket/cap logic here. ---
+        try:
+            entity_type_id = (
+                self._resolve_entity_type_id(
+                    tenant_id=tenant_id, enterprise_entity_id=enterprise_entity_id
+                )
+                if enterprise_entity_id is not None
+                else None
+            )
+            if entity_type_id is None:
+                dimension_results.append(DimensionResult("UNIQUENESS", "NOT_EVALUABLE"))
+            else:
+                # `entity_type_id` is only non-None when `enterprise_entity_id`
+                # was too (the ternary above), so this is always a real id here.
+                assert enterprise_entity_id is not None
+                uniqueness_evaluation_repo = OqiUniquenessEvaluationRepositoryImpl(self.session)
+                uniqueness_service = OqiUniquenessEvaluationService(
+                    policy_lookup=OqiUniquenessPolicyRepositoryImpl(self.session),
+                    candidate_repository=OqiUniquenessCandidateRepositoryImpl(self.session),
+                    evaluation_repository=uniqueness_evaluation_repo,
+                    clock=self._clock,
+                )
+                uniqueness_results = uniqueness_service.evaluate_entity_type(
+                    tenant_id=tenant_id, entity_type_id=entity_type_id, moment=horizon
+                )
+                own_result = next(
+                    (
+                        evaluation
+                        for evaluation in uniqueness_results
+                        if evaluation.enterprise_entity_id == enterprise_entity_id
+                    ),
+                    None,
+                )
+                if own_result is None:
+                    # CDD-084 §20's no-ACTIVE-policy case: zero row, for
+                    # this entity_type -- not a fabricated default.
+                    dimension_results.append(DimensionResult("UNIQUENESS", "NOT_EVALUABLE"))
+                else:
+                    uniqueness_finding_id = None
+                    if own_result.outcome is UniquenessOutcome.VIOLATED:
+                        for other_id in (
+                            e.enterprise_entity_id
+                            for e in uniqueness_results
+                            if e.enterprise_entity_id != enterprise_entity_id
+                        ):
+                            member_a, member_b = sorted((enterprise_entity_id, other_id))
+                            candidate_finding_id = derive_uniqueness_finding_id(
+                                tenant_id=tenant_id, member_a_id=member_a, member_b_id=member_b
+                            )
+                            if uniqueness_evaluation_repo.get_finding(candidate_finding_id):
+                                uniqueness_finding_id = candidate_finding_id
+                                break
+                    dimension_results.append(
+                        DimensionResult(
+                            "UNIQUENESS",
+                            "EVALUATED",
+                            uniqueness_finding_id,
+                            own_result.outcome.value,
+                        )
+                    )
+            self.session.commit()
+        except Exception:  # noqa: BLE001
+            self.session.rollback()
+            dimension_results.append(DimensionResult("UNIQUENESS", "FAILED"))
 
         # --- OQI4 Ontology Impact: a new, separate transaction per
         # (finding_family, finding_id) pair (CDD-056 SS22) -- a failure on

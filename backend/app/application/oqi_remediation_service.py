@@ -136,6 +136,15 @@ class OqiRemediationService:
             # DATA/TRIGGER_CONNECTOR action type, no external-system
             # mutation authority of any kind.
             candidates = extract_reasonableness_candidates()
+        elif quality_dimension == "UNIQUENESS":
+            # CDD-084 §29 (PO-2): duplicate candidate detection routes to
+            # zero candidates / STEWARD_INVESTIGATION, mirroring
+            # TIMELINESS's/INTEGRITY's own precedent exactly. No new
+            # RemediationCandidateBasis member, no MERGE_ENTITY/
+            # DEACTIVATE_ENTITY/REPOINT_ENTITY action type, no identity-
+            # mutation authority of any kind -- H6 detects and routes to
+            # steward adjudication, it never remediates.
+            candidates = extract_reasonableness_candidates()
         elif finding_family is FindingFamily.OQI1:
             candidates = extract_oqi1_candidates()
         elif finding_family is FindingFamily.OQI3:

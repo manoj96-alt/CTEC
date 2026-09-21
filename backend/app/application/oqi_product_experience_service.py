@@ -41,6 +41,9 @@ from app.domain.oqi_remediation.case import FindingFamily as RemediationFindingF
 from app.domain.oqi_remediation.case import derive_remediation_case_id
 from app.domain.oqi_remediation_agent.role import AgentRoleId
 from app.domain.shared.exceptions import ValidationException
+from app.infrastructure.persistence.models.enterprise_entity import (
+    EnterpriseEntity as EnterpriseEntityORM,
+)
 from app.infrastructure.persistence.models.oqi_business_impact import (
     CurrentRelianceORM,
     OqiRelianceEvaluationORM,
@@ -64,6 +67,7 @@ from app.infrastructure.persistence.models.oqi_remediation_agent import (
     AgentRunORM,
 )
 from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
+from app.infrastructure.persistence.models.oqi_uniqueness import UniquenessFindingORM
 from app.infrastructure.persistence.oqi_business_impact_repository import (
     OqiBusinessImpactRepositoryImpl,
 )
@@ -74,6 +78,12 @@ from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository im
 from app.infrastructure.persistence.oqi_remediation_repository import (
     OqiRemediationParticipantReader,
     OqiRemediationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_candidate_repository import (
+    OqiUniquenessCandidateRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_uniqueness_evaluation_repository import (
+    OqiUniquenessEvaluationRepositoryImpl,
 )
 
 _SPECIALIST_ROLE_IDS: tuple[AgentRoleId, ...] = (
@@ -228,6 +238,44 @@ class CommandCenterRow:
     pending_human_authorizations_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class UniquenessCandidateMemberRow:
+    """CDD-084 §30: one pair member's own governed identity + independent
+    OQI4 impact outcome -- both members are always populated equally here;
+    this is the one place the pair is never collapsed to a single
+    subject."""
+
+    entity_id: UUID
+    entity_name: str
+    impact_outcome: str
+
+
+@dataclass(frozen=True, slots=True)
+class UniquenessCandidateDetailRow:
+    """CDD-084 §30: the exact pair-detail read model -- both members,
+    the shared blocking evidence (`matched_normalized_name`, CDD-084 §18),
+    policy/version provenance, the Finding's own current state, and the
+    latest governed steward adjudication (if any). Never a merge control,
+    never a "proven duplicate" field -- `finding_status`/`latest_
+    adjudication_action` are the only state this exposes, exactly as
+    persisted (CDD-084 §7: `DUPLICATE CANDIDATE ≠ DUPLICATE FACT`)."""
+
+    finding_id: UUID
+    candidate_id: UUID
+    finding_status: str
+    finding_state_revision: int
+    member_a: UniquenessCandidateMemberRow
+    member_b: UniquenessCandidateMemberRow
+    matched_normalized_name: str
+    policy_id: UUID
+    policy_version: int
+    candidate_created_on: datetime
+    latest_adjudication_action: str | None
+    latest_adjudication_actor_id: str | None
+    latest_adjudication_rationale: str | None
+    latest_adjudication_decided_on: datetime | None
+
+
 class OqiProductExperienceService:
     """Read-only composition layer, plus two thin action wrappers. Every
     method is tenant-scoped from its `tenant_id` argument -- the caller
@@ -240,6 +288,8 @@ class OqiProductExperienceService:
         self._impact_repo = OqiOntologyImpactEvaluationRepositoryImpl(session)
         self._business_impact_repo = OqiBusinessImpactRepositoryImpl(session)
         self._remediation_repo = OqiRemediationRepositoryImpl(session)
+        self._uniqueness_evaluation_repo = OqiUniquenessEvaluationRepositoryImpl(session)
+        self._uniqueness_candidate_repo = OqiUniquenessCandidateRepositoryImpl(session)
 
     # ------------------------------------------------------------------
     # Command Center (CDD-045 §7, §23).
@@ -562,6 +612,29 @@ class OqiProductExperienceService:
                     )
                 )
 
+        if family is None or family == FindingStorageFamily.UNIQUENESS.value:
+            # CDD-084 §30: the Finding's semantic condition is a PAIR
+            # (CDD-084 §11), but this generic single-subject list row
+            # carries only one `condition_label`/`entity_id` -- the
+            # `matched_normalized_name` evidentiary basis (via the
+            # candidate, not stored redundantly here) is exposed instead
+            # by the dedicated pair-detail endpoint, never invented here.
+            query6 = select(UniquenessFindingORM).where(UniquenessFindingORM.tenant_id == tenant_id)
+            if status is not None:
+                query6 = query6.where(UniquenessFindingORM.status == status)
+            for model6 in self.session.execute(query6).scalars().all():
+                resolved.append(
+                    ResolvedFinding(
+                        family=FindingStorageFamily.UNIQUENESS,  # type: ignore[arg-type]
+                        finding_id=model6.finding_id,
+                        condition_label="DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE",
+                        status=model6.status,
+                        state_revision=model6.state_revision,
+                        first_seen_at=model6.first_seen_at,
+                        last_seen_at=model6.last_seen_at,
+                    )
+                )
+
         resolved.sort(key=lambda r: (r.last_seen_at, str(r.finding_id)), reverse=True)
         page = resolved[offset : offset + limit]
         next_cursor = str(offset + limit) if offset + limit < len(resolved) else None
@@ -592,13 +665,30 @@ class OqiProductExperienceService:
                         entity_id = result.entity_id
                     except FindingNotFoundError:
                         entity_id = None
-            else:
+            elif finding.family is FindingStorageFamily.TIMELINESS:
                 entity_id = None
                 try:
                     result = self._impact_repo.resolve_timeliness_finding_subject(
                         tenant_id=tenant_id, finding_id=finding.finding_id
                     )
                     entity_id = result.entity_id
+                except FindingNotFoundError:
+                    entity_id = None
+            else:
+                # FindingStorageFamily.UNIQUENESS. CDD-084 §30's documented
+                # display-anchor exception: this generic single-subject row
+                # anchors to `member_a`'s own impact result -- presentation
+                # compatibility only, never persistence, never OQI4's own
+                # primary subject (both members are resolved equally there,
+                # `resolve_uniqueness_finding_subject`'s own 2-tuple return),
+                # never a remediation/authority target. The pair-detail
+                # endpoint is the one place both members are ever exposed.
+                entity_id = None
+                try:
+                    impact_a, _impact_b = self._impact_repo.resolve_uniqueness_finding_subject(
+                        tenant_id=tenant_id, finding_id=finding.finding_id
+                    )
+                    entity_id = impact_a.entity_id
                 except FindingNotFoundError:
                     entity_id = None
             highest: Criticality | None = None
@@ -639,6 +729,84 @@ class OqiProductExperienceService:
 
     def get_finding_detail(self, *, tenant_id: str, finding_id: UUID) -> ResolvedFinding | None:
         return self._resolve_finding(tenant_id=tenant_id, finding_id=finding_id)
+
+    # ------------------------------------------------------------------
+    # Uniqueness pair detail (CDD-084 §30). Tenant-scoped exclusively via
+    # the I1-established repository lookups below, each of which already
+    # returns None on any tenant mismatch (mirrors `_resolve_finding`'s
+    # own discipline) -- a cross-tenant `finding_id` guess is
+    # indistinguishable from a genuinely unknown one (no existence
+    # leakage). Composed entirely from already-existing I1 repository
+    # methods (`get_finding`, `get_candidate`, `get_latest_adjudication`,
+    # `resolve_uniqueness_finding_subject`) plus a plain `EnterpriseEntity`
+    # name lookup -- no new method is added to any I1-created repository
+    # file (CDD-084 §33's own path-discipline, restated for I2).
+    # ------------------------------------------------------------------
+
+    def get_uniqueness_candidate_detail(
+        self, *, tenant_id: str, finding_id: UUID
+    ) -> UniquenessCandidateDetailRow | None:
+        finding = self._uniqueness_evaluation_repo.get_finding(finding_id)
+        if finding is None or finding.tenant_id != tenant_id:
+            return None
+        candidate = self._uniqueness_candidate_repo.get_candidate(
+            tenant_id=tenant_id, candidate_id=finding.candidate_id
+        )
+        if candidate is None:
+            return None
+
+        names: dict[UUID, str] = {
+            entity_id: entity_name
+            for entity_id, entity_name in self.session.execute(
+                select(
+                    EnterpriseEntityORM.enterprise_entity_id,
+                    EnterpriseEntityORM.enterprise_entity_name,
+                ).where(
+                    EnterpriseEntityORM.tenant_id == tenant_id,
+                    EnterpriseEntityORM.enterprise_entity_id.in_(
+                        (finding.member_a_id, finding.member_b_id)
+                    ),
+                )
+            ).all()
+        }
+        impact_a, impact_b = self._impact_repo.resolve_uniqueness_finding_subject(
+            tenant_id=tenant_id, finding_id=finding_id
+        )
+        latest_adjudication = self._uniqueness_candidate_repo.get_latest_adjudication(
+            tenant_id=tenant_id, candidate_id=candidate.candidate_id
+        )
+        return UniquenessCandidateDetailRow(
+            finding_id=finding.finding_id,
+            candidate_id=candidate.candidate_id,
+            finding_status=finding.status.value,
+            finding_state_revision=finding.state_revision,
+            member_a=UniquenessCandidateMemberRow(
+                entity_id=finding.member_a_id,
+                entity_name=names.get(finding.member_a_id, ""),
+                impact_outcome=impact_a.outcome.value,
+            ),
+            member_b=UniquenessCandidateMemberRow(
+                entity_id=finding.member_b_id,
+                entity_name=names.get(finding.member_b_id, ""),
+                impact_outcome=impact_b.outcome.value,
+            ),
+            matched_normalized_name=candidate.matched_normalized_name,
+            policy_id=candidate.policy_id,
+            policy_version=candidate.policy_version,
+            candidate_created_on=candidate.created_on,
+            latest_adjudication_action=(
+                latest_adjudication.action.value if latest_adjudication is not None else None
+            ),
+            latest_adjudication_actor_id=(
+                latest_adjudication.actor_id if latest_adjudication is not None else None
+            ),
+            latest_adjudication_rationale=(
+                latest_adjudication.rationale if latest_adjudication is not None else None
+            ),
+            latest_adjudication_decided_on=(
+                latest_adjudication.decided_on if latest_adjudication is not None else None
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Evidence (CDD-045 §11, §23).
