@@ -33,7 +33,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: { default: "Noetva", template: "%s · Noetva" },
-  description: "Cognitive Twin Enterprise Core",
+  description: "Ontology-driven decision intelligence",
 };
 export default function RootLayout({
   children,

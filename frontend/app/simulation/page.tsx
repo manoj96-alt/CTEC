@@ -21,11 +21,12 @@ export default function Page() {
         <span className="eyebrow">Status</span>
         <h2>Simulation is not executable in this workspace</h2>
         <p style={{ color: "var(--muted)" }}>
-          CTEC can compute a hypothetical, ephemeral evidence-fitness impact for
-          a proposed information-element state as a governed backend capability.
-          That capability is not exposed through any authorized Gate X frontend
-          contract in this release, so this page cannot accept an input, run a
-          scenario, or display a result for any supplier or information element.
+          Noetva can compute a hypothetical, ephemeral evidence-fitness impact
+          for a proposed information-element state as a governed backend
+          capability. That capability is not exposed through any authorized Gate
+          X frontend contract in this release, so this page cannot accept an
+          input, run a scenario, or display a result for any supplier or
+          information element.
         </p>
       </section>
 

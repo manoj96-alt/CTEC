@@ -13,9 +13,9 @@ export default function Page() {
       <h1 style={{ marginTop: "0.25rem" }}>About</h1>
 
       <section style={{ marginTop: "2rem" }}>
-        <h2>What CTEC is</h2>
+        <h2>What Noetva is</h2>
         <p style={{ color: "var(--muted)" }}>
-          CTEC is an ontology-backed decision-support prototype and
+          Noetva is an ontology-backed decision-support prototype and
           demonstration — not a production platform. It shows one way connected
           data can support an explainable, human-reviewed recommendation.
         </p>

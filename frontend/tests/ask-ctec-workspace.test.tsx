@@ -91,14 +91,18 @@ async function askQuestion(text: string) {
   fireEvent.change(screen.getByLabelText("Question"), {
     target: { value: text },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Ask CTEC" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask Noetva" }));
 }
 
 test("renders the workspace with question input and submit button", () => {
   render(<AskCtecWorkspace />);
-  expect(screen.getByRole("heading", { name: "Ask CTEC" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Ask Noetva" }),
+  ).toBeInTheDocument();
   expect(screen.getByLabelText("Question")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Ask CTEC" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Ask Noetva" }),
+  ).toBeInTheDocument();
 });
 
 test("submitting invokes the API with the entered question", async () => {
@@ -250,7 +254,7 @@ test("renders a backend error state with a retry that re-submits the question", 
 
   await waitFor(() =>
     expect(
-      screen.getByText("Ask CTEC service unavailable"),
+      screen.getByText("Ask Noetva service unavailable"),
     ).toBeInTheDocument(),
   );
 
@@ -269,7 +273,7 @@ test("network failure that is not an OntologyCopilotApiError shows a generic err
 
   await waitFor(() =>
     expect(
-      screen.getByText("The Ask CTEC service could not be reached."),
+      screen.getByText("The Ask Noetva service could not be reached."),
     ).toBeInTheDocument(),
   );
 });
