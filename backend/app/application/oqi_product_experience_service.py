@@ -447,21 +447,112 @@ class OqiProductExperienceService:
                 first_seen_at=rule_model.first_seen_at,
                 last_seen_at=rule_model.last_seen_at,
             )
+        # CDD-086: closes the LIST/DETAIL registry asymmetry -- these four
+        # branches mirror list_findings()'s own already-correct query and
+        # condition_label semantics for the storage families it exposes
+        # but this method never resolved. `ResolvedFinding.family`'s
+        # declared type stays the closed `FindingFamily` (unmodified,
+        # matching list_findings()'s own existing convention) --
+        # `FindingStorageFamily` values are a deliberate, narrowly-scoped
+        # runtime-only widening, not a broadening of `FindingFamily`
+        # itself (CDD-086 §17).
+        structural_model = self.session.get(IntegrityStructuralFindingORM, finding_id)
+        if structural_model is not None and structural_model.tenant_id == tenant_id:
+            return ResolvedFinding(
+                family=FindingStorageFamily.INTEGRITY,  # type: ignore[arg-type]
+                finding_id=finding_id,
+                condition_label=structural_model.finding_type,
+                status=structural_model.status,
+                state_revision=structural_model.state_revision,
+                first_seen_at=structural_model.first_seen_at,
+                last_seen_at=structural_model.last_seen_at,
+            )
+        reference_model = self.session.get(IntegrityReferenceFindingORM, finding_id)
+        if reference_model is not None and reference_model.tenant_id == tenant_id:
+            return ResolvedFinding(
+                family=FindingStorageFamily.INTEGRITY,  # type: ignore[arg-type]
+                finding_id=finding_id,
+                condition_label=reference_model.finding_type,
+                status=reference_model.status,
+                state_revision=reference_model.state_revision,
+                first_seen_at=reference_model.first_seen_at,
+                last_seen_at=reference_model.last_seen_at,
+            )
+        timeliness_model = self.session.get(TimelinessFindingORM, finding_id)
+        if timeliness_model is not None and timeliness_model.tenant_id == tenant_id:
+            return ResolvedFinding(
+                family=FindingStorageFamily.TIMELINESS,  # type: ignore[arg-type]
+                finding_id=finding_id,
+                condition_label=timeliness_model.finding_type,
+                status=timeliness_model.status,
+                state_revision=timeliness_model.state_revision,
+                first_seen_at=timeliness_model.first_seen_at,
+                last_seen_at=timeliness_model.last_seen_at,
+            )
+        uniqueness_model = self.session.get(UniquenessFindingORM, finding_id)
+        if uniqueness_model is not None and uniqueness_model.tenant_id == tenant_id:
+            return ResolvedFinding(
+                family=FindingStorageFamily.UNIQUENESS,  # type: ignore[arg-type]
+                finding_id=finding_id,
+                condition_label="DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE",
+                status=uniqueness_model.status,
+                state_revision=uniqueness_model.state_revision,
+                first_seen_at=uniqueness_model.first_seen_at,
+                last_seen_at=uniqueness_model.last_seen_at,
+            )
         return None
 
     def _resolve_entity(
-        self, *, tenant_id: str, family: FindingFamily, finding_id: UUID
+        self,
+        *,
+        tenant_id: str,
+        family: FindingFamily | FindingStorageFamily,
+        finding_id: UUID,
     ) -> UUID | None:
-        try:
-            subject = self._impact_repo.resolve_finding_subject(
-                tenant_id=tenant_id, finding_family=family, finding_id=finding_id
+        # CDD-086 §10: newer storage families reuse the exact per-family
+        # subject resolvers list_findings() already calls -- the existing
+        # FindingFamily-typed resolve_finding_subject() path (whose final
+        # branch is `raise AssertionError("unreachable: ...")`) is never
+        # called with anything but a genuine FindingFamily member, exactly
+        # as before this change.
+        if isinstance(family, FindingFamily):
+            try:
+                subject = self._impact_repo.resolve_finding_subject(
+                    tenant_id=tenant_id, finding_family=family, finding_id=finding_id
+                )
+            except FindingNotFoundError:
+                return None
+            result = self._impact_repo.resolve_direct_impact(
+                tenant_id=tenant_id, source_object_ids=subject.source_object_ids
             )
+            return result.entity_id
+        try:
+            if family is FindingStorageFamily.INTEGRITY:
+                try:
+                    return self._impact_repo.resolve_integrity_structural_finding_subject(
+                        tenant_id=tenant_id, finding_id=finding_id
+                    ).entity_id
+                except FindingNotFoundError:
+                    return self._impact_repo.resolve_integrity_reference_finding_subject(
+                        tenant_id=tenant_id, finding_id=finding_id
+                    ).entity_id
+            if family is FindingStorageFamily.TIMELINESS:
+                return self._impact_repo.resolve_timeliness_finding_subject(
+                    tenant_id=tenant_id, finding_id=finding_id
+                ).entity_id
+            if family is FindingStorageFamily.UNIQUENESS:
+                # CDD-084 §30's own documented display-anchor exception,
+                # reused here identically to list_findings(): member_a's
+                # own impact result anchors this generic single-subject
+                # read -- presentation compatibility only, never a claim
+                # about primacy between the two pair members.
+                member_a, _member_b = self._impact_repo.resolve_uniqueness_finding_subject(
+                    tenant_id=tenant_id, finding_id=finding_id
+                )
+                return member_a.entity_id
         except FindingNotFoundError:
             return None
-        result = self._impact_repo.resolve_direct_impact(
-            tenant_id=tenant_id, source_object_ids=subject.source_object_ids
-        )
-        return result.entity_id
+        return None
 
     # ------------------------------------------------------------------
     # Finding list / detail (CDD-045 §10, §23).
@@ -836,20 +927,25 @@ class OqiProductExperienceService:
                 )
                 for obs in observations
             )
-        case = self._remediation_repo.get_case(
-            tenant_id=tenant_id,
-            finding_family=RemediationFindingFamily(finding.family.value),
-            finding_id=finding_id,
-        )
-        if case is not None:
-            candidates = self._remediation_repo.get_candidates_for_case(case.case_id)
-            if candidates:
-                top = candidates[0]
-                candidate = EvidenceCandidateRow(
-                    candidate_id=top.candidate_id,
-                    proposed_value=top.proposed_value,
-                    supporting_participant_count=len(top.supporting_evidence_ids),
-                )
+        # CDD-086 §11/§18: newer storage families never participate in the
+        # closed remediation-case identity domain -- skip the conversion
+        # and the case lookup entirely rather than construct an invalid
+        # RemediationFindingFamily. Honest empty candidate, never fabricated.
+        if isinstance(finding.family, FindingFamily):
+            case = self._remediation_repo.get_case(
+                tenant_id=tenant_id,
+                finding_family=RemediationFindingFamily(finding.family.value),
+                finding_id=finding_id,
+            )
+            if case is not None:
+                candidates = self._remediation_repo.get_candidates_for_case(case.case_id)
+                if candidates:
+                    top = candidates[0]
+                    candidate = EvidenceCandidateRow(
+                        candidate_id=top.candidate_id,
+                        proposed_value=top.proposed_value,
+                        supporting_participant_count=len(top.supporting_evidence_ids),
+                    )
         return EvidenceParticipantsBundle(participants=participants, candidate=candidate)
 
     # ------------------------------------------------------------------
@@ -1016,6 +1112,12 @@ class OqiProductExperienceService:
         finding = self._resolve_finding(tenant_id=tenant_id, finding_id=finding_id)
         if finding is None:
             return None
+        # CDD-086 §15/§18: newer storage families never participate in the
+        # closed remediation-case identity domain -- no agent investigation
+        # is, or could be, governed for them. Honest not-invoked result,
+        # never an invalid RemediationFindingFamily construction.
+        if not isinstance(finding.family, FindingFamily):
+            return AgentInvestigationRow(specialists=(), recommendation=None)
         case_id = derive_remediation_case_id(
             tenant_id=tenant_id,
             finding_family=RemediationFindingFamily(finding.family.value),
@@ -1080,6 +1182,19 @@ class OqiProductExperienceService:
         finding = self._resolve_finding(tenant_id=tenant_id, finding_id=finding_id)
         if finding is None:
             return None
+        # CDD-086 §16/§18: newer storage families do not gain generic
+        # governed remediation merely because generic detail is now
+        # retrievable -- no remediation case identity exists for them.
+        # H6's own dedicated adjudication semantics remain entirely
+        # separate and are never affected by this branch.
+        if not isinstance(finding.family, FindingFamily):
+            return RemediationRow(
+                case_status=None,
+                candidate=None,
+                recommendation=None,
+                authorization=None,
+                external_execution=None,
+            )
         case = self._remediation_repo.get_case(
             tenant_id=tenant_id,
             finding_family=RemediationFindingFamily(finding.family.value),
