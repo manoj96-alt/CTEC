@@ -77,11 +77,16 @@ clears them for the next presentation.
 
 ## 7. Known limitations — disclose, do not route around
 
-- **Integrity Finding-detail 404** (tracked separately, `NOETVA-INTEGRITY-FINDING-DETAIL-R1` or equivalent
-  future governed phase): `ORPHAN_REFERENCE` / `RELATIONSHIP_CARDINALITY_VIOLATION` /
-  `MISSING_REQUIRED_RELATIONSHIP` findings list correctly but 404 on their own detail route. **Never navigate
-  into an Integrity finding during a live demo.** The Golden Demo's own route sequence above never requires
-  it.
+- **Generic Finding detail (Integrity/Timeliness/Uniqueness) — RESOLVED**: previously 404'd on its own
+  detail route (tracked as `NOETVA-INTEGRITY-FINDING-DETAIL-R1`); now closed by CDD-086 Generic Finding
+  Detail Parity, merged to main before this candidate. `ORPHAN_REFERENCE`, `RELATIONSHIP_CARDINALITY_VIOLATION`,
+  and `MISSING_REQUIRED_RELATIONSHIP` (Integrity), `STALE_SOURCE_EVIDENCE` (Timeliness), and
+  `DUPLICATE_ENTERPRISE_ENTITY_CANDIDATE` (Uniqueness) findings all now open through generic Finding detail,
+  exactly as OQI1/OQI2/OQI3 findings already did. A downstream tab may still honestly report an
+  unknown/not-applicable state (e.g. `IMPACT_UNKNOWN`) when that downstream evaluation has not itself been
+  performed for the finding — generic detail availability is not the same claim as a populated downstream
+  evaluation. The H6 dedicated Uniqueness pair-detail route (§5 row 14) remains separate and unaffected. The
+  Golden Demo's own route sequence above does not navigate into an Integrity finding either way.
 - **Agent boundary**: the Agent tab will always show "not invoked" for the Golden Finding — there is no
   production path that ever executes an agent investigation automatically or on a demo-only trigger. This is
   a deliberate, honest limitation, not a bug to work around.
