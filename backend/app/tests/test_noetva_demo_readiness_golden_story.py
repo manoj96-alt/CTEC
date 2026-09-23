@@ -84,8 +84,12 @@ from app.infrastructure.persistence.oqi_remediation_repository import (
 
 
 @pytest.fixture(scope="module")
-def factory(migrated_engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=migrated_engine)
+def factory(migrated_engine: Engine) -> Generator[sessionmaker[Session], None, None]:
+    connection = migrated_engine.connect()
+    outer = connection.begin()
+    yield sessionmaker(bind=connection, join_transaction_mode="create_savepoint")
+    outer.rollback()
+    connection.close()
 
 
 @pytest.fixture(scope="module")
@@ -149,7 +153,9 @@ def test_d1_golden_supplier_deterministic_and_idempotent(
     assert before is not None
     # Idempotency: re-running seed() in a fresh session must not duplicate
     # or alter the already-seeded Supplier row.
-    with sessionmaker(bind=session.get_bind())() as second_session:
+    with sessionmaker(
+        bind=session.get_bind(), join_transaction_mode="create_savepoint"
+    )() as second_session:
         DemoOqiSeeder(second_session).seed()
         second_session.commit()
     count = session.scalar(
