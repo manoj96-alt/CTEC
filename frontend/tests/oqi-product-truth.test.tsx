@@ -213,16 +213,16 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <RemediationPanel
         remediation={{
           case_status: "PENDING",
-          candidate: null,
+          candidates: [],
           recommendation: {
             recommendation_type: "RECOMMEND_CANDIDATE",
             candidate_id: "c1",
             rationale: "peers agree",
             basis: "SPECIALIST_SUPPORTED",
           },
-          authorization: null,
           external_execution: null,
         }}
+        findingId="f1"
         onMutated={() => {}}
       />,
     );
@@ -235,19 +235,27 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <RemediationPanel
         remediation={{
           case_status: "AUTHORIZED",
-          candidate: null,
+          candidates: [
+            {
+              candidate_id: "c1",
+              proposed_value: "Correct value",
+              basis: "SPECIALIST_SUPPORTED",
+              authorization: {
+                authorization_id: "auth-1",
+                status: "APPROVED",
+                requested_by: "agent",
+                requested_on: "2026-01-01T00:00:00Z",
+                decided_by: "steward@example.com",
+                decided_on: "2026-01-01T00:00:00Z",
+                rejection_reason: null,
+                is_stale: false,
+              },
+            },
+          ],
           recommendation: null,
-          authorization: {
-            authorization_id: "auth-1",
-            principal: "steward@example.com",
-            decided_on: "2026-01-01T00:00:00Z",
-            instruction: "Correct value",
-            authorized_against_state_revision: 1,
-            is_stale: false,
-            status: "APPROVED",
-          },
           external_execution: null,
         }}
+        findingId="f1"
         onMutated={() => {}}
       />,
     );
@@ -262,11 +270,11 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
       <RemediationPanel
         remediation={{
           case_status: "EXTERNAL_EXECUTION_REPORTED",
-          candidate: null,
+          candidates: [],
           recommendation: null,
-          authorization: null,
           external_execution: { reported_at: "2026-01-01T00:00:00Z" },
         }}
+        findingId="f1"
         onMutated={() => {}}
       />,
     );

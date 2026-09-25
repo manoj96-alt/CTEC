@@ -280,7 +280,7 @@ test("canonical default scope is exactly the least-privilege live-capability set
   const config = browserAuthConfig();
 
   expect(config.scope).toBe(
-    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution oqi:read information-element-context:read evidence-fitness:read supply-chain-impact:evaluate",
+    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:prepare oqi-remediation:authorize oqi-remediation:report-execution oqi:read information-element-context:read evidence-fitness:read supply-chain-impact:evaluate",
   );
   // Token-exact check (not substring): "supply-chain-impact:read" is not a
   // substring of any requested token, but CDD-066 requires this be proven
@@ -300,7 +300,7 @@ test("canonical default scope is exactly the least-privilege live-capability set
   );
 });
 
-test("a configured NEXT_PUBLIC_OIDC_API_RESOURCE_URI qualifies exactly the ten backend capability scopes for Microsoft Entra, leaving openid/profile bare (CDD-074)", () => {
+test("a configured NEXT_PUBLIC_OIDC_API_RESOURCE_URI qualifies exactly the eleven backend capability scopes for Microsoft Entra, leaving openid/profile bare (CDD-074)", () => {
   process.env.NEXT_PUBLIC_OIDC_AUTHORITY =
     "https://8f9e2dee-5a5b-4b33-9044-4d11691899de.ciamlogin.com/8f9e2dee-5a5b-4b33-9044-4d11691899de/v2.0";
   process.env.NEXT_PUBLIC_OIDC_CLIENT_ID =
@@ -329,13 +329,14 @@ test("a configured NEXT_PUBLIC_OIDC_API_RESOURCE_URI qualifies exactly the ten b
     "api://3a880f13-985d-4a71-be05-20f97b9bcfa3/profile",
   );
 
-  // Exactly the ten backend capability scopes, each qualified with the
+  // Exactly the eleven backend capability scopes, each qualified with the
   // resource URI -- not the bare form, not a duplicate, not a different set.
   const expectedQualified = [
     "supplier-risk:read",
     "entity-resolution:read",
     "ontology-copilot:ask",
     "ontology-modeling:read",
+    "oqi-remediation:prepare",
     "oqi-remediation:authorize",
     "oqi-remediation:report-execution",
     "oqi:read",
@@ -378,7 +379,7 @@ test("an empty-string NEXT_PUBLIC_OIDC_SCOPE (e.g. an unset Docker build arg pas
   const config = browserAuthConfig();
 
   expect(config.scope).toBe(
-    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:authorize oqi-remediation:report-execution oqi:read information-element-context:read evidence-fitness:read supply-chain-impact:evaluate",
+    "openid profile supplier-risk:read entity-resolution:read ontology-copilot:ask ontology-modeling:read oqi-remediation:prepare oqi-remediation:authorize oqi-remediation:report-execution oqi:read information-element-context:read evidence-fitness:read supply-chain-impact:evaluate",
   );
 });
 

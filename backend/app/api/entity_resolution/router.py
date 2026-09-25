@@ -11,6 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from app.api.entity_resolution.dependencies import steward_api_service
 from app.api.entity_resolution.schemas import (
@@ -20,6 +21,7 @@ from app.api.entity_resolution.schemas import (
     DecisionResponse,
     PolicyListResponse,
     PreviewResponse,
+    SourceRepresentationSummary,
 )
 from app.api.supplier_risk.audit import SecurityAuditService
 from app.api.supplier_risk.authentication import TrustedPrincipal
@@ -40,6 +42,25 @@ from app.infrastructure.persistence.entity_resolution_store import StaleResoluti
 router = APIRouter(prefix="/api/v1/entity-resolution", tags=["entity-resolution"])
 
 _ENDPOINT_CLASSIFICATION = "ENTITY_RESOLUTION_STEWARD_API_V1"
+
+
+# CDD-085 G-R3 §20/§24 -- G-R4 §41: response models defined here (not in
+# entity_resolution/schemas.py, which this amendment does not authorize
+# touching) for the one new additive route below only.
+class ResolvedEntityRecordView(BaseModel):
+    understanding_key: str
+    outcome: str
+    business_confidence: str
+    structured_reasons: list[str]
+    narrative_explanation: str | None
+    produced_at: str
+    source_representations: list[SourceRepresentationSummary]
+
+
+class ResolvedEntityDetailResponse(BaseModel):
+    enterprise_entity_id: UUID
+    enterprise_entity_name: str
+    records: list[ResolvedEntityRecordView]
 
 
 @router.get("/cases", response_model=CaseListResponse)
@@ -96,6 +117,53 @@ def get_case(
         code="RESOLUTION_CASE_READ",
     )
     return result
+
+
+@router.get("/entities/{entity_id}", response_model=ResolvedEntityDetailResponse)
+def get_resolved_entity(
+    entity_id: UUID,
+    authenticated: Annotated[TrustedPrincipal, Depends(principal)],
+    service: Annotated[EntityResolutionStewardApiService, Depends(steward_api_service)],
+    dependencies: Annotated[Container, Depends(container)],
+    correlation: Annotated[UUID, Depends(correlation_id)],
+) -> ResolvedEntityDetailResponse:
+    """CDD-085 G-R3 §20/§24-§25: the resolved-identity detail surface --
+    structurally distinct from /cases (the steward triage queue, §19/§23:
+    QUEUE_OUTCOMES unmodified). Returns every governed source resolution
+    record contributing to the given EnterpriseEntity, including RESOLVED
+    ones the queue deliberately never surfaces. Tenant-scoped; unknown or
+    cross-tenant entity_id, or an entity with zero resolution records,
+    both fail closed as 404 -- no existence leak either way."""
+    _authorize(authenticated, "entity-resolution:read", dependencies, correlation)
+    _rate_limit(authenticated, dependencies)
+    result = service.get_resolved_entity(authenticated, entity_id)
+    if result is None:
+        raise HTTPException(404, detail={"code": "RESOLVED_ENTITY_NOT_FOUND"})
+    _audit(
+        dependencies,
+        authenticated,
+        correlation,
+        operation="READ_RESOLVED_ENTITY",
+        category="PROTECTED_DISCLOSURE",
+        outcome="PERMITTED",
+        code="RESOLVED_ENTITY_READ",
+    )
+    return ResolvedEntityDetailResponse(
+        enterprise_entity_id=result.enterprise_entity_id,
+        enterprise_entity_name=result.enterprise_entity_name,
+        records=[
+            ResolvedEntityRecordView(
+                understanding_key=record.understanding_key,
+                outcome=record.outcome,
+                business_confidence=record.business_confidence,
+                structured_reasons=record.structured_reasons,
+                narrative_explanation=record.narrative_explanation,
+                produced_at=record.produced_at,
+                source_representations=record.source_representations,
+            )
+            for record in result.records
+        ],
+    )
 
 
 @router.get("/policies", response_model=PolicyListResponse)

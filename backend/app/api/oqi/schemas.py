@@ -127,20 +127,26 @@ class AgentInvestigationResponse(BaseModel):
     recommendation: AgentRecommendationView | None
 
 
-class RemediationCandidateView(BaseModel):
+class RemediationCandidateAuthorizationView(BaseModel):
+    """CDD-085 G-R3 §7/§13: one candidate's own authorization, never a
+    case-wide "the" authorization -- each candidate in a plural
+    RemediationResponse carries its own, independently."""
+
+    authorization_id: UUID
+    status: str
+    requested_by: str
+    requested_on: datetime
+    decided_by: str | None
+    decided_on: datetime | None
+    rejection_reason: str | None
+    is_stale: bool
+
+
+class RemediationCandidateItemView(BaseModel):
     candidate_id: UUID
     proposed_value: str
-    status: str = "CANDIDATE_NOT_TRUTH"
-
-
-class RemediationAuthorizationView(BaseModel):
-    authorization_id: UUID
-    principal: str
-    decided_on: datetime | None
-    instruction: str
-    authorized_against_state_revision: int
-    is_stale: bool
-    status: str
+    basis: str
+    authorization: RemediationCandidateAuthorizationView | None
 
 
 class RemediationExternalExecutionView(BaseModel):
@@ -148,10 +154,16 @@ class RemediationExternalExecutionView(BaseModel):
 
 
 class RemediationResponse(BaseModel):
+    """CDD-085 G-R3 §7-§9/§16/§17: the plural remediation read model.
+    Every candidate the last Prepare produced is returned, deterministically
+    ordered (never candidates[0] / an incidental "latest instruction"
+    pick), each carrying its own authorization state so a genuine
+    CROSS_SOURCE_VALUE_CONFLICT case (e.g. Golden's real US/MX candidates)
+    is never collapsed to one arbitrary candidate."""
+
     case_status: str | None
-    candidate: RemediationCandidateView | None
+    candidates: tuple[RemediationCandidateItemView, ...]
     recommendation: AgentRecommendationView | None
-    authorization: RemediationAuthorizationView | None
     external_execution: RemediationExternalExecutionView | None
 
 

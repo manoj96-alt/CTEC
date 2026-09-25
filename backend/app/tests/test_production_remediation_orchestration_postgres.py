@@ -990,6 +990,7 @@ def test_remediation_chain_tenant_integrity_enforced_by_real_postgresql(
             OqiRemediationAuthorizationORM(
                 authorization_id=legit_authorization_id,
                 tenant_id=tenant_id,
+                case_id=legit_case_id,
                 instruction_id=legit_instruction_id,
                 payload_digest="digest-legit",
                 requested_by="test",
@@ -1126,6 +1127,7 @@ def test_remediation_chain_tenant_integrity_enforced_by_real_postgresql(
             OqiRemediationAuthorizationORM(
                 authorization_id=uuid4(),
                 tenant_id=attacker_tenant,
+                case_id=case_id,
                 instruction_id=owner_instruction_id,
                 payload_digest="digest-attack",
                 requested_by="adversary",

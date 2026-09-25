@@ -235,8 +235,7 @@ def test_integrity_downstream_tabs_honest(session: Session, condition_label: str
     )  # P21
     assert remediation is not None
     assert remediation.case_status is None
-    assert remediation.candidate is None
-    assert remediation.authorization is None
+    assert remediation.candidates == ()
     assert remediation.external_execution is None
 
 

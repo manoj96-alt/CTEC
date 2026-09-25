@@ -130,6 +130,7 @@ class OqiRemediationAuthorizationORM(BaseEntity):
         Index("idx_oqi_remediation_authorizations_tenant_id", "tenant_id"),
         Index("idx_oqi_remediation_authorizations_status", "status"),
         Index("idx_oqi_remediation_authorizations_instruction_id", "instruction_id"),
+        Index("idx_oqi_remediation_authorizations_case_id", "case_id"),
         ForeignKeyConstraint(
             ["tenant_id", "instruction_id"],
             [
@@ -138,12 +139,31 @@ class OqiRemediationAuthorizationORM(BaseEntity):
             ],
             name="fk_oqi_remediation_authorizations_tenant_instruction",
         ),
+        ForeignKeyConstraint(
+            ["case_id"],
+            ["oqi_remediation_cases.case_id"],
+            name="fk_oqi_remediation_authorizations_case_id",
+        ),
+        # CDD-085 G-R3 Sec12/Sec14: database defense-in-depth for the
+        # single-effective-approval invariant -- even if a future code
+        # path bypasses the parent-case lock the application layer uses
+        # to serialize sibling decisions, PostgreSQL itself rejects a
+        # second APPROVED row for the same case_id. Primary correctness
+        # lives in the application transaction (oqi_remediation_service.py
+        # approve()); this index is the fail-safe, not the normal path.
+        Index(
+            "uq_oqi_remediation_authorizations_case_one_approved",
+            "case_id",
+            unique=True,
+            postgresql_where=text("status = 'APPROVED'"),
+        ),
     )
 
     authorization_id: Mapped[UUID] = mapped_column(
         Uuid(), nullable=False, primary_key=True, server_default=text("gen_random_uuid()")
     )
     tenant_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    case_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     instruction_id: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
     payload_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     requested_by: Mapped[str] = mapped_column(String(200), nullable=False)

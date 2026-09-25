@@ -38,12 +38,21 @@ class RemediationActionType(StrEnum):
 
 
 class RemediationAuthorizationStatus(StrEnum):
-    """CDD-043 Sec14: closed, exactly these three, mirroring CDD-036
-    Sec15's `ApprovalStatus` shape exactly (max 8 chars, `String(16)` safe)."""
+    """CDD-043 Sec14: originally closed to exactly three values, mirroring
+    CDD-036 Sec15's `ApprovalStatus` shape (max 8 chars, `String(16)`
+    safe). CDD-085 G-R3 Sec9/Sec11 extends this with a fourth, strictly
+    system-driven value: SUPERSEDED never results from a human decision
+    (`decide_authorization` may only ever produce APPROVED/REJECTED) --
+    it is produced exclusively when another mutually-exclusive sibling
+    candidate for the same remediation case becomes APPROVED. SUPERSEDED
+    must never be read as an assertion that this candidate's own proposed
+    value was false, or that a human rejected it -- only that it is no
+    longer actionable because an alternative was authorized."""
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 def compute_payload_digest(

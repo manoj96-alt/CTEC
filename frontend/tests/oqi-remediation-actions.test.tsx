@@ -11,17 +11,23 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 // case_status stepper (including the rejected composite rule) renders
 // exactly the frozen mapping; and the whole panel continues to prove
 // recommendation != authorization != remediation != resolution.
-const { decideAuthorizationMock, reportExecutionMock, principalIdMock } =
-  vi.hoisted(() => ({
-    decideAuthorizationMock: vi.fn(),
-    reportExecutionMock: vi.fn(),
-    principalIdMock: vi.fn(),
-  }));
+const {
+  decideAuthorizationMock,
+  reportExecutionMock,
+  prepareRemediationMock,
+  principalIdMock,
+} = vi.hoisted(() => ({
+  decideAuthorizationMock: vi.fn(),
+  reportExecutionMock: vi.fn(),
+  prepareRemediationMock: vi.fn(),
+  principalIdMock: vi.fn(),
+}));
 
 vi.mock("@/lib/oqi/api-client", () => ({
   oqiApi: {
     decideAuthorization: decideAuthorizationMock,
     reportExecution: reportExecutionMock,
+    prepareRemediation: prepareRemediationMock,
   },
   OqiApiError: class OqiApiError extends Error {
     constructor(
@@ -59,6 +65,7 @@ beforeAll(() => {
 beforeEach(() => {
   decideAuthorizationMock.mockReset();
   reportExecutionMock.mockReset();
+  prepareRemediationMock.mockReset();
   principalIdMock.mockReset();
   principalIdMock.mockResolvedValue("sub-authenticated-principal");
 });
@@ -338,9 +345,8 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
     (caseStatus, label) => {
       const remediation = {
         case_status: caseStatus,
-        candidate: null,
+        candidates: [],
         recommendation: null,
-        authorization: null,
         external_execution: null,
       } as unknown as RemediationResponse;
       render(<RemediationStepper remediation={remediation} />);
@@ -354,9 +360,8 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("STEWARD_INVESTIGATION renders as a side state, not a linear step", () => {
     const remediation = {
       case_status: "STEWARD_INVESTIGATION",
-      candidate: null,
+      candidates: [],
       recommendation: null,
-      authorization: null,
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
@@ -367,29 +372,35 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("NO_REMEDIATION renders as a side state, not a linear step", () => {
     const remediation = {
       case_status: "NO_REMEDIATION",
-      candidate: null,
+      candidates: [],
       recommendation: null,
-      authorization: null,
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
     expect(screen.getByText("No Remediation")).toBeInTheDocument();
   });
 
-  it("rejected composite: AWAITING_AUTHORITY + authorization.status=REJECTED renders Rejected, never Awaiting Human Authorization", () => {
+  it("rejected composite: AWAITING_AUTHORITY + every candidate REJECTED renders Rejected, never Awaiting Human Authorization", () => {
     const remediation = {
       case_status: "AWAITING_AUTHORITY",
-      candidate: null,
+      candidates: [
+        {
+          candidate_id: "c1",
+          proposed_value: "ABC123",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-1",
+            status: "REJECTED",
+            requested_by: "agent",
+            requested_on: "2025-12-31T00:00:00Z",
+            decided_by: "requester",
+            decided_on: "2026-01-01T00:00:00Z",
+            rejection_reason: "wrong field",
+            is_stale: false,
+          },
+        },
+      ],
       recommendation: null,
-      authorization: {
-        authorization_id: "auth-1",
-        principal: "requester",
-        decided_on: "2026-01-01T00:00:00Z",
-        instruction: "UPDATE_FIELD",
-        authorized_against_state_revision: 1,
-        is_stale: false,
-        status: "REJECTED",
-      },
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
@@ -402,17 +413,24 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("AWAITING_AUTHORITY without a rejected authorization still renders the ordinary linear step", () => {
     const remediation = {
       case_status: "AWAITING_AUTHORITY",
-      candidate: null,
+      candidates: [
+        {
+          candidate_id: "c1",
+          proposed_value: "ABC123",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-1",
+            status: "PENDING",
+            requested_by: "agent",
+            requested_on: "2026-01-01T00:00:00Z",
+            decided_by: null,
+            decided_on: null,
+            rejection_reason: null,
+            is_stale: false,
+          },
+        },
+      ],
       recommendation: null,
-      authorization: {
-        authorization_id: "auth-1",
-        principal: "requester",
-        decided_on: null,
-        instruction: "UPDATE_FIELD",
-        authorized_against_state_revision: 1,
-        is_stale: false,
-        status: "PENDING",
-      },
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
@@ -425,9 +443,8 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("renders nothing when no case exists yet (case_status null)", () => {
     const remediation = {
       case_status: null,
-      candidate: null,
+      candidates: [],
       recommendation: null,
-      authorization: null,
       external_execution: null,
     } as unknown as RemediationResponse;
     const { container } = render(
@@ -439,9 +456,8 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("CDD-062: current step carries aria-current=step and a distinct, non-color class from past/future steps", () => {
     const remediation = {
       case_status: "AUTHORIZED",
-      candidate: null,
+      candidates: [],
       recommendation: null,
-      authorization: null,
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
@@ -465,9 +481,8 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("CDD-081 §13: the awaiting-authority marker class applies only to the live AWAITING_AUTHORITY current step, not to any other step", () => {
     const remediation = {
       case_status: "AWAITING_AUTHORITY",
-      candidate: null,
+      candidates: [],
       recommendation: null,
-      authorization: null,
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
@@ -484,9 +499,8 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("CDD-081 §13: a past rendering of the Awaiting Human Authorization step never carries the awaiting-authority marker", () => {
     const remediation = {
       case_status: "AUTHORIZED",
-      candidate: null,
+      candidates: [],
       recommendation: null,
-      authorization: null,
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
@@ -503,54 +517,163 @@ describe("Remediation Stepper — exact 8-state mapping", () => {
   it("CDD-062: rejected composite renders as its own group, never inside the linear <ol> step list", () => {
     const remediation = {
       case_status: "AWAITING_AUTHORITY",
-      candidate: null,
+      candidates: [
+        {
+          candidate_id: "c1",
+          proposed_value: "ABC123",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-1",
+            status: "REJECTED",
+            requested_by: "agent",
+            requested_on: "2025-12-31T00:00:00Z",
+            decided_by: "requester",
+            decided_on: "2026-01-01T00:00:00Z",
+            rejection_reason: "wrong field",
+            is_stale: false,
+          },
+        },
+      ],
       recommendation: null,
-      authorization: {
-        authorization_id: "auth-1",
-        principal: "requester",
-        decided_on: "2026-01-01T00:00:00Z",
-        instruction: "UPDATE_FIELD",
-        authorized_against_state_revision: 1,
-        is_stale: false,
-        status: "REJECTED",
-      },
       external_execution: null,
     } as unknown as RemediationResponse;
     render(<RemediationStepper remediation={remediation} />);
     expect(screen.getByText("Rejected")).toBeInTheDocument();
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
+
+  // CDD-085 G-R3/G-R4/G-R5: the multi-candidate rejection matrix -- overall
+  // Rejected requires EVERY candidate to be explicitly REJECTED. A mixed
+  // REJECTED+PENDING case is genuinely still awaiting a human decision on
+  // the sibling; an APPROVED+SUPERSEDED case genuinely succeeded (the
+  // supersession is a system-caused consequence of approval, never a
+  // rejection) -- neither may ever collapse to the Rejected composite.
+  it("REJECTED + PENDING siblings: not overall Rejected, still Awaiting Human Authorization", () => {
+    const remediation = {
+      case_status: "AWAITING_AUTHORITY",
+      candidates: [
+        {
+          candidate_id: "c1",
+          proposed_value: "US",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-1",
+            status: "REJECTED",
+            requested_by: "agent",
+            requested_on: "2025-12-31T00:00:00Z",
+            decided_by: "requester",
+            decided_on: "2026-01-01T00:00:00Z",
+            rejection_reason: "wrong field",
+            is_stale: false,
+          },
+        },
+        {
+          candidate_id: "c2",
+          proposed_value: "MX",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-2",
+            status: "PENDING",
+            requested_by: "agent",
+            requested_on: "2026-01-01T00:00:00Z",
+            decided_by: null,
+            decided_on: null,
+            rejection_reason: null,
+            is_stale: false,
+          },
+        },
+      ],
+      recommendation: null,
+      external_execution: null,
+    } as unknown as RemediationResponse;
+    render(<RemediationStepper remediation={remediation} />);
+    expect(screen.queryByText("Rejected")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Awaiting Human Authorization/),
+    ).toBeInTheDocument();
+  });
+
+  it("APPROVED + SUPERSEDED siblings: Authorized, never Rejected", () => {
+    const remediation = {
+      case_status: "AUTHORIZED",
+      candidates: [
+        {
+          candidate_id: "c1",
+          proposed_value: "US",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-1",
+            status: "APPROVED",
+            requested_by: "agent",
+            requested_on: "2025-12-31T00:00:00Z",
+            decided_by: "steward@example.com",
+            decided_on: "2026-01-01T00:00:00Z",
+            rejection_reason: null,
+            is_stale: false,
+          },
+        },
+        {
+          candidate_id: "c2",
+          proposed_value: "MX",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-2",
+            status: "SUPERSEDED",
+            requested_by: "agent",
+            requested_on: "2025-12-31T00:00:00Z",
+            decided_by: null,
+            decided_on: null,
+            rejection_reason: null,
+            is_stale: false,
+          },
+        },
+      ],
+      recommendation: null,
+      external_execution: null,
+    } as unknown as RemediationResponse;
+    render(<RemediationStepper remediation={remediation} />);
+    expect(screen.queryByText("Rejected")).not.toBeInTheDocument();
+    const current = screen.getByText("Authorized").closest("li");
+    expect(current).toHaveAttribute("aria-current", "step");
+  });
 });
 
 describe("Remediation Panel — governed truth boundary", () => {
   const FULL_REMEDIATION: RemediationResponse = {
     case_status: "AWAITING_AUTHORITY",
-    candidate: {
-      candidate_id: "candidate-1",
-      proposed_value: "ABC123",
-      status: "CANDIDATE_NOT_TRUTH",
-    },
+    candidates: [
+      {
+        candidate_id: "candidate-1",
+        proposed_value: "ABC123",
+        basis: "SPECIALIST_SUPPORTED",
+        authorization: {
+          authorization_id: "auth-real-id",
+          status: "PENDING",
+          requested_by: "agent",
+          requested_on: "2026-01-01T00:00:00Z",
+          decided_by: null,
+          decided_on: null,
+          rejection_reason: null,
+          is_stale: false,
+        },
+      },
+    ],
     recommendation: {
       recommendation_type: "RECOMMEND_CANDIDATE",
       candidate_id: "candidate-1",
       rationale: "Majority of governed peers agree.",
       basis: "SPECIALIST_SUPPORTED",
     },
-    authorization: {
-      authorization_id: "auth-real-id",
-      principal: "requester",
-      decided_on: null,
-      instruction: "UPDATE_FIELD",
-      authorized_against_state_revision: 1,
-      is_stale: false,
-      status: "PENDING",
-    },
     external_execution: null,
   };
 
   it("recommendation and authorization remain two visually distinct blocks", () => {
     render(
-      <RemediationPanel remediation={FULL_REMEDIATION} onMutated={() => {}} />,
+      <RemediationPanel
+        remediation={FULL_REMEDIATION}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
     );
     expect(screen.getByText("Agent Recommendation")).toBeInTheDocument();
     // "Human Authorization" appears both as the panel's section eyebrow and
@@ -567,7 +690,11 @@ describe("Remediation Panel — governed truth boundary", () => {
   it("a PENDING authorization exposes the decide action using the real authorization_id", async () => {
     decideAuthorizationMock.mockResolvedValue({ case_status: "AUTHORIZED" });
     render(
-      <RemediationPanel remediation={FULL_REMEDIATION} onMutated={() => {}} />,
+      <RemediationPanel
+        remediation={FULL_REMEDIATION}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
     );
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
@@ -584,13 +711,25 @@ describe("Remediation Panel — governed truth boundary", () => {
     const approved: RemediationResponse = {
       ...FULL_REMEDIATION,
       case_status: "AUTHORIZED",
-      authorization: {
-        ...FULL_REMEDIATION.authorization!,
-        status: "APPROVED",
-        decided_on: "2026-01-01T00:00:00Z",
-      },
+      candidates: [
+        {
+          ...FULL_REMEDIATION.candidates[0],
+          authorization: {
+            ...FULL_REMEDIATION.candidates[0].authorization!,
+            status: "APPROVED",
+            decided_by: "steward@example.com",
+            decided_on: "2026-01-01T00:00:00Z",
+          },
+        },
+      ],
     };
-    render(<RemediationPanel remediation={approved} onMutated={() => {}} />);
+    render(
+      <RemediationPanel
+        remediation={approved}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
+    );
     expect(
       screen.queryByRole("button", { name: "Decide Authorization" }),
     ).not.toBeInTheDocument();
@@ -606,7 +745,11 @@ describe("Remediation Panel — governed truth boundary", () => {
     decideAuthorizationMock.mockResolvedValue({ case_status: "AUTHORIZED" });
     const onMutated = vi.fn();
     render(
-      <RemediationPanel remediation={FULL_REMEDIATION} onMutated={onMutated} />,
+      <RemediationPanel
+        remediation={FULL_REMEDIATION}
+        findingId="f1"
+        onMutated={onMutated}
+      />,
     );
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
@@ -624,14 +767,26 @@ describe("Remediation Panel — governed truth boundary", () => {
     const reported: RemediationResponse = {
       ...FULL_REMEDIATION,
       case_status: "EXTERNAL_EXECUTION_REPORTED",
-      authorization: {
-        ...FULL_REMEDIATION.authorization!,
-        status: "APPROVED",
-        decided_on: "2026-01-01T00:00:00Z",
-      },
+      candidates: [
+        {
+          ...FULL_REMEDIATION.candidates[0],
+          authorization: {
+            ...FULL_REMEDIATION.candidates[0].authorization!,
+            status: "APPROVED",
+            decided_by: "steward@example.com",
+            decided_on: "2026-01-01T00:00:00Z",
+          },
+        },
+      ],
       external_execution: { reported_at: "2026-01-02T00:00:00Z" },
     };
-    render(<RemediationPanel remediation={reported} onMutated={() => {}} />);
+    render(
+      <RemediationPanel
+        remediation={reported}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
+    );
     expect(
       screen.getByText(
         /External remediation reported — awaiting fresh evidence/,
@@ -656,15 +811,127 @@ describe("Remediation Panel — governed truth boundary", () => {
   it("candidate remains labeled not-established-truth even alongside a decided authorization", () => {
     const decided: RemediationResponse = {
       ...FULL_REMEDIATION,
-      authorization: {
-        ...FULL_REMEDIATION.authorization!,
-        status: "APPROVED",
-        decided_on: "2026-01-01T00:00:00Z",
-      },
+      candidates: [
+        {
+          ...FULL_REMEDIATION.candidates[0],
+          authorization: {
+            ...FULL_REMEDIATION.candidates[0].authorization!,
+            status: "APPROVED",
+            decided_by: "steward@example.com",
+            decided_on: "2026-01-01T00:00:00Z",
+          },
+        },
+      ],
     };
-    render(<RemediationPanel remediation={decided} onMutated={() => {}} />);
+    render(
+      <RemediationPanel
+        remediation={decided}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
+    );
     expect(
       screen.getByText("Candidate — not established truth"),
     ).toBeInTheDocument();
+  });
+
+  it("empty state offers Prepare remediation; clicking it triggers the caller's refresh callback", async () => {
+    prepareRemediationMock.mockResolvedValue({
+      case_status: "CANDIDATE_READY",
+    });
+    const onMutated = vi.fn();
+    const empty: RemediationResponse = {
+      case_status: null,
+      candidates: [],
+      recommendation: null,
+      external_execution: null,
+    };
+    render(
+      <RemediationPanel
+        remediation={empty}
+        findingId="f1"
+        onMutated={onMutated}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare remediation" }),
+    );
+    await waitFor(() => expect(onMutated).toHaveBeenCalledTimes(1));
+    expect(prepareRemediationMock).toHaveBeenCalledWith("f1");
+  });
+
+  it("a SUPERSEDED candidate exposes no decide or execute action", () => {
+    const withSuperseded: RemediationResponse = {
+      ...FULL_REMEDIATION,
+      case_status: "AUTHORIZED",
+      candidates: [
+        {
+          candidate_id: "candidate-2",
+          proposed_value: "MX",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-superseded",
+            status: "SUPERSEDED",
+            requested_by: "agent",
+            requested_on: "2026-01-01T00:00:00Z",
+            decided_by: null,
+            decided_on: null,
+            rejection_reason: null,
+            is_stale: false,
+          },
+        },
+      ],
+    };
+    render(
+      <RemediationPanel
+        remediation={withSuperseded}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText("Superseded — an alternative candidate was approved"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Decide Authorization" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Report Execution" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("once external execution is reported, no candidate -- including a still-APPROVED one -- exposes Report Execution again", () => {
+    const approvedButAlreadyReported: RemediationResponse = {
+      case_status: "EXTERNAL_EXECUTION_REPORTED",
+      candidates: [
+        {
+          candidate_id: "candidate-1",
+          proposed_value: "US",
+          basis: "SPECIALIST_SUPPORTED",
+          authorization: {
+            authorization_id: "auth-1",
+            status: "APPROVED",
+            requested_by: "agent",
+            requested_on: "2025-12-31T00:00:00Z",
+            decided_by: "steward@example.com",
+            decided_on: "2026-01-01T00:00:00Z",
+            rejection_reason: null,
+            is_stale: false,
+          },
+        },
+      ],
+      recommendation: null,
+      external_execution: { reported_at: "2026-01-02T00:00:00Z" },
+    };
+    render(
+      <RemediationPanel
+        remediation={approvedButAlreadyReported}
+        findingId="f1"
+        onMutated={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Report Execution" }),
+    ).not.toBeInTheDocument();
   });
 });

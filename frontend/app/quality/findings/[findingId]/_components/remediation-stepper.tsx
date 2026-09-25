@@ -27,13 +27,19 @@ export function RemediationStepper({
   const caseStatus = remediation.case_status;
   if (!caseStatus) return null;
 
-  // Rejection lives on authorization.status, never on case_status itself
-  // (reject() never mutates the case) -- rendering plain
+  // Rejection lives on each candidate's own authorization.status, never on
+  // case_status itself (reject() never mutates the case) -- rendering plain
   // "Awaiting Human Authorization" here would misrepresent an
-  // already-decided case as still pending.
+  // already-decided case as still pending. CDD-085 G-R3/G-R4/G-R5: the
+  // plural generalization -- overall Rejected only when EVERY candidate was
+  // explicitly rejected; a REJECTED+PENDING or APPROVED+SUPERSEDED mix is
+  // never collapsed to Rejected.
   const isRejected =
     caseStatus === "AWAITING_AUTHORITY" &&
-    remediation.authorization?.status === "REJECTED";
+    remediation.candidates.length > 0 &&
+    remediation.candidates.every(
+      (candidate) => candidate.authorization?.status === "REJECTED",
+    );
 
   if (isRejected) {
     return (

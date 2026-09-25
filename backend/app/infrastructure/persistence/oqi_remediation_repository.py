@@ -118,11 +118,17 @@ class OqiRemediationRepository(Protocol):
 
     def get_case_by_id(self, case_id: UUID) -> RemediationCase | None: ...
 
+    def get_case_for_update(self, case_id: UUID) -> RemediationCase | None: ...
+
     def save_case(self, case: RemediationCase) -> None: ...
 
     def save_candidates_idempotent(self, candidates: tuple[RemediationCandidate, ...]) -> None: ...
 
     def get_candidates_for_case(self, case_id: UUID) -> tuple[RemediationCandidate, ...]: ...
+
+    def get_candidates_with_authorizations_for_case(
+        self, case_id: UUID
+    ) -> tuple[tuple[RemediationCandidate, RemediationAuthorization | None], ...]: ...
 
     def get_candidate(self, candidate_id: UUID) -> RemediationCandidate | None: ...
 
@@ -141,6 +147,10 @@ class OqiRemediationRepository(Protocol):
     ) -> RemediationAuthorization | None: ...
 
     def update_authorization_decision(self, authorization: RemediationAuthorization) -> None: ...
+
+    def supersede_pending_sibling_authorizations(
+        self, *, case_id: UUID, excluding_authorization_id: UUID, now: datetime
+    ) -> None: ...
 
     def consume_authorization(
         self, *, authorization_id: UUID, execution_id: UUID, now: datetime
@@ -177,6 +187,20 @@ class OqiRemediationRepositoryImpl:
 
     def get_case_by_id(self, case_id: UUID) -> RemediationCase | None:
         model = self.session.get(OqiRemediationCaseORM, case_id)
+        return None if model is None else _case_to_domain(model)
+
+    def get_case_for_update(self, case_id: UUID) -> RemediationCase | None:
+        """CDD-085 G-R3 Sec10/Sec11: the single-effective-approval
+        invariant's primary enforcement mechanism -- locking the PARENT
+        case row (not merely the authorization being decided) so that two
+        concurrent approve() calls against sibling candidates of the same
+        case serialize through this one lock, instead of racing on
+        disjoint authorization rows as they did before this correction."""
+        model = self.session.execute(
+            select(OqiRemediationCaseORM)
+            .where(OqiRemediationCaseORM.case_id == case_id)
+            .with_for_update()
+        ).scalar_one_or_none()
         return None if model is None else _case_to_domain(model)
 
     def save_case(self, case: RemediationCase) -> None:
@@ -260,12 +284,46 @@ class OqiRemediationRepositoryImpl:
             self.session.execute(
                 select(OqiRemediationCandidateORM)
                 .where(OqiRemediationCandidateORM.case_id == case_id)
-                .order_by(OqiRemediationCandidateORM.candidate_id)
+                .order_by(
+                    OqiRemediationCandidateORM.extracted_at, OqiRemediationCandidateORM.candidate_id
+                )
             )
             .scalars()
             .all()
         )
         return tuple(_candidate_to_domain(model) for model in models)
+
+    def get_candidates_with_authorizations_for_case(
+        self, case_id: UUID
+    ) -> tuple[tuple[RemediationCandidate, RemediationAuthorization | None], ...]:
+        """CDD-085 G-R3 Sec7/Sec8/Sec16/Sec17: the plural remediation read
+        model. Every candidate for this case is returned, deterministically
+        ordered by extracted_at then candidate_id (never incidental
+        database row order), paired with its own instruction's own
+        authorization (each candidate has exactly one instruction and each
+        instruction exactly one authorization at prepare time, so this is
+        a 1:1 pairing, never an arbitrary "first" pick the way the
+        superseded singular read model used to select one)."""
+        candidates = self.get_candidates_for_case(case_id)
+        result: list[tuple[RemediationCandidate, RemediationAuthorization | None]] = []
+        for candidate in candidates:
+            instruction_model = self.session.execute(
+                select(OqiRemediationInstructionORM).where(
+                    OqiRemediationInstructionORM.candidate_id == candidate.candidate_id
+                )
+            ).scalar_one_or_none()
+            authorization: RemediationAuthorization | None = None
+            if instruction_model is not None:
+                authorization_model = self.session.execute(
+                    select(OqiRemediationAuthorizationORM).where(
+                        OqiRemediationAuthorizationORM.instruction_id
+                        == instruction_model.instruction_id
+                    )
+                ).scalar_one_or_none()
+                if authorization_model is not None:
+                    authorization = _authorization_to_domain(authorization_model)
+            result.append((candidate, authorization))
+        return tuple(result)
 
     def get_candidate(self, candidate_id: UUID) -> RemediationCandidate | None:
         model = self.session.get(OqiRemediationCandidateORM, candidate_id)
@@ -304,7 +362,16 @@ class OqiRemediationRepositoryImpl:
         return None if model is None else _instruction_to_domain(model)
 
     def create_authorization(self, authorization: RemediationAuthorization) -> None:
-        self.session.add(_authorization_to_orm(authorization))
+        # CDD-085 G-R3 Sec12/Sec14: case_id is a persistence-only
+        # denormalization (never exposed on the RemediationAuthorization
+        # domain object itself) backing the DB defense-in-depth partial
+        # unique index -- derived here from the already-persisted
+        # instruction, never accepted from any caller.
+        instruction_model = self.session.get(
+            OqiRemediationInstructionORM, authorization.instruction_id
+        )
+        assert instruction_model is not None
+        self.session.add(_authorization_to_orm(authorization, case_id=instruction_model.case_id))
 
     def get_authorization_by_id(self, authorization_id: UUID) -> RemediationAuthorization | None:
         model = self.session.get(OqiRemediationAuthorizationORM, authorization_id)
@@ -327,6 +394,34 @@ class OqiRemediationRepositoryImpl:
         model.decided_by = authorization.decided_by
         model.decided_on = authorization.decided_on
         model.rejection_reason = authorization.rejection_reason
+
+    def supersede_pending_sibling_authorizations(
+        self, *, case_id: UUID, excluding_authorization_id: UUID, now: datetime
+    ) -> None:
+        """CDD-085 G-R3 Sec10/Sec11: called only from within approve(),
+        after the parent case row (case_id) is already locked via
+        get_case_for_update() in the same transaction -- so this bulk
+        update is race-free by construction, never a second independent
+        lock acquisition. Every other still-PENDING sibling authorization
+        for this case becomes SUPERSEDED, never REJECTED (Sec9/Sec11:
+        SUPERSEDED is exclusively this system-driven consequence, never a
+        human decision, and must never imply the sibling's own proposed
+        value was false)."""
+        sibling_models = (
+            self.session.execute(
+                select(OqiRemediationAuthorizationORM).where(
+                    OqiRemediationAuthorizationORM.case_id == case_id,
+                    OqiRemediationAuthorizationORM.authorization_id != excluding_authorization_id,
+                    OqiRemediationAuthorizationORM.status
+                    == RemediationAuthorizationStatus.PENDING.value,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for sibling in sibling_models:
+            sibling.status = RemediationAuthorizationStatus.SUPERSEDED.value
+            sibling.decided_on = now
 
     def consume_authorization(
         self, *, authorization_id: UUID, execution_id: UUID, now: datetime
@@ -671,11 +766,12 @@ def _instruction_to_domain(model: OqiRemediationInstructionORM) -> RemediationIn
 
 
 def _authorization_to_orm(
-    authorization: RemediationAuthorization,
+    authorization: RemediationAuthorization, *, case_id: UUID
 ) -> OqiRemediationAuthorizationORM:
     return OqiRemediationAuthorizationORM(
         authorization_id=authorization.authorization_id,
         tenant_id=authorization.tenant_id,
+        case_id=case_id,
         instruction_id=authorization.instruction_id,
         payload_digest=authorization.payload_digest,
         requested_by=authorization.requested_by,

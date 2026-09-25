@@ -368,6 +368,7 @@ function FindingDetailPageContent() {
             <EvidencePanel
               evidence={state.evidence}
               findingFamily={finding.finding_family}
+              entityId={state.impact.direct_entity_id}
             />
           ))}
         {tab === "ontology-impact" && (
@@ -381,7 +382,11 @@ function FindingDetailPageContent() {
           <AgentInvestigationPanel investigation={state.agent} />
         )}
         {tab === "remediation" && (
-          <RemediationPanel remediation={state.remediation} onMutated={load} />
+          <RemediationPanel
+            remediation={state.remediation}
+            findingId={findingId}
+            onMutated={load}
+          />
         )}
       </section>
     </div>

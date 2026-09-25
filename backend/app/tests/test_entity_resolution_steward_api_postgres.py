@@ -146,6 +146,7 @@ def _seed_case(
     source_object_ids: tuple[UUID, ...],
     with_conflicting_tax_id: bool = False,
     with_matching_tax_id: bool = False,
+    entity_id: UUID | None = None,
 ) -> tuple[str, UUID]:
     """Builds and appends one Gate B evidence-bearing resolution record.
     Returns (understanding_key, record_id)."""
@@ -175,7 +176,8 @@ def _seed_case(
         )
         for i in range(len(source_object_ids))
     )
-    entity_id = _seed_enterprise_entity(session, tenant_id=tenant_id, name=f"Entity-{uuid4()}")
+    if entity_id is None:
+        entity_id = _seed_enterprise_entity(session, tenant_id=tenant_id, name=f"Entity-{uuid4()}")
     engine = EvidenceResolutionEngine(policy, policy_id=policy_id)
     record = engine.resolve(
         tenant_id=tenant_id,
@@ -959,3 +961,128 @@ def test_block_conflict_through_the_service_is_rejected_without_persisted_veto_e
         # Nothing was appended: history still points at the original record.
         assert history.current_record_identifier == original_record_id
         assert history.historical_record_references == []
+
+
+# ---------------------------------------------------------------------------
+# get_resolved_entity -- CDD-085 G-R3 Sec20/Sec24: the entity-keyed
+# resolved-identity lookup, structurally distinct from list_cases()'s own
+# QUEUE_OUTCOMES-filtered triage queue.
+# ---------------------------------------------------------------------------
+
+
+def test_get_resolved_entity_returns_every_current_record_unfiltered_by_outcome(
+    migrated_engine: Engine,
+) -> None:
+    """A Meridian-Cell-Components-shaped entity: two independent source
+    records (e.g. SAP, PLM), both Resolved. Resolved is not in
+    QUEUE_OUTCOMES, so neither record ever appears in the triage queue --
+    but both must appear here, unfiltered."""
+    tenant_id = _tenant("tenant")
+    with Session(migrated_engine) as session, session.begin():
+        policy = conservative_preset()
+        policy_row = ResolutionPolicyStore(session).materialize(
+            tenant_id, policy, preset_kind="Conservative"
+        )
+        policy_id = policy_row.policy_id
+        entity_id = _seed_enterprise_entity(session, tenant_id=tenant_id, name="Meridian Cell Components")
+
+        system_sap = _seed_source_system(session, tenant_id=tenant_id, name=f"SAP-{uuid4()}")
+        source_sap_a = _seed_source_object(
+            session, tenant_id=tenant_id, source_system_id=system_sap, name=f"sap-obj-a-{uuid4()}"
+        )
+        source_sap_b = _seed_source_object(
+            session, tenant_id=tenant_id, source_system_id=system_sap, name=f"sap-obj-b-{uuid4()}"
+        )
+        understanding_key_1, _ = _seed_case(
+            session,
+            tenant_id=tenant_id,
+            policy_id=policy_id,
+            policy=policy,
+            source_object_ids=(source_sap_a, source_sap_b),
+            with_matching_tax_id=True,
+            entity_id=entity_id,
+        )
+
+        system_plm = _seed_source_system(session, tenant_id=tenant_id, name=f"PLM-{uuid4()}")
+        source_plm_a = _seed_source_object(
+            session, tenant_id=tenant_id, source_system_id=system_plm, name=f"plm-obj-a-{uuid4()}"
+        )
+        source_plm_b = _seed_source_object(
+            session, tenant_id=tenant_id, source_system_id=system_plm, name=f"plm-obj-b-{uuid4()}"
+        )
+        understanding_key_2, _ = _seed_case(
+            session,
+            tenant_id=tenant_id,
+            policy_id=policy_id,
+            policy=policy,
+            source_object_ids=(source_plm_a, source_plm_b),
+            with_matching_tax_id=True,
+            entity_id=entity_id,
+        )
+
+    service = _service(migrated_engine)
+    detail = service.get_resolved_entity(_principal(tenant_id), entity_id)
+    assert detail is not None
+    assert detail.enterprise_entity_id == entity_id
+    assert detail.enterprise_entity_name == "Meridian Cell Components"
+    assert len(detail.records) == 2
+    assert {r.outcome for r in detail.records} == {"Resolved"}
+    assert {r.understanding_key for r in detail.records} == {understanding_key_1, understanding_key_2}
+    for record in detail.records:
+        assert record.source_representations != []
+
+    # Disjoint from the QUEUE_OUTCOMES-filtered triage queue: a fully
+    # Resolved entity's records never appear in list_cases()'s default view.
+    queue = service.list_cases(_principal(tenant_id))
+    queue_keys = {item.understanding_key for item in queue.items}
+    assert understanding_key_1 not in queue_keys
+    assert understanding_key_2 not in queue_keys
+
+
+def test_get_resolved_entity_returns_none_for_unknown_entity_id(migrated_engine: Engine) -> None:
+    tenant_id = _tenant("tenant")
+    service = _service(migrated_engine)
+    assert service.get_resolved_entity(_principal(tenant_id), uuid4()) is None
+
+
+def test_get_resolved_entity_returns_none_for_another_tenants_entity_id(
+    migrated_engine: Engine,
+) -> None:
+    tenant_a, tenant_b = _tenant("tenant-a"), _tenant("tenant-b")
+    with Session(migrated_engine) as session, session.begin():
+        policy = conservative_preset()
+        policy_row = ResolutionPolicyStore(session).materialize(
+            tenant_b, policy, preset_kind="Conservative"
+        )
+        entity_id = _seed_enterprise_entity(session, tenant_id=tenant_b, name=f"Entity-{uuid4()}")
+        system_id = _seed_source_system(session, tenant_id=tenant_b, name=f"sys-{uuid4()}")
+        source_id = _seed_source_object(
+            session, tenant_id=tenant_b, source_system_id=system_id, name=f"obj-{uuid4()}"
+        )
+        _seed_case(
+            session,
+            tenant_id=tenant_b,
+            policy_id=policy_row.policy_id,
+            policy=policy,
+            source_object_ids=(source_id,),
+            with_matching_tax_id=True,
+            entity_id=entity_id,
+        )
+
+    service = _service(migrated_engine)
+    assert service.get_resolved_entity(_principal(tenant_a), entity_id) is None
+    # Sanity: tenant B itself can still see its own resolved entity.
+    own = service.get_resolved_entity(_principal(tenant_b), entity_id)
+    assert own is not None
+    assert len(own.records) == 1
+
+
+def test_get_resolved_entity_returns_none_for_entity_with_zero_resolution_records(
+    migrated_engine: Engine,
+) -> None:
+    tenant_id = _tenant("tenant")
+    with Session(migrated_engine) as session, session.begin():
+        entity_id = _seed_enterprise_entity(session, tenant_id=tenant_id, name=f"Entity-{uuid4()}")
+
+    service = _service(migrated_engine)
+    assert service.get_resolved_entity(_principal(tenant_id), entity_id) is None

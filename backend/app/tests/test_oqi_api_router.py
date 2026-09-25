@@ -134,9 +134,8 @@ class FakeService:
         self.calls.append(("get_remediation", {"tenant_id": tenant_id, "finding_id": finding_id}))
         return Row(
             case_status=None,
-            candidate=None,
+            candidates=(),
             recommendation=None,
-            authorization=None,
             external_execution=None,
         )
 
@@ -417,22 +416,29 @@ def test_remediation_authorization_id_survives_serialization_to_json() -> None:
     service = FakeService()
     service.get_remediation = lambda *, tenant_id, finding_id: Row(  # type: ignore[method-assign]
         case_status="AWAITING_AUTHORITY",
-        candidate=None,
-        recommendation=None,
-        authorization=Row(
-            authorization_id=_AUTH_ID,
-            principal="requester",
-            decided_on=None,
-            instruction="UPDATE_FIELD",
-            authorized_against_state_revision=1,
-            is_stale=False,
-            status="PENDING",
+        candidates=(
+            Row(
+                candidate_id=uuid4(),
+                proposed_value="UPDATE_FIELD",
+                basis="EXTRACTION",
+                authorization=Row(
+                    authorization_id=_AUTH_ID,
+                    status="PENDING",
+                    requested_by="requester",
+                    requested_on=NOW,
+                    decided_by=None,
+                    decided_on=None,
+                    rejection_reason=None,
+                    is_stale=False,
+                ),
+            ),
         ),
+        recommendation=None,
         external_execution=None,
     )
     client = _client(_container(audit=Audit()), service, _principal(scopes=("oqi:read",)))
     body = client.get(f"/api/v1/oqi/findings/{_FINDING_ID}/remediation").json()
-    assert body["authorization"]["authorization_id"] == str(_AUTH_ID)
+    assert body["candidates"][0]["authorization"]["authorization_id"] == str(_AUTH_ID)
 
 
 # ---------------------------------------------------------------------------

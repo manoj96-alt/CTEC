@@ -28,6 +28,8 @@ from app.application.entity_resolution_steward_api import (
     CaseNotFoundError,
     NoEvidenceProfileError,
     PolicyNotFoundError,
+    ResolvedEntityDetailRow,
+    ResolvedEntityRecordRow,
 )
 from app.core.config import Settings
 from app.core.dependency_container import Container
@@ -73,6 +75,13 @@ class FakeStewardService:
     preview_exception: Exception | None = None
     decide_result: DecisionResponse | None = None
     decide_exception: Exception | None = None
+    get_resolved_entity_result: ResolvedEntityDetailRow | None = None
+
+    def get_resolved_entity(
+        self, principal: TrustedPrincipal, enterprise_entity_id: UUID
+    ) -> ResolvedEntityDetailRow | None:
+        self.calls.append(("get_resolved_entity", (principal, enterprise_entity_id), {}))
+        return self.get_resolved_entity_result
 
     def list_cases(
         self, principal: TrustedPrincipal, *, outcomes: tuple[str, ...] | None = None
@@ -373,3 +382,59 @@ def test_decide_success_returns_201_and_records_an_authorized_and_accepted_audit
         event.get("endpoint_classification") == "ENTITY_RESOLUTION_STEWARD_API_V1"
         for event in audit.events
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /entities/{entity_id} -- CDD-085 G-R3 Sec20/Sec24
+# ---------------------------------------------------------------------------
+
+
+def test_get_resolved_entity_requires_the_read_scope() -> None:
+    service = FakeStewardService()
+    client = _client(_container(audit=Audit()), service, _principal(scopes=()))
+    response = client.get(f"/api/v1/entity-resolution/entities/{uuid4()}")
+    assert response.status_code == 403
+    assert response.json()["code"] == "AUTHORIZATION_SCOPE_REQUIRED"
+    assert service.calls == []
+
+
+def test_get_resolved_entity_not_found_returns_404() -> None:
+    service = FakeStewardService(get_resolved_entity_result=None)
+    client = _client(
+        _container(audit=Audit()), service, _principal(scopes=("entity-resolution:read",))
+    )
+    response = client.get(f"/api/v1/entity-resolution/entities/{uuid4()}")
+    assert response.status_code == 404
+    assert response.json()["code"] == "RESOLVED_ENTITY_NOT_FOUND"
+
+
+def test_get_resolved_entity_success_returns_200_with_full_serialization() -> None:
+    entity_id = uuid4()
+    result = ResolvedEntityDetailRow(
+        enterprise_entity_id=entity_id,
+        enterprise_entity_name="Meridian Cell Components",
+        records=[
+            ResolvedEntityRecordRow(
+                understanding_key="key-sap",
+                outcome="Resolved",
+                business_confidence="High",
+                structured_reasons=["Matching strong identifier."],
+                narrative_explanation="Resolved using policy Conservative v1.0.",
+                produced_at=NOW.isoformat(),
+                source_representations=[],
+            )
+        ],
+    )
+    service = FakeStewardService(get_resolved_entity_result=result)
+    client = _client(
+        _container(audit=Audit()), service, _principal(scopes=("entity-resolution:read",))
+    )
+    response = client.get(f"/api/v1/entity-resolution/entities/{entity_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enterprise_entity_id"] == str(entity_id)
+    assert body["enterprise_entity_name"] == "Meridian Cell Components"
+    assert len(body["records"]) == 1
+    assert body["records"][0]["understanding_key"] == "key-sap"
+    assert body["records"][0]["outcome"] == "Resolved"
+    assert service.calls[0][0] == "get_resolved_entity"

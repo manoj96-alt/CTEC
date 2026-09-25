@@ -169,6 +169,20 @@ export const oqiApi = {
       signal,
     ),
 
+  // CDD-085 G-R3 §5/§6/§21: explicit, deliberate, human-triggered only --
+  // never called automatically. requested_by is sourced backend-side from
+  // the authenticated principal; this call carries no actor field at all.
+  // Callers must re-fetch remediation() after a successful call to see
+  // the resulting candidates -- this function's own response is not the
+  // read model.
+  prepareRemediation: (
+    findingId: string,
+  ): Promise<RemediationCaseActionResponse> =>
+    request<RemediationCaseActionResponse>(
+      `/api/v1/oqi/findings/${findingId}/remediation/prepare`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+
   decideAuthorization: (
     authorizationId: string,
     body: DecideAuthorizationRequest,

@@ -10,6 +10,7 @@ based_on_record_id-checked write -- so a stale decision is rejected before
 anything is appended.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -51,6 +52,29 @@ QUEUE_OUTCOMES: tuple[str, ...] = (
     ResolutionOutcome.UNRESOLVED.value,
     ResolutionOutcome.BLOCKED_CONFLICT.value,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedEntityRecordRow:
+    """CDD-085 G-R3 §20/§24: one governed source record contributing to a
+    resolved EnterpriseEntity -- Meridian Cell Components has exactly two
+    (SAP, PLM), both Resolved. Reuses the identical fields get_case()
+    already assembles per-record; never invents a new field."""
+
+    understanding_key: str
+    outcome: str
+    business_confidence: str
+    structured_reasons: list[str]
+    narrative_explanation: str | None
+    produced_at: str
+    source_representations: list[SourceRepresentationSummary]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedEntityDetailRow:
+    enterprise_entity_id: UUID
+    enterprise_entity_name: str
+    records: list[ResolvedEntityRecordRow]
 
 
 class CaseNotFoundError(Exception):
@@ -182,6 +206,56 @@ class EntityResolutionStewardApiService:
                 decision_rationale=record.decision_rationale,
                 prior_decision_count=prior_decision_count,
                 previous_decision=previous_decision,
+            )
+
+    def get_resolved_entity(
+        self, principal: TrustedPrincipal, enterprise_entity_id: UUID
+    ) -> ResolvedEntityDetailRow | None:
+        """CDD-085 G-R3 §20/§24: entity-keyed resolved-identity lookup --
+        the correct navigation target for "View resolved entity" (Evidence
+        panel, §22), structurally distinct from list_cases()'s own steward
+        triage queue (§19: QUEUE_OUTCOMES/list_cases unmodified by this
+        method). Unlike the queue, this lookup is NOT outcome-filtered --
+        list_current_records() is called with no outcomes argument, so a
+        fully Resolved entity (e.g. Meridian Cell Components, resolved
+        from both SAP and PLM) is returned here even though it would never
+        appear in the triage queue. Tenant-scoped throughout: unknown or
+        cross-tenant entity_id, or an entity with zero resolution records,
+        both return None (404 at the router), identical to get_case()'s
+        own fail-closed shape -- no existence leak either way."""
+        tenant_id = principal.tenant_id
+        with self._sessions() as session:
+            entity = session.get(EnterpriseEntity, enterprise_entity_id)
+            if entity is None or entity.tenant_id != tenant_id:
+                return None
+            store = EntityResolutionStore(session)
+            all_current_records = store.list_current_records(tenant_id)
+            matching_records = [
+                record
+                for record in all_current_records
+                if record.enterprise_entity_id == enterprise_entity_id
+            ]
+            if not matching_records:
+                return None
+            record_rows: list[ResolvedEntityRecordRow] = []
+            for record in sorted(matching_records, key=lambda r: r.produced_at):
+                source_ids = tuple(UUID(v) for v in record.supporting_source_object_ids)
+                source_representations = self._source_representations(session, tenant_id, source_ids)
+                record_rows.append(
+                    ResolvedEntityRecordRow(
+                        understanding_key=EntityResolutionStore.understanding_key(source_ids),
+                        outcome=record.outcome,
+                        business_confidence=record.business_confidence,
+                        structured_reasons=list(record.structured_reasons),
+                        narrative_explanation=record.narrative_explanation,
+                        produced_at=record.produced_at.isoformat(),
+                        source_representations=source_representations,
+                    )
+                )
+            return ResolvedEntityDetailRow(
+                enterprise_entity_id=entity.enterprise_entity_id,
+                enterprise_entity_name=entity.enterprise_entity_name,
+                records=record_rows,
             )
 
     def list_policies(self, principal: TrustedPrincipal) -> PolicyListResponse:

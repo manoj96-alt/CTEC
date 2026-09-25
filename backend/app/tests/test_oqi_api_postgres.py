@@ -391,13 +391,15 @@ def test_get_remediation_exposes_real_authorization_id_and_it_operates_decide(
             tenant_id=tenant_a, finding_id=finding_id
         )
     assert remediation is not None
-    assert remediation.authorization is not None
-    assert remediation.authorization.authorization_id == real_authorization_id
+    authorized_candidates = [c for c in remediation.candidates if c.authorization is not None]
+    assert len(authorized_candidates) == 1
+    assert authorized_candidates[0].authorization is not None
+    assert authorized_candidates[0].authorization.authorization_id == real_authorization_id
 
     with factory() as session:
         case_status = _api_service(session).decide_authorization(
             tenant_id=tenant_a,
-            authorization_id=remediation.authorization.authorization_id,
+            authorization_id=authorized_candidates[0].authorization.authorization_id,
             approve=True,
             decided_by="approver",
             rejection_reason=None,

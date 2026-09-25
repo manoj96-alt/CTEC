@@ -255,3 +255,42 @@ def test_identical_human_readable_names_allowed_across_tenants_not_within_one(
             _seed_source_system(session, tenant_id=tenant_a, name=shared_system_name)
         session.rollback()
         # No commit: the whole test's writes are discarded on session close.
+
+
+def test_tenant_a_list_current_records_never_surfaces_tenant_b_entity(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-085 G-R3 Sec20/Sec24: get_resolved_entity() is built directly on
+    list_current_records() with no outcome filter -- this is the exact
+    composition it depends on. Tenant B's real, valid, Resolved
+    enterprise_entity_id must never appear among the records
+    list_current_records(tenant_a) returns, at this store/domain layer,
+    independent of any application-service-level tenant check."""
+    tenant_a, tenant_b = _tenant("tenant-a"), _tenant("tenant-b")
+    with Session(migrated_engine) as session, session.begin():
+        tenant_b_entity_id = _seed_enterprise_entity(
+            session, tenant_id=tenant_b, name=f"Tenant B Co {uuid4()}"
+        )
+        system_id = _seed_source_system(session, tenant_id=tenant_b, name=f"sys-{uuid4()}")
+        source_id = _seed_source_object(
+            session, tenant_id=tenant_b, source_system_id=system_id, name=f"obj-{uuid4()}"
+        )
+
+    engine = EntityResolutionEngine(ResolutionPolicy(version="isolation-policy"))
+    record = engine.resolve(
+        tenant_id=tenant_b,
+        supporting_source_object_ids=(source_id,),
+        candidates=(),
+        produced_at=NOW,
+        override_entity_id=tenant_b_entity_id,
+    )
+    with Session(migrated_engine) as session, session.begin():
+        EntityResolutionStore(session).append(record)
+
+    with Session(migrated_engine) as session:
+        store = EntityResolutionStore(session)
+        tenant_a_records = store.list_current_records(tenant_a)
+        assert all(r.enterprise_entity_id != tenant_b_entity_id for r in tenant_a_records)
+        # Sanity: tenant B itself does see its own resolved entity's record.
+        tenant_b_records = store.list_current_records(tenant_b)
+        assert any(r.enterprise_entity_id == tenant_b_entity_id for r in tenant_b_records)
