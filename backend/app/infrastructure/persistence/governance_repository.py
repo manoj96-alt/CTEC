@@ -141,7 +141,7 @@ class GovernanceEvaluationRepositoryImpl:
     @staticmethod
     def _ordered_statement(
         governed_record_reference: UUID, governing_policy_reference: str
-    ) -> Select[tuple[GovernanceEvaluationORM]]:
+    ) -> Select[GovernanceEvaluationORM]:
         return (
             select(GovernanceEvaluationORM)
             .where(

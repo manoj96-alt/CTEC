@@ -167,7 +167,9 @@ def test_case_a_empty_table_migration_succeeds(pre_0012_engine: tuple[Engine, Co
 
     assert _has_tenant_id_column(engine)
     with engine.connect() as conn:
-        count = conn.execute(text("SELECT count(*) FROM institutional_relationships")).scalar_one()
+        count: int = conn.execute(
+            text("SELECT count(*) FROM institutional_relationships")
+        ).scalar_one()
     assert count == 0
 
 
@@ -196,7 +198,7 @@ def test_case_b_same_tenant_endpoints_resolve_and_migration_succeeds(
     alembic.command.upgrade(config, "head")
 
     with engine.connect() as conn:
-        resolved_tenant = conn.execute(
+        resolved_tenant: str = conn.execute(
             text(
                 "SELECT tenant_id FROM institutional_relationships "
                 "WHERE institutional_relationship_id = :id"
@@ -236,7 +238,7 @@ def test_case_c_cross_tenant_endpoints_fail_closed_before_any_schema_change(
     # advance -- confirmed two ways, not just by the raised exception.
     assert not _has_tenant_id_column(engine)
     with engine.connect() as conn:
-        current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        current: str = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     assert current == PRE_MIGRATION_REVISION
 
 
@@ -316,7 +318,7 @@ def test_case_e_and_f_post_migration_composite_fk_enforces_tenant_isolation(
             },
         )
     with engine.connect() as conn:
-        count = conn.execute(
+        count: int = conn.execute(
             text(
                 "SELECT count(*) FROM institutional_relationships WHERE institutional_relationship_id = :id"
             ),

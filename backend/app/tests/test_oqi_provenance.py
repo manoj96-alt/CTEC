@@ -252,7 +252,7 @@ def test_no_raw_evidence_value_is_duplicated_into_oqi_tables(migrated_engine: En
     from sqlalchemy import text as sql_text
 
     with factory() as session:
-        in_evidence = session.execute(
+        in_evidence: int = session.execute(
             sql_text(
                 "SELECT count(*) FROM field_value_evidence WHERE observed_representation = :v"
             ),
@@ -260,7 +260,7 @@ def test_no_raw_evidence_value_is_duplicated_into_oqi_tables(migrated_engine: En
         ).scalar_one()
         assert in_evidence == 1
 
-        in_evaluations = session.execute(
+        in_evaluations: int = session.execute(
             sql_text(
                 "SELECT count(*) FROM quality_evaluations WHERE "
                 "evidence_set_digest = :v OR quality_condition_id = :v OR "
@@ -270,7 +270,7 @@ def test_no_raw_evidence_value_is_duplicated_into_oqi_tables(migrated_engine: En
         ).scalar_one()
         assert in_evaluations == 0
 
-        in_findings = session.execute(
+        in_findings: int = session.execute(
             sql_text(
                 "SELECT count(*) FROM quality_findings WHERE "
                 "quality_condition_id = :v OR source_record_reference = :v"

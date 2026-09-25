@@ -94,7 +94,9 @@ def test_migration_head_and_down_revision(migrated_engine: Engine) -> None:
     from sqlalchemy import text
 
     with migrated_engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        revision: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     current_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
     assert revision == current_head
 

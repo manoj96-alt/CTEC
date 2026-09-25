@@ -329,7 +329,9 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
         assert "business_rules" not in tables
     alembic.command.upgrade(alembic_cfg, "head")
     with migrated_engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        revision: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     current_head = ScriptDirectory.from_config(alembic_cfg).get_current_head()
     assert revision == current_head
 
@@ -342,7 +344,7 @@ def test_table_count_is_86(migrated_engine: Engine) -> None:
     # (OQI-H2-I-R1 narrow correction, disclosed in the OQI-H2-I final
     # report; OQI-H3-I-R1 amendment): mechanically re-pinned from 109 to 114.
     with migrated_engine.connect() as connection:
-        table_count = connection.execute(
+        table_count: int = connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.tables "
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
@@ -872,7 +874,7 @@ def test_historical_evaluation_unknown_subject_persists_nothing(migrated_engine:
 
     assert evaluation is None
     with factory() as session:
-        count = session.execute(
+        count: int = session.execute(
             text(
                 "SELECT count(*) FROM business_rule_evaluations WHERE business_condition_id = :cid"
             ),
@@ -932,11 +934,11 @@ def test_evaluation_idempotent_replay_creates_no_duplicate_rows(migrated_engine:
         assert evaluation.evaluation_id == evaluation_id
 
     with factory() as session:
-        count = session.execute(
+        count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluations WHERE evaluation_id = :id"),
             {"id": evaluation_id},
         ).scalar_one()
-        input_count = session.execute(
+        input_count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluation_inputs WHERE evaluation_id = :id"),
             {"id": evaluation_id},
         ).scalar_one()
@@ -1023,11 +1025,11 @@ def test_concurrent_identical_historical_replay_converges_without_integrity_erro
     assert outcomes["a"][1] == outcomes["b"][1]  # same deterministic evaluation_id
 
     with factory() as session:
-        evaluation_count = session.execute(
+        evaluation_count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluations WHERE evaluation_id = :id"),
             {"id": outcomes["a"][1]},
         ).scalar_one()
-        input_count = session.execute(
+        input_count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluation_inputs WHERE evaluation_id = :id"),
             {"id": outcomes["a"][1]},
         ).scalar_one()
@@ -1226,7 +1228,7 @@ def test_rollback_after_parent_ownership_leaves_no_poisoned_parent(
         session.rollback()
 
     with factory() as session:
-        count = session.execute(
+        count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluations WHERE evaluation_id = :id"),
             {"id": evaluation_id},
         ).scalar_one()
@@ -1246,7 +1248,7 @@ def test_rollback_after_parent_ownership_leaves_no_poisoned_parent(
     assert retried_evaluation is not None
     assert retried_evaluation.evaluation_id == evaluation_id
     with factory() as session:
-        input_count = session.execute(
+        input_count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluation_inputs WHERE evaluation_id = :id"),
             {"id": evaluation_id},
         ).scalar_one()
@@ -1303,11 +1305,11 @@ def test_rollback_leaves_zero_orphan_rows(migrated_engine: Engine) -> None:
         session.rollback()
 
     with factory() as session:
-        count = session.execute(
+        count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluations WHERE evaluation_id = :id"),
             {"id": orphan_evaluation_id},
         ).scalar_one()
-        input_count = session.execute(
+        input_count: int = session.execute(
             text("SELECT count(*) FROM business_rule_evaluation_inputs WHERE evaluation_id = :id"),
             {"id": orphan_evaluation_id},
         ).scalar_one()
@@ -2226,14 +2228,14 @@ def test_atomic_frontier_true_and_unknown_yields_not_evaluable_zero_persistence(
         # fixture is shared across the whole test module's session, so an
         # unscoped table-wide count would spuriously include other tests'
         # rows. Zero rows for THIS governed condition is the actual claim.
-        evaluations_count = session.execute(
+        evaluations_count: int = session.execute(
             text(
                 "SELECT count(*) FROM business_rule_evaluations "
                 "WHERE tenant_id = :tenant_id AND business_condition_id = :condition_id"
             ),
             {"tenant_id": tenant_id, "condition_id": condition_id},
         ).scalar_one()
-        findings_count = session.execute(
+        findings_count: int = session.execute(
             text(
                 "SELECT count(*) FROM business_rule_findings "
                 "WHERE tenant_id = :tenant_id AND business_condition_id = :condition_id"
@@ -2714,7 +2716,7 @@ def test_current_state_first_violation_race_creates_exactly_one_finding(
     assert outcomes["a"][1] == outcomes["b"][1]  # identical evidence -> identical evaluation_id
 
     with factory() as session:
-        finding_count = session.execute(
+        finding_count: int = session.execute(
             text(
                 "SELECT count(*) FROM business_rule_findings WHERE tenant_id = :t "
                 "AND business_condition_id = :c"
@@ -3027,14 +3029,14 @@ def test_current_state_evaluation_and_finding_atomicity_rollback(
         session.rollback()
 
     with factory() as session:
-        evaluation_count = session.execute(
+        evaluation_count: int = session.execute(
             text(
                 "SELECT count(*) FROM business_rule_evaluations WHERE tenant_id = :t "
                 "AND business_condition_id = :c"
             ),
             {"t": tenant_id, "c": condition_id},
         ).scalar_one()
-        finding_count = session.execute(
+        finding_count: int = session.execute(
             text(
                 "SELECT count(*) FROM business_rule_findings WHERE tenant_id = :t "
                 "AND business_condition_id = :c"

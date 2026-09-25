@@ -237,7 +237,9 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
         assert "comparison_subject_correspondences" not in tables
     alembic.command.upgrade(alembic_cfg, "head")
     with migrated_engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        revision: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     current_head = ScriptDirectory.from_config(alembic_cfg).get_current_head()
     assert revision == current_head
 

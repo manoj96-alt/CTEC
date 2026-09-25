@@ -1288,7 +1288,9 @@ def test_ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_data(
         alembic.command.upgrade(config, "head")  # TI-10: fails closed
 
     with migrated_engine.connect() as connection:
-        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        version: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     assert version == "0040_oqi_h5_timeliness_eval"  # migration did not partially apply
     assert _row() == invalid_row  # row byte-unchanged, never silently repaired
 
@@ -1588,7 +1590,9 @@ def test_r2ti10_migration_fails_closed_on_invalid_legacy_cross_tenant_evaluation
         alembic.command.upgrade(config, "head")  # R2-TI-10: fails closed
 
     with migrated_engine.connect() as connection:
-        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        version: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     assert version == "0041_oqi6_r1_dependency_tenancy"  # migration did not partially apply
     assert _row() == invalid_row  # row byte-unchanged, never silently repaired
 
@@ -2051,7 +2055,9 @@ def test_r3tim04_to_m06_invalid_legacy_current_business_impact_fails_closed(
         alembic.command.upgrade(config, "head")  # R3-TI-M04: fails closed
 
     with migrated_engine.connect() as connection:
-        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        version: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     assert version == "0042_oqi6_r2_evaluation_tenancy"  # migration did not partially apply
     assert _row() == invalid_row  # R3-TI-M05: row byte-unchanged
 
@@ -2112,7 +2118,9 @@ def test_r3tim07_to_m09_invalid_legacy_current_reliance_fails_closed(
         alembic.command.upgrade(config, "head")  # R3-TI-M07: fails closed
 
     with migrated_engine.connect() as connection:
-        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        version: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     assert version == "0042_oqi6_r2_evaluation_tenancy"  # migration did not partially apply
     assert _row() == invalid_row  # R3-TI-M08: row byte-unchanged
 

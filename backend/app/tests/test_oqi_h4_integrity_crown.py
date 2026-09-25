@@ -563,7 +563,7 @@ class TestStructuralPrecedence:
             relationship_requirement_id=requirement_id,
         )
         assert result is None  # P1: no ACTIVE cardinality -> NOT_EVALUABLE, zero row
-        findings = session.execute(
+        findings: int = session.execute(
             text("SELECT count(*) FROM oqi_integrity_structural_findings WHERE tenant_id = :t"),
             {"t": tenant_id},
         ).scalar_one()
@@ -979,7 +979,7 @@ class TestDimensionIndependence:
             enterprise_entity_id=product,
             relationship_requirement_id=requirement_id,
         )
-        oqi1_count = session.execute(
+        oqi1_count: int = session.execute(
             text("SELECT count(*) FROM quality_findings WHERE tenant_id = :t"), {"t": tenant_id}
         ).scalar_one()
         assert oqi1_count == 0
