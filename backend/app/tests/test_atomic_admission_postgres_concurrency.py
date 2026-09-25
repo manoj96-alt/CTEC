@@ -87,7 +87,7 @@ def _discover_constraint(database_url: str) -> ConstraintInfo:
     engine = create_engine(database_url)
     try:
         with engine.connect() as connection:
-            current_schema = connection.execute(text("SELECT current_schema()")).scalar_one()
+            current_schema: str = connection.execute(text("SELECT current_schema()")).scalar_one()
             row = connection.execute(
                 text(
                     """
@@ -109,6 +109,8 @@ def _discover_constraint(database_url: str) -> ConstraintInfo:
     finally:
         engine.dispose()
     schema_name, constraint_name = row
+    assert isinstance(schema_name, str)
+    assert isinstance(constraint_name, str)
     assert schema_name, "resolved schema name must be non-empty"
     assert constraint_name, "resolved constraint name must be non-empty"
     return ConstraintInfo(schema_name=schema_name, constraint_name=constraint_name)

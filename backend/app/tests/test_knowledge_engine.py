@@ -298,8 +298,10 @@ def test_knowledge_evaluation_uses_its_dedicated_append_only_store() -> None:
 
 def test_knowledge_migration_and_immutability(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        trigger_count = connection.execute(
+        revision: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        trigger_count: int = connection.execute(
             text(
                 "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers "
                 "WHERE trigger_name = 'knowledge_evaluation_records_immutable'"

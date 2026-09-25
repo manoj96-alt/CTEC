@@ -381,8 +381,10 @@ def test_governance_architecture_preserves_capability_boundaries() -> None:
 
 def test_governance_migration_and_immutability(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        trigger_count = connection.execute(
+        revision: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        trigger_count: int = connection.execute(
             text(
                 "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers "
                 "WHERE trigger_name = 'governance_evaluation_records_immutable'"

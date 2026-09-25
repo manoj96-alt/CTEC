@@ -61,7 +61,7 @@ class KnowledgeEvaluationStore:
     @staticmethod
     def _ordered_statement(
         assertion_record_id: UUID,
-    ) -> Select[tuple[KnowledgeEvaluationRecordModel]]:
+    ) -> Select[KnowledgeEvaluationRecordModel]:
         return (
             select(KnowledgeEvaluationRecordModel)
             .where(KnowledgeEvaluationRecordModel.assertion_record_id == assertion_record_id)
