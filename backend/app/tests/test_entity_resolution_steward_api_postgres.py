@@ -984,7 +984,9 @@ def test_get_resolved_entity_returns_every_current_record_unfiltered_by_outcome(
             tenant_id, policy, preset_kind="Conservative"
         )
         policy_id = policy_row.policy_id
-        entity_id = _seed_enterprise_entity(session, tenant_id=tenant_id, name="Meridian Cell Components")
+        entity_id = _seed_enterprise_entity(
+            session, tenant_id=tenant_id, name="Meridian Cell Components"
+        )
 
         system_sap = _seed_source_system(session, tenant_id=tenant_id, name=f"SAP-{uuid4()}")
         source_sap_a = _seed_source_object(
@@ -1027,7 +1029,10 @@ def test_get_resolved_entity_returns_every_current_record_unfiltered_by_outcome(
     assert detail.enterprise_entity_name == "Meridian Cell Components"
     assert len(detail.records) == 2
     assert {r.outcome for r in detail.records} == {"Resolved"}
-    assert {r.understanding_key for r in detail.records} == {understanding_key_1, understanding_key_2}
+    assert {r.understanding_key for r in detail.records} == {
+        understanding_key_1,
+        understanding_key_2,
+    }
     for record in detail.records:
         assert record.source_representations != []
 

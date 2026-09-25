@@ -240,7 +240,9 @@ class EntityResolutionStewardApiService:
             record_rows: list[ResolvedEntityRecordRow] = []
             for record in sorted(matching_records, key=lambda r: r.produced_at):
                 source_ids = tuple(UUID(v) for v in record.supporting_source_object_ids)
-                source_representations = self._source_representations(session, tenant_id, source_ids)
+                source_representations = self._source_representations(
+                    session, tenant_id, source_ids
+                )
                 record_rows.append(
                     ResolvedEntityRecordRow(
                         understanding_key=EntityResolutionStore.understanding_key(source_ids),

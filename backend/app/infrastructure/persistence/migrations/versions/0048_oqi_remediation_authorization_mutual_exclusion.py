@@ -82,9 +82,7 @@ def upgrade() -> None:
             "automatic migration choice. Blocking case(s):\n" + "\n".join(blocking)
         )
 
-    op.add_column(
-        "oqi_remediation_authorizations", sa.Column("case_id", sa.Uuid(), nullable=True)
-    )
+    op.add_column("oqi_remediation_authorizations", sa.Column("case_id", sa.Uuid(), nullable=True))
     bind.execute(
         sa.text(
             """
