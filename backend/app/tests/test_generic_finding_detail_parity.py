@@ -32,8 +32,12 @@ _WRONG_TENANT = "some-other-tenant"
 
 
 @pytest.fixture(scope="module")
-def factory(migrated_engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=migrated_engine)
+def factory(migrated_engine: Engine) -> Generator[sessionmaker[Session], None, None]:
+    connection = migrated_engine.connect()
+    outer = connection.begin()
+    yield sessionmaker(bind=connection, join_transaction_mode="create_savepoint")
+    outer.rollback()
+    connection.close()
 
 
 @pytest.fixture(scope="module")
@@ -231,8 +235,7 @@ def test_integrity_downstream_tabs_honest(session: Session, condition_label: str
     )  # P21
     assert remediation is not None
     assert remediation.case_status is None
-    assert remediation.candidate is None
-    assert remediation.authorization is None
+    assert remediation.candidates == ()
     assert remediation.external_execution is None
 
 

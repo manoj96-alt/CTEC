@@ -10,12 +10,13 @@ export interface BrowserAuthConfig {
 // CDD-066/CDD-074: the single, authoritative list of Noetva backend
 // capability scopes the frontend requests at sign-in. Provider-specific
 // wire-format qualification (CDD-074) is applied on top of this list --
-// never maintain a second, manually duplicated copy of these ten names.
+// never maintain a second, manually duplicated copy of these names.
 const BACKEND_CAPABILITY_SCOPES = [
   "supplier-risk:read",
   "entity-resolution:read",
   "ontology-copilot:ask",
   "ontology-modeling:read",
+  "oqi-remediation:prepare",
   "oqi-remediation:authorize",
   "oqi-remediation:report-execution",
   "oqi:read",

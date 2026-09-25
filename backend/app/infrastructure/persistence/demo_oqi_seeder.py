@@ -22,7 +22,7 @@ Seeds INPUT + CONTEXT only, never a directly-persisted OQI conclusion:
     conclusion;
   - one `EnterpriseEntity` (the demo Supplier) plus real entity-resolution
     records binding both source objects to it -- context, never a Finding;
-  - one governed `BusinessProcess` ("Supplier Qualification (Demo)") and
+  - one governed `BusinessProcess` ("Aurora X1 Supplier Qualification") and
     `BusinessDependency` (criticality HIGH) on that same entity -- again
     configuration, never a computed outcome.
 
@@ -333,14 +333,40 @@ _H5_FRESHNESS_WINDOW_SECONDS = 1800  # 30 minutes, governed per policy (CDD-051 
 # own discovery, forbids two identical raw names) become a candidate +
 # open Finding; a third, genuinely distinct name completes a bounded
 # search with zero candidates (SATISFIED).
+#
+# CDD-085 §8/§13 (Demo Readiness): renamed onto the Golden Aurora X1
+# Product universe -- _H6_PRODUCT_A_ID is reused, unchanged, as the SAME
+# governed "Aurora X1" entity the ontology chain below (§7) connects to.
+# One governed entity, not two. Zero UniquenessPolicy, blocking, or
+# adjudication change -- display strings only.
 _H6_PRODUCT_A_ID = _uid("h6-demo-product-a")
 _H6_PRODUCT_B_ID = _uid("h6-demo-product-b")
 _H6_PRODUCT_C_ID = _uid("h6-demo-product-c")
-_H6_PRODUCT_A_NAME = "H6 Demo Duplicate Widget"
-_H6_PRODUCT_B_NAME = "H6 DEMO DUPLICATE WIDGET"
-_H6_PRODUCT_C_NAME = "H6 Demo Distinct Gadget"
+_H6_PRODUCT_A_NAME = "Aurora X1"
+_H6_PRODUCT_B_NAME = "AURORA X1"
+_H6_PRODUCT_C_NAME = "Nimbus S2 Controller"
 _H6_POLICY_ID = _uid("h6-demo-product-uniqueness-policy")
 _H6_BUCKET_MAX_SIZE = 10
+
+# CDD-085 §7 (Demo Readiness): the minimal, real ontology connection from
+# the Golden Supplier to the Golden Product, using only already-governed
+# relationship/entity types (ontology_seed.py, unmodified) -- no new
+# relationship type, no new entity type, no RelationshipRequirement/
+# cardinality (this chain needs no Integrity cardinality checking, unlike
+# H4's own use of the identical InstitutionalRelationship mechanism for
+# `assembledAt`).
+_AURORA_MATERIAL_ENTITY_TYPE_NAME = "Material"
+_AURORA_BOM_ENTITY_TYPE_NAME = "BOM"
+_AURORA_SUPPLIES_RELATIONSHIP_TYPE_NAME = "supplies"
+_AURORA_USED_IN_RELATIONSHIP_TYPE_NAME = "usedIn"
+_AURORA_DEFINES_RELATIONSHIP_TYPE_NAME = "defines"
+_AURORA_MATERIAL_ID = _uid("aurora-x1-battery-cell-material")
+_AURORA_BOM_ID = _uid("aurora-x1-bill-of-materials")
+_AURORA_SUPPLIES_EDGE_ID = _uid("aurora-supplies-edge")
+_AURORA_USED_IN_EDGE_ID = _uid("aurora-used-in-edge")
+_AURORA_DEFINES_EDGE_ID = _uid("aurora-defines-edge")
+_AURORA_MATERIAL_NAME = "Aurora X1 Battery Cell"
+_AURORA_BOM_NAME = "Aurora X1 Bill of Materials"
 
 
 class DemoTenantRequiredError(Exception):
@@ -569,7 +595,7 @@ class DemoOqiSeeder:
             EnterpriseEntity(
                 enterprise_entity_id=_SUPPLIER_ENTITY_ID,
                 tenant_id=tenant_id,
-                enterprise_entity_name="Demo Supplier (OQI Showcase)",
+                enterprise_entity_name="Meridian Cell Components",
                 lifecycle_state="Active",
                 effective_from=SEED_TIMESTAMP,
                 governance_status="Approved",
@@ -617,7 +643,7 @@ class DemoOqiSeeder:
         impact_service = OqiBusinessImpactService(self.session)
         process = impact_service.create_process(
             tenant_id=tenant_id,
-            name="Supplier Qualification (Demo)",
+            name="Aurora X1 Supplier Qualification",
             description="Deterministic OQI demo-showcase business process.",
             category=BusinessImpactCategory.OPERATIONAL,
             created_by="demo-seeder",
@@ -638,6 +664,7 @@ class DemoOqiSeeder:
         self._seed_h4_context(tenant_id)
         self._seed_h5_context(tenant_id)
         self._seed_h6_context(tenant_id)
+        self._seed_aurora_ontology_chain(tenant_id)
         return dependency.dependency_id
 
     def _seed_h2_context(self, tenant_id: str) -> None:
@@ -1545,6 +1572,131 @@ class DemoOqiSeeder:
                     created_on=SEED_TIMESTAMP,
                 )
             )
+        self.session.flush()
+
+    def _seed_aurora_ontology_chain(self, tenant_id: str) -> None:
+        """CDD-085 §7/§13 (Demo Readiness): the minimal, real three-hop
+        ontology connection from the Golden Supplier to the Golden Product,
+        using only already-governed relationship/entity types
+        (ontology_seed.py, unmodified). No new relationship type, no new
+        entity type, no RelationshipRequirement/cardinality -- this chain
+        requires no Integrity cardinality checking, unlike H4's own use of
+        the identical InstitutionalRelationship mechanism for
+        `assembledAt`. Reuses `_H6_PRODUCT_A_ID` (already created by
+        `_seed_h6_context`, called immediately before this method) as the
+        single governed "Aurora X1" entity -- one entity, not two."""
+        material_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _AURORA_MATERIAL_ENTITY_TYPE_NAME
+            )
+        )
+        bom_type_id = self.session.scalar(
+            select(EntityType.entity_type_id).where(
+                EntityType.entity_type_name == _AURORA_BOM_ENTITY_TYPE_NAME
+            )
+        )
+        assert material_type_id is not None and bom_type_id is not None, (
+            f"Required governed entity types not found: {_AURORA_MATERIAL_ENTITY_TYPE_NAME!r} / "
+            f"{_AURORA_BOM_ENTITY_TYPE_NAME!r} -- OntologySeeder must run before DemoOqiSeeder"
+        )
+
+        supplies_type_id = self.session.scalar(
+            select(RelationshipType.relationship_type_id).where(
+                RelationshipType.relationship_type_name == _AURORA_SUPPLIES_RELATIONSHIP_TYPE_NAME
+            )
+        )
+        used_in_type_id = self.session.scalar(
+            select(RelationshipType.relationship_type_id).where(
+                RelationshipType.relationship_type_name == _AURORA_USED_IN_RELATIONSHIP_TYPE_NAME
+            )
+        )
+        defines_type_id = self.session.scalar(
+            select(RelationshipType.relationship_type_id).where(
+                RelationshipType.relationship_type_name == _AURORA_DEFINES_RELATIONSHIP_TYPE_NAME
+            )
+        )
+        assert (
+            supplies_type_id is not None
+            and used_in_type_id is not None
+            and defines_type_id is not None
+        ), (
+            "Required governed relationship types not found: "
+            f"{_AURORA_SUPPLIES_RELATIONSHIP_TYPE_NAME!r} / "
+            f"{_AURORA_USED_IN_RELATIONSHIP_TYPE_NAME!r} / "
+            f"{_AURORA_DEFINES_RELATIONSHIP_TYPE_NAME!r} -- OntologySeeder must run before "
+            "DemoOqiSeeder"
+        )
+
+        existing_product = self.session.get(EnterpriseEntity, _H6_PRODUCT_A_ID)
+        assert existing_product is not None, (
+            "Required governed Aurora X1 Product entity not found -- _seed_h6_context must run "
+            "before _seed_aurora_ontology_chain"
+        )
+
+        def _entity(entity_id: UUID, name: str, type_id: UUID) -> None:
+            existing = self.session.get(EnterpriseEntity, entity_id)
+            if existing is not None:
+                return
+            self.session.add(
+                EnterpriseEntity(
+                    enterprise_entity_id=entity_id,
+                    tenant_id=tenant_id,
+                    enterprise_entity_name=name,
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    entity_type_id=type_id,
+                    business_domain_id=BOOTSTRAP_BUSINESS_DOMAIN_ID,
+                )
+            )
+
+        def _edge(edge_id: UUID, name: str, from_id: UUID, to_id: UUID, rel_type_id: UUID) -> None:
+            existing = self.session.get(InstitutionalRelationship, edge_id)
+            if existing is not None:
+                return
+            self.session.add(
+                InstitutionalRelationship(
+                    institutional_relationship_id=edge_id,
+                    tenant_id=tenant_id,
+                    institutional_relationship_name=name,
+                    lifecycle_state="Active",
+                    effective_from=SEED_TIMESTAMP,
+                    governance_status="Approved",
+                    created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                    created_on=SEED_TIMESTAMP,
+                    relationship_type_id=rel_type_id,
+                    from_entity_id=from_id,
+                    to_entity_id=to_id,
+                )
+            )
+
+        _entity(_AURORA_MATERIAL_ID, _AURORA_MATERIAL_NAME, material_type_id)
+        _entity(_AURORA_BOM_ID, _AURORA_BOM_NAME, bom_type_id)
+        self.session.flush()
+
+        _edge(
+            _AURORA_SUPPLIES_EDGE_ID,
+            "Meridian Cell Components supplies Aurora X1 Battery Cell",
+            _SUPPLIER_ENTITY_ID,
+            _AURORA_MATERIAL_ID,
+            supplies_type_id,
+        )
+        _edge(
+            _AURORA_USED_IN_EDGE_ID,
+            "Aurora X1 Battery Cell usedIn Aurora X1 Bill of Materials",
+            _AURORA_MATERIAL_ID,
+            _AURORA_BOM_ID,
+            used_in_type_id,
+        )
+        _edge(
+            _AURORA_DEFINES_EDGE_ID,
+            "Aurora X1 Bill of Materials defines Aurora X1",
+            _AURORA_BOM_ID,
+            _H6_PRODUCT_A_ID,
+            defines_type_id,
+        )
         self.session.flush()
 
     # ------------------------------------------------------------------

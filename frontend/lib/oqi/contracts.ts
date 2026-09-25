@@ -117,31 +117,40 @@ export interface AgentInvestigationResponse {
   recommendation: AgentRecommendationView | null;
 }
 
-export interface RemediationCandidateView {
-  candidate_id: string;
-  proposed_value: string;
-  status: string;
+// CDD-085 G-R3 §7/§13: one candidate's own authorization -- never a
+// case-wide "the" authorization picked arbitrarily from among siblings.
+export interface RemediationCandidateAuthorizationView {
+  authorization_id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "SUPERSEDED";
+  requested_by: string;
+  requested_on: string;
+  decided_by: string | null;
+  decided_on: string | null;
+  rejection_reason: string | null;
+  is_stale: boolean;
 }
 
-export interface RemediationAuthorizationView {
-  authorization_id: string;
-  principal: string;
-  decided_on: string | null;
-  instruction: string;
-  authorized_against_state_revision: number;
-  is_stale: boolean;
-  status: string;
+export interface RemediationCandidateItemView {
+  candidate_id: string;
+  proposed_value: string;
+  basis: string;
+  authorization: RemediationCandidateAuthorizationView | null;
 }
 
 export interface RemediationExternalExecutionView {
   reported_at: string;
 }
 
+// CDD-085 G-R3 §7-§9/§16/§17: the plural remediation read model -- every
+// candidate the last Prepare produced, deterministically ordered, each
+// carrying its own authorization. Replaces the prior singular
+// candidate/authorization fields, which collapsed a genuine
+// CROSS_SOURCE_VALUE_CONFLICT case (e.g. Golden's real US/MX candidates)
+// to one arbitrary candidate.
 export interface RemediationResponse {
   case_status: string | null;
-  candidate: RemediationCandidateView | null;
+  candidates: RemediationCandidateItemView[];
   recommendation: AgentRecommendationView | null;
-  authorization: RemediationAuthorizationView | null;
   external_execution: RemediationExternalExecutionView | null;
 }
 

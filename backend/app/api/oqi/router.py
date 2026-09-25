@@ -47,9 +47,9 @@ from app.api.oqi.schemas import (
     RelianceResponse,
     RelianceResultView,
     RemediationAuthorizationResponseView,
-    RemediationAuthorizationView,
+    RemediationCandidateAuthorizationView,
+    RemediationCandidateItemView,
     RemediationCandidateResponseView,
-    RemediationCandidateView,
     RemediationCaseActionResponse,
     RemediationExternalExecutionView,
     RemediationInstructionResponseView,
@@ -476,25 +476,27 @@ def get_remediation(
     row = service.get_remediation(tenant_id=authenticated.tenant_id, finding_id=finding_id)
     if row is None:
         raise HTTPException(404, detail={"code": "OQI_FINDING_NOT_FOUND"})
-    candidate = (
-        RemediationCandidateView(
-            candidate_id=row.candidate.candidate_id, proposed_value=row.candidate.proposed_value
+    candidates = tuple(
+        RemediationCandidateItemView(
+            candidate_id=item.candidate_id,
+            proposed_value=item.proposed_value,
+            basis=item.basis,
+            authorization=(
+                RemediationCandidateAuthorizationView(
+                    authorization_id=item.authorization.authorization_id,
+                    status=item.authorization.status,
+                    requested_by=item.authorization.requested_by,
+                    requested_on=item.authorization.requested_on,
+                    decided_by=item.authorization.decided_by,
+                    decided_on=item.authorization.decided_on,
+                    rejection_reason=item.authorization.rejection_reason,
+                    is_stale=item.authorization.is_stale,
+                )
+                if item.authorization is not None
+                else None
+            ),
         )
-        if row.candidate is not None
-        else None
-    )
-    authorization = (
-        RemediationAuthorizationView(
-            authorization_id=row.authorization.authorization_id,
-            principal=row.authorization.principal,
-            decided_on=row.authorization.decided_on,
-            instruction=row.authorization.instruction,
-            authorized_against_state_revision=row.authorization.authorized_against_state_revision,
-            is_stale=row.authorization.is_stale,
-            status=row.authorization.status,
-        )
-        if row.authorization is not None
-        else None
+        for item in row.candidates
     )
     external_execution = (
         RemediationExternalExecutionView(reported_at=row.external_execution.reported_at)
@@ -503,9 +505,8 @@ def get_remediation(
     )
     return RemediationResponse(
         case_status=row.case_status,
-        candidate=candidate,
+        candidates=candidates,
         recommendation=_recommendation_view(row.recommendation),
-        authorization=authorization,
         external_execution=external_execution,
     )
 

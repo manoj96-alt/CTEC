@@ -8,6 +8,7 @@ import type {
   DecisionResult,
   PolicyList,
   PreviewResult,
+  ResolvedEntityDetail,
 } from "./contracts";
 
 export class EntityResolutionApiError extends Error {
@@ -97,6 +98,12 @@ export const entityResolutionApi = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       },
+      signal,
+    ),
+  resolvedEntity: (entityId: string, signal?: AbortSignal) =>
+    request<ResolvedEntityDetail>(
+      `/entities/${encodeURIComponent(entityId)}`,
+      {},
       signal,
     ),
 };

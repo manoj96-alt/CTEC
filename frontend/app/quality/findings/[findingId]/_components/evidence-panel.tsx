@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StatusIndicator } from "@/components/design-system/status-indicator";
 import type { EvidenceResponse } from "@/lib/oqi/contracts";
 
@@ -37,9 +38,11 @@ import type { EvidenceResponse } from "@/lib/oqi/contracts";
 export function EvidencePanel({
   evidence,
   findingFamily,
+  entityId,
 }: {
   evidence: EvidenceResponse;
   findingFamily?: string;
+  entityId?: string | null;
 }) {
   const known = evidence.participants.filter(
     (p) => !p.is_missing && p.observed_value !== null,
@@ -77,6 +80,24 @@ export function EvidencePanel({
   return (
     <div>
       <h3>Source Evidence</h3>
+
+      {/* CDD-085 §14 (Demo Readiness) + G-R3/G-R5: the one authorized
+          contextual navigation link -- shown only for OQI2 (the only
+          family this page's own evidence comparison genuinely represents
+          multiple governed sources for) AND only when this Finding's own
+          real direct_entity_id is known, pointing forward to that exact
+          resolved entity's own detail page -- never a display-name
+          lookup, never the generic steward triage queue -- so the
+          presenter never has to hunt for the right entity among many.
+          Purely additive; no other Finding family's rendering path
+          changes. */}
+      {findingFamily === "OQI2" && entityId ? (
+        <p className="obs-evidence-contextual-link">
+          <Link href={`/data/entity-resolution/entities/${entityId}`}>
+            View resolved entity
+          </Link>
+        </p>
+      ) : null}
 
       {evidence.participants.length === 0 ? (
         <p role="status">

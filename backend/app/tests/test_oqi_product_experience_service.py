@@ -567,7 +567,8 @@ def test_recommendation_vs_authorization_crown_two_stage(
     assert stage1 is not None
     assert stage1.recommendation is not None
     assert stage1.recommendation.candidate_id == candidate_id
-    assert stage1.authorization is None  # explicit absent state, not merely omitted
+    stage1_candidate = next(c for c in stage1.candidates if c.candidate_id == candidate_id)
+    assert stage1_candidate.authorization is None  # explicit absent state, not merely omitted
 
     # -- Stage 2: real human authorization requested and decided through
     # OQI5-I1's own existing authority path. --
@@ -589,15 +590,16 @@ def test_recommendation_vs_authorization_crown_two_stage(
     assert stage2 is not None
     assert stage2.recommendation is not None
     assert stage2.recommendation.candidate_id == candidate_id  # recommendation preserved
-    assert stage2.authorization is not None  # now genuinely, separately present
-    assert stage2.authorization.status == "APPROVED"
-    assert stage2.authorization.principal == "approver"
-    assert stage2.authorization.decided_on is not None
+    stage2_candidate = next(c for c in stage2.candidates if c.candidate_id == candidate_id)
+    assert stage2_candidate.authorization is not None  # now genuinely, separately present
+    assert stage2_candidate.authorization.status == "APPROVED"
+    assert stage2_candidate.authorization.decided_by == "approver"
+    assert stage2_candidate.authorization.decided_on is not None
     # OQI-UX authorization-ID contract correction: the row must expose the
     # real, server-assigned authorization_id -- the exact value the governed
     # decide/report-execution routes require as their path parameter --
     # never a synthesized or omitted identifier.
-    assert stage2.authorization.authorization_id == authorization.authorization_id
+    assert stage2_candidate.authorization.authorization_id == authorization.authorization_id
     # Recommendation and authorization remain two distinct, independently
     # populated fields on the row -- never merged into one state.
 

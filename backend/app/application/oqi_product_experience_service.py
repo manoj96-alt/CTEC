@@ -197,20 +197,26 @@ class AgentInvestigationRow:
 
 
 @dataclass(frozen=True, slots=True)
-class RemediationCandidateRow:
-    candidate_id: UUID
-    proposed_value: str
+class RemediationCandidateAuthorizationRow:
+    """CDD-085 G-R3 §7/§13: one candidate's own authorization -- never a
+    case-wide "the" authorization picked arbitrarily from among siblings."""
+
+    authorization_id: UUID
+    status: str
+    requested_by: str
+    requested_on: datetime
+    decided_by: str | None
+    decided_on: datetime | None
+    rejection_reason: str | None
+    is_stale: bool
 
 
 @dataclass(frozen=True, slots=True)
-class RemediationAuthorizationRow:
-    authorization_id: UUID
-    principal: str
-    decided_on: datetime | None
-    instruction: str
-    authorized_against_state_revision: int
-    is_stale: bool
-    status: str
+class RemediationCandidateItemRow:
+    candidate_id: UUID
+    proposed_value: str
+    basis: str
+    authorization: RemediationCandidateAuthorizationRow | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,10 +226,13 @@ class RemediationExternalExecutionRow:
 
 @dataclass(frozen=True, slots=True)
 class RemediationRow:
+    """CDD-085 G-R3 §7-§9/§16/§17: the plural remediation read model --
+    every candidate the last Prepare produced, deterministically ordered,
+    each carrying its own authorization."""
+
     case_status: str | None
-    candidate: RemediationCandidateRow | None
+    candidates: tuple[RemediationCandidateItemRow, ...]
     recommendation: AgentRecommendationRow | None
-    authorization: RemediationAuthorizationRow | None
     external_execution: RemediationExternalExecutionRow | None
 
 
@@ -1190,9 +1199,8 @@ class OqiProductExperienceService:
         if not isinstance(finding.family, FindingFamily):
             return RemediationRow(
                 case_status=None,
-                candidate=None,
+                candidates=(),
                 recommendation=None,
-                authorization=None,
                 external_execution=None,
             )
         case = self._remediation_repo.get_case(
@@ -1203,56 +1211,50 @@ class OqiProductExperienceService:
         if case is None:
             return RemediationRow(
                 case_status=None,
-                candidate=None,
+                candidates=(),
                 recommendation=None,
-                authorization=None,
                 external_execution=None,
             )
-        candidate_row: RemediationCandidateRow | None = None
-        candidates = self._remediation_repo.get_candidates_for_case(case.case_id)
-        if candidates:
-            candidate_row = RemediationCandidateRow(
-                candidate_id=candidates[0].candidate_id, proposed_value=candidates[0].proposed_value
+
+        # CDD-085 G-R3 §7-§9/§16/§17: every candidate the last Prepare
+        # produced, deterministically ordered, each carrying its own
+        # authorization -- replaces the prior single, arbitrarily-picked
+        # candidate/authorization.
+        pairs = self._remediation_repo.get_candidates_with_authorizations_for_case(case.case_id)
+        live_finding = self._resolve_finding(tenant_id=tenant_id, finding_id=finding_id)
+        candidate_rows: list[RemediationCandidateItemRow] = []
+        for candidate, authorization in pairs:
+            authorization_row: RemediationCandidateAuthorizationRow | None = None
+            if authorization is not None:
+                instruction = self._remediation_repo.get_instruction(authorization.instruction_id)
+                assert instruction is not None
+                is_stale = (
+                    live_finding is not None
+                    and live_finding.state_revision != instruction.finding_state_revision
+                )
+                authorization_row = RemediationCandidateAuthorizationRow(
+                    authorization_id=authorization.authorization_id,
+                    status=authorization.status.value,
+                    requested_by=authorization.requested_by,
+                    requested_on=authorization.requested_on,
+                    decided_by=authorization.decided_by,
+                    decided_on=authorization.decided_on,
+                    rejection_reason=authorization.rejection_reason,
+                    is_stale=is_stale,
+                )
+            candidate_rows.append(
+                RemediationCandidateItemRow(
+                    candidate_id=candidate.candidate_id,
+                    proposed_value=candidate.proposed_value,
+                    basis=candidate.basis.value,
+                    authorization=authorization_row,
+                )
             )
 
         agent_investigation = self.get_agent_investigation(
             tenant_id=tenant_id, finding_id=finding_id
         )
         recommendation_row = agent_investigation.recommendation if agent_investigation else None
-
-        authorization_row: RemediationAuthorizationRow | None = None
-        instruction = self.session.execute(
-            select(OqiRemediationInstructionORM)
-            .where(OqiRemediationInstructionORM.case_id == case.case_id)
-            .order_by(OqiRemediationInstructionORM.created_on.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-        if instruction is not None:
-            from app.infrastructure.persistence.models.oqi_remediation import (
-                OqiRemediationAuthorizationORM,
-            )
-
-            authorization = self.session.execute(
-                select(OqiRemediationAuthorizationORM)
-                .where(OqiRemediationAuthorizationORM.instruction_id == instruction.instruction_id)
-                .order_by(OqiRemediationAuthorizationORM.requested_on.desc())
-                .limit(1)
-            ).scalar_one_or_none()
-            if authorization is not None:
-                live_finding = self._resolve_finding(tenant_id=tenant_id, finding_id=finding_id)
-                is_stale = (
-                    live_finding is not None
-                    and live_finding.state_revision != instruction.finding_state_revision
-                )
-                authorization_row = RemediationAuthorizationRow(
-                    authorization_id=authorization.authorization_id,
-                    principal=authorization.decided_by or authorization.requested_by,
-                    decided_on=authorization.decided_on,
-                    instruction=instruction.action_type,
-                    authorized_against_state_revision=instruction.finding_state_revision,
-                    is_stale=is_stale,
-                    status=authorization.status,
-                )
 
         external_execution_row: RemediationExternalExecutionRow | None = None
         if case.external_execution_claimed and case.external_execution_claimed_on is not None:
@@ -1262,9 +1264,8 @@ class OqiProductExperienceService:
 
         return RemediationRow(
             case_status=case.status.value,
-            candidate=candidate_row,
+            candidates=tuple(candidate_rows),
             recommendation=recommendation_row,
-            authorization=authorization_row,
             external_execution=external_execution_row,
         )
 

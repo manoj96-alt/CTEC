@@ -104,9 +104,8 @@ const EMPTY_RELIANCE = {
 const EMPTY_AGENT = { specialists: [], recommendation: null };
 const EMPTY_REMEDIATION = {
   case_status: null,
-  candidate: null,
+  candidates: [],
   recommendation: null,
-  authorization: null,
   external_execution: null,
 };
 
@@ -865,25 +864,27 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
     mockAll({
       remediation: {
         case_status: "PENDING",
-        candidate: {
-          candidate_id: "c1",
-          proposed_value: "ABC123",
-          status: "CANDIDATE_NOT_TRUTH",
-        },
+        candidates: [
+          {
+            candidate_id: "c1",
+            proposed_value: "ABC123",
+            basis: "SPECIALIST_SUPPORTED",
+            authorization: null,
+          },
+        ],
         recommendation: {
           recommendation_type: "RECOMMEND_CANDIDATE",
           candidate_id: "c1",
           rationale: "peers agree",
           basis: "SPECIALIST_SUPPORTED",
         },
-        authorization: null,
         external_execution: null,
       },
     });
     await renderTab("Remediation");
     expect(screen.getByText("RECOMMEND_CANDIDATE")).toBeInTheDocument();
     expect(
-      screen.getByText("No human authorization exists for this Finding."),
+      screen.getByText("No human authorization exists for this candidate."),
     ).toBeInTheDocument();
     // The OQI-UX lifecycle stepper legitimately lists "Authorized" as one of
     // its six neutral roadmap steps regardless of current state (CDD-045
@@ -899,24 +900,28 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
     mockAll({
       remediation: {
         case_status: "AUTHORIZED",
-        candidate: {
-          candidate_id: "c1",
-          proposed_value: "ABC123",
-          status: "CANDIDATE_NOT_TRUTH",
-        },
+        candidates: [
+          {
+            candidate_id: "c1",
+            proposed_value: "ABC123",
+            basis: "SPECIALIST_SUPPORTED",
+            authorization: {
+              authorization_id: "auth-1",
+              status: "APPROVED",
+              requested_by: "agent",
+              requested_on: "2026-01-02T00:00:00Z",
+              decided_by: "steward@example.com",
+              decided_on: "2026-01-03T00:00:00Z",
+              rejection_reason: null,
+              is_stale: false,
+            },
+          },
+        ],
         recommendation: {
           recommendation_type: "RECOMMEND_CANDIDATE",
           candidate_id: "c1",
           rationale: "peers agree",
           basis: "SPECIALIST_SUPPORTED",
-        },
-        authorization: {
-          principal: "steward@example.com",
-          decided_on: "2026-01-03T00:00:00Z",
-          instruction: "Correct Manufacturer Part Number to ABC123",
-          authorized_against_state_revision: 3,
-          is_stale: false,
-          status: "APPROVED",
         },
         external_execution: null,
       },
@@ -934,16 +939,24 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
     mockAll({
       remediation: {
         case_status: "AUTHORIZED",
-        candidate: null,
+        candidates: [
+          {
+            candidate_id: "c1",
+            proposed_value: "Correct value",
+            basis: "SPECIALIST_SUPPORTED",
+            authorization: {
+              authorization_id: "auth-1",
+              status: "APPROVED",
+              requested_by: "agent",
+              requested_on: "2025-12-31T00:00:00Z",
+              decided_by: "steward@example.com",
+              decided_on: "2026-01-01T00:00:00Z",
+              rejection_reason: null,
+              is_stale: true,
+            },
+          },
+        ],
         recommendation: null,
-        authorization: {
-          principal: "steward@example.com",
-          decided_on: "2026-01-01T00:00:00Z",
-          instruction: "Correct value",
-          authorized_against_state_revision: 1,
-          is_stale: true,
-          status: "APPROVED",
-        },
         external_execution: null,
       },
     });
@@ -961,9 +974,8 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
       finding: { status: "OPEN" },
       remediation: {
         case_status: "EXTERNAL_EXECUTION_REPORTED",
-        candidate: null,
+        candidates: [],
         recommendation: null,
-        authorization: null,
         external_execution: { reported_at: "2026-01-04T00:00:00Z" },
       },
     });

@@ -366,28 +366,52 @@ class OqiRemediationService:
         decided_by: str,
         now: datetime | None = None,
     ) -> RemediationAuthorization:
+        """CDD-085 G-R3 Sec10-Sec13: the single-effective-approval
+        transaction. The parent case is locked FIRST (before the target
+        authorization is even read), so two concurrent approve() calls
+        against sibling candidates of the same case serialize through this
+        one lock -- the loser observes its own target authorization no
+        longer PENDING (either already APPROVED by the winner's own case,
+        or -- for the sibling itself -- already SUPERSEDED by the winner)
+        and fails closed through the existing REMEDIATION_AUTHORIZATION_
+        NOT_PENDING error, never racing on disjoint rows the way the
+        pre-correction implementation did (proven live, NOETVA-GOLDEN-
+        SIGNATURE-UX-DR-R1)."""
+        moment = now if now is not None else datetime.now(UTC)
+        pre_lock_authorization = self._repository.get_authorization_by_id(authorization_id)
+        if pre_lock_authorization is None:
+            raise OqiRemediationError("REMEDIATION_AUTHORIZATION_NOT_FOUND")
+        if pre_lock_authorization.tenant_id != tenant_id:
+            raise OqiRemediationError("REMEDIATION_TENANT_MISMATCH")
+        instruction = self._repository.get_instruction(pre_lock_authorization.instruction_id)
+        assert instruction is not None
+        locked_case = self._repository.get_case_for_update(instruction.case_id)
+        if locked_case is None:
+            raise OqiRemediationError("REMEDIATION_CASE_NOT_FOUND")
+
         authorization = self._decide(
             tenant_id=tenant_id,
             authorization_id=authorization_id,
             decided_by=decided_by,
             new_status=RemediationAuthorizationStatus.APPROVED,
             rejection_reason=None,
-            now=now,
+            now=moment,
         )
-        instruction = self._repository.get_instruction(authorization.instruction_id)
-        assert instruction is not None
-        case = self._get_case_by_id_or_raise(instruction.case_id)
-        moment = now if now is not None else datetime.now(UTC)
+        self._repository.supersede_pending_sibling_authorizations(
+            case_id=locked_case.case_id,
+            excluding_authorization_id=authorization_id,
+            now=moment,
+        )
         self._repository.save_case(
             RemediationCase(
-                case_id=case.case_id,
-                tenant_id=case.tenant_id,
-                finding_family=case.finding_family,
-                finding_id=case.finding_id,
+                case_id=locked_case.case_id,
+                tenant_id=locked_case.tenant_id,
+                finding_family=locked_case.finding_family,
+                finding_id=locked_case.finding_id,
                 status=RemediationCaseStatus.AUTHORIZED,
-                external_execution_claimed=case.external_execution_claimed,
-                external_execution_claimed_on=case.external_execution_claimed_on,
-                created_on=case.created_on,
+                external_execution_claimed=locked_case.external_execution_claimed,
+                external_execution_claimed_on=locked_case.external_execution_claimed_on,
+                created_on=locked_case.created_on,
                 updated_on=moment,
             )
         )

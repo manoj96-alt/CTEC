@@ -135,3 +135,23 @@ export interface ApiProblem {
   correlation_id: string;
   retryable: boolean;
 }
+
+// CDD-085 G-R3 §20/§24/§28: one governed source record contributing to a
+// resolved EnterpriseEntity -- deliberately unfiltered by outcome (unlike
+// CaseSummary/the steward triage queue), so a RESOLVED record is visible
+// here even though the queue never surfaces it.
+export interface ResolvedEntityRecord {
+  understanding_key: string;
+  outcome: ResolutionOutcome;
+  business_confidence: BusinessConfidence;
+  produced_at: string;
+  narrative_explanation: string;
+  structured_reasons: string[];
+  source_representations: SourceRepresentationSummary[];
+}
+
+export interface ResolvedEntityDetail {
+  enterprise_entity_id: string;
+  enterprise_entity_name: string;
+  records: ResolvedEntityRecord[];
+}
