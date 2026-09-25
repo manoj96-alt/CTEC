@@ -300,8 +300,10 @@ def test_decision_architecture_does_not_bypass_prior_cognitive_capabilities() ->
 
 def test_decision_migration_and_immutability(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        trigger_count = connection.execute(
+        revision: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        trigger_count: int = connection.execute(
             text(
                 "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers "
                 "WHERE trigger_name = 'decision_evaluation_records_immutable'"
@@ -336,7 +338,7 @@ def test_decision_evaluation_group_migration_schema(migrated_engine: Engine) -> 
                 )
             )
         }
-        fk_count = connection.execute(
+        fk_count: int = connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.table_constraints "
                 "WHERE table_name = 'decision_evaluation_records' "

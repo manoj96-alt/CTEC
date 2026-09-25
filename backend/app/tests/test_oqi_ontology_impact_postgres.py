@@ -281,7 +281,7 @@ def test_migration_round_trips_cleanly(migrated_engine: Engine) -> None:
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", str(migrated_engine.url))
     with migrated_engine.connect() as connection:
-        table_count = connection.execute(
+        table_count: int = connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.tables "
                 "WHERE table_schema = 'public' AND table_name <> 'alembic_version'"
@@ -408,7 +408,7 @@ def test_attribute_level_finding_without_resolution_record_is_impact_unknown(
         assert evaluation.observations == ()
 
     with factory() as session:
-        result = session.execute(
+        result: int = session.execute(
             text(
                 "SELECT count(*) FROM ontology_impact_observations o "
                 "JOIN ontology_impact_evaluations e ON e.evaluation_id = o.evaluation_id "
@@ -1421,12 +1421,12 @@ def test_concurrent_identical_evaluation_converges_without_duplicate(
 
     assert not errors, f"concurrent evaluation raised: {errors}"
     with factory() as session:
-        count = session.execute(
+        count: int = session.execute(
             text("SELECT count(*) FROM ontology_impact_evaluations WHERE finding_id = :fid"),
             {"fid": str(finding_id)},
         ).scalar_one()
         assert count == 1
-        current_count = session.execute(
+        current_count: int = session.execute(
             text("SELECT count(*) FROM current_ontology_impacts WHERE finding_id = :fid"),
             {"fid": str(finding_id)},
         ).scalar_one()
@@ -1992,7 +1992,9 @@ def test_oqi4r1ti11_to_ti13_migration_fails_closed_on_invalid_legacy_cross_tenan
         alembic.command.upgrade(config, "head")  # OQI4-R1-TI-11
 
     with migrated_engine.connect() as connection:
-        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        version: str = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
     assert version == "0043_oqi6_r3_current_tenancy"  # OQI4-R1-TI-12 (historical, pinned)
 
     def _row() -> tuple[str, UUID] | None:

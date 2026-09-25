@@ -62,7 +62,7 @@ def test_migration_creates_the_field_value_evidence_table(migrated_engine: Engin
     by the time this test runs."""
     factory = sessionmaker(migrated_engine)
     with factory() as session:
-        columns = set(
+        columns: set[str] = set(
             session.execute(
                 text(
                     "SELECT column_name FROM information_schema.columns "

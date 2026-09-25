@@ -215,7 +215,7 @@ class DecisionEvaluationRepositoryImpl:
         )
 
     @staticmethod
-    def _ordered_statement(identity_key: str) -> Select[tuple[DecisionEvaluationORM]]:
+    def _ordered_statement(identity_key: str) -> Select[DecisionEvaluationORM]:
         return (
             select(DecisionEvaluationORM)
             .where(DecisionEvaluationORM.decision_identity_key == identity_key)

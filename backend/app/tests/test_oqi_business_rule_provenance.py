@@ -168,12 +168,16 @@ def test_current_state_style_violated_evaluation_creates_no_finding_row(
             tenant_id=tenant_id, business_condition_id=condition_id
         )
         assert active_rule is not None
-        before = session.execute(text("SELECT count(*) FROM business_rule_findings")).scalar_one()
+        before: int = session.execute(
+            text("SELECT count(*) FROM business_rule_findings")
+        ).scalar_one()
         evaluation = _service(session).evaluate_historical(
             rule=active_rule, subject=subject, evaluation_horizon=NOW
         )
         session.commit()
-        after = session.execute(text("SELECT count(*) FROM business_rule_findings")).scalar_one()
+        after: int = session.execute(
+            text("SELECT count(*) FROM business_rule_findings")
+        ).scalar_one()
 
     assert evaluation is not None
     assert evaluation.outcome is EvaluationOutcome.VIOLATED
