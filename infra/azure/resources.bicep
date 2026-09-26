@@ -104,6 +104,9 @@ param dbBootstrapAppPassword string = ''
 @description('CDD-068: password to (re)set for the noetva_migrate role during bootstrap -- the operator uses this same value when later populating the ctec-migration-database-url Key Vault secret. Required only when deployDbBootstrapJob=true.')
 param dbBootstrapMigratePassword string = ''
 
+@description('CDD-087: false (default, safe) = do not deploy the Golden Demo restore Container Apps Job; true = deploy it. Gated entirely independently of deployApplicationTier, mirroring deployDbBootstrapJob\'s own precedent -- restore must be invokable even when the backend/frontend Container Apps are scaled to zero replicas. Never appears in a normal deployment unless explicitly enabled.')
+param deployGoldenRestoreJob bool = false
+
 @description('Whether to provision a NAT Gateway for deterministic egress (required staging/prod, optional dev)')
 param enableNatGateway bool = true
 
@@ -403,6 +406,34 @@ module dbBootstrapJob 'modules/container-apps-job-db-bootstrap.bicep' = if (depl
   }
 }
 
+// CDD-087 §7: Golden Demo restore Container Apps Job, gated entirely
+// independently of deployApplicationTier -- mirroring dbBootstrapJob's own
+// independent-gating precedent, so restore is invokable even when the
+// backend/frontend Container Apps are scaled to zero replicas. Reuses the
+// backend Container App's own managed identity and the existing
+// `ctec-database-url` (noetva_app role) Key Vault secret -- no new
+// identity, no new DB role, no new secret (CDD-087 §11).
+module goldenRestoreJob 'modules/container-apps-job-golden-restore.bicep' = if (deployGoldenRestoreJob) {
+  name: 'golden-restore-job'
+  params: {
+    name: '${namePrefix}-golden-restore'
+    location: location
+    tags: tags
+    environmentId: containerAppsEnvironment.outputs.environmentId
+    imageReference: backendImageReference
+    managedIdentityId: identities.outputs.backendIdentityId
+    acrLoginServer: acr.outputs.registryLoginServer
+    envVars: [
+      { name: 'CTEC_ENVIRONMENT', value: 'demo' }
+      { name: 'CTEC_GOLDEN_DEMO_RESTORE_ALLOWED', value: 'true' }
+      { name: 'CTEC_GOLDEN_RESTORE_EXPECTED_HOST', value: postgres.outputs.serverFqdn }
+    ]
+    keyVaultSecretRefs: [
+      { name: 'ctec-database-url', envName: 'CTEC_DATABASE_URL', keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/ctec-database-url' }
+    ]
+  }
+}
+
 // Lifecycle-aware alert suppression (Noetva G-R3 Section 10/11) -- only
 // for lifecycle-managed environments. `prod` never receives this
 // resource: it has no lifecycle workflows to toggle it, and its
@@ -430,6 +461,9 @@ output cicdIdentityClientId string = identities.outputs.cicdIdentityClientId
 // CDD-068: empty string when the bootstrap Job is not deployed. Never a
 // secret -- the Job's name is not sensitive.
 output dbBootstrapJobName string = deployDbBootstrapJob ? dbBootstrapJob!.outputs.jobName : ''
+// CDD-087: empty string when the Golden restore Job is not deployed. Never
+// a secret -- the Job's name is not sensitive.
+output goldenRestoreJobName string = deployGoldenRestoreJob ? goldenRestoreJob!.outputs.jobName : ''
 // Informational only (Noetva I0-R1 Section 33): no DNS/certificate resource
 // is created against these hostnames since no real domain is authorized yet
 // (D0 Section AU/T -- do not invent a production domain). Surfaced here so
