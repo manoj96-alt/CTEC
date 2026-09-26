@@ -8,8 +8,9 @@ from pathlib import Path
 
 import alembic.command
 from alembic.config import Config
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.infrastructure.persistence.database import create_database_engine
@@ -135,6 +136,15 @@ def demo_verify() -> bool:
         OqiBusinessImpactRepositoryImpl,
     )
     from app.domain.oqi_ontology_impact.evaluation import OntologyElementType
+    from app.domain.oqi_business_impact.dependency import Criticality
+    from app.domain.oqi_business_impact.reliance import RelianceState
+    from app.infrastructure.persistence.models.oqi_business_impact import (
+        CurrentRelianceORM,
+        OqiRelianceEvaluationORM,
+    )
+    from app.api.supplier_risk.authentication import TrustedPrincipal
+    from app.application.ontology_copilot_api import AskStatus, OntologyCopilotApiService
+    from datetime import UTC, datetime, timedelta
 
     settings = get_settings()
     assert settings.database_url is not None, "CTEC_DATABASE_URL must be set to run demo-verify"
@@ -248,6 +258,58 @@ def demo_verify() -> bool:
             f"name={distinct_control.enterprise_entity_name if distinct_control else None!r}",
         )
 
+        # CDD-087 §13: the three previously-missing investor-critical
+        # assertions, added by governance because Azure Golden parity
+        # should not declare readiness while these remain unverified.
+        dependencies = bi_repo.list_active_dependencies_for_subject(
+            tenant_id=tenant_id,
+            ontology_element_type=OntologyElementType.ENTITY,
+            ontology_element_id=_SUPPLIER_ENTITY_ID,
+        )
+        _check(
+            "business_impact_high",
+            bool(dependencies) and dependencies[0].criticality == Criticality.HIGH,
+            f"criticality={dependencies[0].criticality if dependencies else None!r}",
+        )
+
+        current_reliance = session.get(
+            CurrentRelianceORM,
+            (tenant_id, OntologyElementType.ENTITY.value, _SUPPLIER_ENTITY_ID),
+        )
+        reliance_evaluation = (
+            session.get(OqiRelianceEvaluationORM, current_reliance.latest_evaluation_id)
+            if current_reliance is not None
+            else None
+        )
+        _check(
+            "reliance_at_risk",
+            reliance_evaluation is not None
+            and reliance_evaluation.state == RelianceState.RELIANCE_AT_RISK.value,
+            f"state={reliance_evaluation.state if reliance_evaluation else None!r}",
+        )
+
+    # Ask Noetva runs its own read-only session internally -- outside the
+    # `with factory() as session:` block above, mirroring
+    # test_d20_ask_ctec_live_query's own established call pattern exactly.
+    now = datetime.now(UTC)
+    ask_principal = TrustedPrincipal(
+        principal_id="demo-verify",
+        tenant_id=tenant_id,
+        scopes=("ontology-copilot:ask",),
+        roles=(),
+        issuer="demo-verify",
+        issued_at=now - timedelta(seconds=1),
+        expires_at=now + timedelta(hours=1),
+    )
+    ask_result = OntologyCopilotApiService(sessions=factory).ask(
+        ask_principal, "Which products depend on Meridian Cell Components?"
+    )
+    _check(
+        "ask_noetva_dependency_support",
+        ask_result.status == AskStatus.ANSWERED and "Aurora X1" in ask_result.result_names,
+        f"status={ask_result.status!r} result_names={ask_result.result_names!r}",
+    )
+
     all_passed = True
     for name, passed, detail in results:
         status = "PASS" if passed else "FAIL"
@@ -256,6 +318,175 @@ def demo_verify() -> bool:
 
     print("demo-verify: " + ("ALL CHECKS PASSED" if all_passed else "CHECKS FAILED"))
     return all_passed
+
+
+# CDD-087 §7-§9: a separate, purpose-built mechanism from demo-reset above
+# -- never sharing its allowlist, its flag, or its destructive schema
+# downgrade/upgrade. golden-demo-restore restores ONLY the deterministic
+# Golden fixture's mutable remediation-lifecycle decision state (the four
+# oqi_remediation_* tables, CDD-087 §8); it never touches schema, migration
+# history, or any oqi_uniqueness_* table (CDD-084 §21/§25 forbids DELETE on
+# those entirely -- they are immutable append-only ledgers by design, and
+# the certified Golden path never adjudicates the Aurora X1/AURORA X1 pair
+# in the first place, so nothing there ever needs restoring).
+_GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD = "0048_oqi_remediation_mutex"
+
+
+class GoldenDemoRestoreNotAllowedError(Exception):
+    """Raised when golden-demo-restore's fail-closed safety predicate
+    rejects the operation. Never caught internally -- always propagates to
+    a non-zero exit with a specific, named reason, mirroring
+    DemoResetNotAllowedError's own discipline."""
+
+
+def _assert_golden_demo_restore_allowed(database_url: str, session: Session) -> None:
+    """CDD-087 §9: all five checks must pass, in this order, before any
+    mutation. Any single failure raises immediately -- zero mutation, a
+    specific diagnostic naming which check failed."""
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+    from app.infrastructure.persistence.models.oqi_remediation import (
+        OqiRemediationAuthorizationORM,
+        OqiRemediationCaseORM,
+        OqiRemediationInstructionORM,
+    )
+
+    # Check 1 -- explicit opt-in.
+    if os.environ.get("CTEC_GOLDEN_DEMO_RESTORE_ALLOWED") != "true":
+        raise GoldenDemoRestoreNotAllowedError(
+            "golden-demo-restore refused: CTEC_GOLDEN_DEMO_RESTORE_ALLOWED is not set to exactly "
+            "'true'. This command deletes real remediation-lifecycle rows for the Golden tenant; "
+            "it must never run without an explicit, deliberate opt-in."
+        )
+
+    # Check 2 -- application-declared environment.
+    settings = get_settings()
+    if settings.environment != "demo":
+        raise GoldenDemoRestoreNotAllowedError(
+            f"golden-demo-restore refused: settings.environment is {settings.environment!r}, not "
+            "'demo'. This command must never run against any environment that has not explicitly "
+            "declared itself the dedicated demo environment."
+        )
+
+    # Check 3 -- exact database host identity. A dedicated constant/env
+    # var, deliberately never merged into _DEMO_RESET_ALLOWED_HOSTS above
+    # (CDD-087 §6/§9): the real demo PostgreSQL FQDN does not exist until
+    # the Azure environment itself is provisioned, so the expected value is
+    # supplied explicitly at runtime rather than guessed/hardcoded here.
+    expected_host = os.environ.get("CTEC_GOLDEN_RESTORE_EXPECTED_HOST")
+    if not expected_host:
+        raise GoldenDemoRestoreNotAllowedError(
+            "golden-demo-restore refused: CTEC_GOLDEN_RESTORE_EXPECTED_HOST is not set. This "
+            "command must be told, explicitly, which single database host it is allowed to run "
+            "against; it never infers or guesses this value."
+        )
+    actual_host = make_url(database_url).host
+    if actual_host != expected_host:
+        raise GoldenDemoRestoreNotAllowedError(
+            f"golden-demo-restore refused: database host {actual_host!r} does not match the "
+            f"expected demo host {expected_host!r}."
+        )
+
+    # Check 4 -- exact migration head.
+    actual_head: str = session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    if actual_head != _GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD:
+        raise GoldenDemoRestoreNotAllowedError(
+            f"golden-demo-restore refused: migration head is {actual_head!r}, expected "
+            f"{_GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD!r}."
+        )
+
+    # Check 5 -- foreign-tenant absence across the exact restore scope
+    # (oqi_remediation_candidates carries no tenant_id of its own -- CDD-087
+    # §8 -- but is FK-scoped to oqi_remediation_cases, so a foreign-tenant
+    # case is a sufficient and necessary detector for it too).
+    foreign_tenants: set[str] = set()
+    for model in (
+        OqiRemediationCaseORM,
+        OqiRemediationInstructionORM,
+        OqiRemediationAuthorizationORM,
+    ):
+        rows = (
+            session.execute(
+                select(model.tenant_id)
+                .where(model.tenant_id != BOOTSTRAP_DEMO_TENANT_ID)
+                .distinct()
+            )
+            .scalars()
+            .all()
+        )
+        foreign_tenants.update(rows)
+    if foreign_tenants:
+        raise GoldenDemoRestoreNotAllowedError(
+            "golden-demo-restore refused: found remediation rows for unexpected tenant(s) "
+            f"{sorted(foreign_tenants)!r}. This command refuses to run against a database that is "
+            "not exactly the isolated, single-tenant Golden demo fixture it expects."
+        )
+
+
+def golden_demo_restore() -> None:
+    """CDD-087 §7-§10: the fail-closed five-check safety predicate (§9),
+    then -- inside the SAME session as the predicate's own migration-head/
+    foreign-tenant reads, so nothing can change between check and mutation
+    -- the exact four-table scoped DELETE (§8; never an oqi_uniqueness_*
+    table, which CDD-084 §21/§25 forbids deleting from at all), then the
+    existing, unmodified DemoOqiSeeder.seed() re-invocation. One session,
+    one final commit (§10): any failure before that commit leaves the
+    database entirely unchanged."""
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+    from app.infrastructure.persistence.models.oqi_remediation import (
+        OqiRemediationAuthorizationORM,
+        OqiRemediationCandidateORM,
+        OqiRemediationCaseORM,
+        OqiRemediationInstructionORM,
+    )
+
+    settings = get_settings()
+    assert (
+        settings.database_url is not None
+    ), "CTEC_DATABASE_URL must be set to run golden-demo-restore"
+    engine = create_database_engine(settings)
+    factory = create_session_factory(engine)
+    with factory() as session:
+        _assert_golden_demo_restore_allowed(settings.database_url, session)
+
+        case_ids = (
+            session.execute(
+                select(OqiRemediationCaseORM.case_id).where(
+                    OqiRemediationCaseORM.tenant_id == BOOTSTRAP_DEMO_TENANT_ID
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # FK-safe order: authorizations -> instructions -> candidates ->
+        # cases (CDD-087 §8, exactly this order, exactly these four
+        # tables, no other table).
+        session.execute(
+            delete(OqiRemediationAuthorizationORM).where(
+                OqiRemediationAuthorizationORM.tenant_id == BOOTSTRAP_DEMO_TENANT_ID
+            )
+        )
+        session.execute(
+            delete(OqiRemediationInstructionORM).where(
+                OqiRemediationInstructionORM.tenant_id == BOOTSTRAP_DEMO_TENANT_ID
+            )
+        )
+        if case_ids:
+            session.execute(
+                delete(OqiRemediationCandidateORM).where(
+                    OqiRemediationCandidateORM.case_id.in_(case_ids)
+                )
+            )
+        session.execute(
+            delete(OqiRemediationCaseORM).where(
+                OqiRemediationCaseORM.tenant_id == BOOTSTRAP_DEMO_TENANT_ID
+            )
+        )
+
+        summary = DemoOqiSeeder(session).seed(tenant_id=BOOTSTRAP_DEMO_TENANT_ID)
+        session.commit()
+    print(json.dumps(asdict(summary), default=str, sort_keys=True))
 
 
 def main() -> None:
@@ -267,6 +498,7 @@ def main() -> None:
     seed_parser.add_argument("archive", type=Path)
     subcommands.add_parser("demo-reset")
     subcommands.add_parser("demo-verify")
+    subcommands.add_parser("golden-demo-restore")
     args = parser.parse_args()
     if args.command == "migrate":
         migrate()
@@ -280,6 +512,12 @@ def main() -> None:
             sys.exit(1)
     elif args.command == "demo-verify":
         if not demo_verify():
+            sys.exit(1)
+    elif args.command == "golden-demo-restore":
+        try:
+            golden_demo_restore()
+        except GoldenDemoRestoreNotAllowedError as exc:
+            print(str(exc), file=sys.stderr)
             sys.exit(1)
     else:
         seed(args.archive)
