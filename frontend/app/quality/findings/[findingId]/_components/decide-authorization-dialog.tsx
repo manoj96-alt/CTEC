@@ -1,15 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { principalId } from "@/lib/auth/browser-session";
 import { OqiApiError, oqiApi } from "@/lib/oqi/api-client";
 
 // CDD-045 companion §M/§4 -- mirrors the existing entity-resolution
-// decision-dialog.tsx native-<dialog> pattern. decided_by is never a form
-// field: it is derived from the authenticated session's own `sub` claim
-// (never preferred_username/email/name/free text) and the call fails
-// closed if that claim is unavailable. Approve means human authorization
-// only -- never remediate/execute/resolve.
+// decision-dialog.tsx native-<dialog> pattern. decided_by is never sent by
+// this client at all (NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1): the decision
+// actor identity is bound exclusively, server-side, to the authenticated
+// principal that made the HTTP call -- a client-asserted identity (from the
+// ID token's `sub` or anywhere else) is not a trustworthy security boundary,
+// since it is audience-pairwise and does not match the backend's own
+// access-token-derived principal id for the same real user. This dialog
+// only ever asserts the decision (approve/reject), never who is deciding.
+// Approve means human authorization only -- never remediate/execute/resolve.
 const ERROR_COPY: Record<string, string> = {
   REMEDIATION_SELF_APPROVAL_PROHIBITED:
     "The signed-in principal requested this authorization and cannot also decide it.",
@@ -46,16 +49,8 @@ export function DecideAuthorizationDialog({
     setBusy(true);
     setError(null);
     try {
-      const decidedBy = await principalId();
-      if (!decidedBy) {
-        setError(
-          "Unable to determine the authenticated principal. This decision cannot be recorded.",
-        );
-        return;
-      }
       await oqiApi.decideAuthorization(authorizationId, {
         approve,
-        decided_by: decidedBy,
         rejection_reason: approve ? undefined : rejectionReason || undefined,
       });
       dialog.current?.close();
