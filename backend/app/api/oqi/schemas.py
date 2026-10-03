@@ -168,8 +168,12 @@ class RemediationResponse(BaseModel):
 
 
 class DecideAuthorizationRequest(BaseModel):
+    """`decided_by` is deliberately not a field here: the decision actor
+    identity is authoritative only from the server-validated authenticated
+    principal (NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1), never client input.
+    The client supplies only the decision itself."""
+
     approve: bool
-    decided_by: str
     rejection_reason: str | None = None
 
 

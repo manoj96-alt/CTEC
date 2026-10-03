@@ -593,11 +593,18 @@ def decide_authorization(
 ) -> RemediationCaseActionResponse:
     authorize(authenticated, "oqi-remediation:authorize", dependencies, correlation)
     try:
+        # NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1: the decision actor identity
+        # is bound exclusively to the server-validated authenticated
+        # principal -- never to client-supplied input -- mirroring the
+        # existing, correct `requested_by=authenticated.principal_id` pattern
+        # above. A client-supplied actor field would let the caller control
+        # who the audit trail (and the requester != authorizer guard) says
+        # made the decision.
         status_value = service.decide_authorization(
             tenant_id=authenticated.tenant_id,
             authorization_id=authorization_id,
             approve=body.approve,
-            decided_by=body.decided_by,
+            decided_by=authenticated.principal_id,
             rejection_reason=body.rejection_reason,
         )
     except OqiRemediationError as exc:

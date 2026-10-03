@@ -154,9 +154,11 @@ export interface RemediationResponse {
   external_execution: RemediationExternalExecutionView | null;
 }
 
+// decided_by is deliberately not a field here: the decision actor identity
+// is authoritative only from the server-validated authenticated principal,
+// never client input (NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1).
 export interface DecideAuthorizationRequest {
   approve: boolean;
-  decided_by: string;
   rejection_reason?: string | null;
 }
 
