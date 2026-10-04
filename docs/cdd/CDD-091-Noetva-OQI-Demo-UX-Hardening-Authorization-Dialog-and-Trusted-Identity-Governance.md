@@ -244,4 +244,71 @@ Source/runtime drift — not found (§19). No safe CDD identifier — found (§1
 
 ---
 
-*This document authorizes governance only. It does not implement, deploy, or verify anything itself.*
+## 21. G-R1 governance correction (amendment — does not reopen §§1-20)
+
+**Originating phase:** NOETVA-OQI-DEMO-UX-HARDENING-G-R1, following NOETVA-OQI-DEMO-UX-HARDENING-I2's own correct fail-closed stop.
+
+**What happened:** I2 implemented paths #1-#2 of §13's I2 table (`TrustedPrincipal.display_name` and its configuration), verified them safe, and then stopped before touching paths #3-#11, having traced — not merely suspected — that persisting the requester/decider display-name snapshot is structurally impossible without two files absent from §13's list. The original §13 table is **not edited in place**; it stands as written, and this section records the correction additively, exactly as CDD-064/065's own amendment precedent in this repository already established.
+
+**Why the two paths are required (traced exhaustively, not asserted):**
+- `OqiRemediationRepositoryImpl.create_authorization()` and `.update_authorization_decision()` (`backend/app/infrastructure/persistence/oqi_remediation_repository.py`) map the domain `RemediationAuthorization` object to the ORM **by named field, one at a time** (`_authorization_to_orm`/`_authorization_to_domain`; `update_authorization_decision` copies exactly `status`/`decided_by`/`decided_on`/`rejection_reason`). There is no side-channel.
+- The domain object itself (`backend/app/domain/oqi_remediation/authorization.py`, `RemediationAuthorization`, `frozen=True, slots=True`) is therefore the *only* carrier available to either repository method — it has no field to carry a display-name snapshot today.
+
+**Full end-to-end plumbing trace performed this phase (every hop proven, not assumed):**
+- Construction sites: exactly three `RemediationAuthorization(...)` call sites exist anywhere in `app/` — `oqi_remediation_service.py:349` (request), `:459` (decide), and `oqi_remediation_repository.py:791` (`_authorization_to_domain`). No fourth, hidden site exists.
+- Decision-time: `approve()` and `reject()` **both** call the same private `_decide()` — proven by direct read, not assumed — so there is exactly one decision-time code path, not two, and exactly one repository call (`update_authorization_decision`) to extend.
+- Read-time: `get_candidates_with_authorizations_for_case()` (the method `oqi_product_experience_service.py`'s row construction actually calls) itself reuses the same `_authorization_to_domain()` helper — no separate, third mapping function exists anywhere in the repository file.
+- Test paths: no file under `app/tests/` constructs `RemediationAuthorization(...)` directly today — the dataclass is exercised only through the existing real-router/real-service/real-Postgres integration file already authorized as I2 path #9 (`test_oqi_remediation_identity_binding_postgres.py`). No new test file is required; the existing one is structurally sufficient to cover domain construction, the repository round trip, decision-update persistence, missing-display-claim behavior, and both adversarial cases (§24/§25 below).
+
+**Domain-model semantics decision:** the display-name snapshot belongs on `RemediationAuthorization` as event/audit metadata, not a separate persistence-only structure — it is specific to one authorization event (one request, one decision), exactly the granularity this domain object already represents, and it never participates in any comparison inside `__post_init__` or the service's own `_decide()` guard. This is additive data on an already-correct object, not a reopened architecture decision.
+
+**Security invariant reconfirmed:** `_decide()`'s guard (`decided_by == authorization.requested_by`, line 454) compares only the two existing, unmodified machine-identity fields. Neither new field is read by any authorization/separation-of-duty logic anywhere in the traced chain. `requested_by`/`decided_by` remain the sole security identities.
+
+**Nullability/backward compatibility:** both new fields are optional (`str | None = None`), validated in `__post_init__` only as "if present, must be a non-blank string" — mirroring the dataclass's own existing treatment of `rejection_reason`. A historical row with `NULL` in the new columns converts to `None` on both fields and remains fully constructible and readable; no backfill is performed or needed.
+
+### 21.1 Corrected exact I2 path set (13 paths total — §13's original 11 plus these 2)
+
+| # | Path | Action | Why (newly justified here) |
+|---|---|---|---|
+| 12 | `backend/app/domain/oqi_remediation/authorization.py` | MODIFY | Add `requested_by_display_name: str \| None = None` and `decided_by_display_name: str \| None = None` to `RemediationAuthorization`; extend `__post_init__`'s existing per-field validation loop to cover them identically to `rejection_reason`'s existing optional-string pattern |
+| 13 | `backend/app/infrastructure/persistence/oqi_remediation_repository.py` | MODIFY | Thread both new fields through `_authorization_to_orm()`, `_authorization_to_domain()`, and `update_authorization_decision()` (which must additionally copy `model.decided_by_display_name = authorization.decided_by_display_name`) |
+
+**Corrected counts: CREATE = 1, MODIFY = 12, DELETE = 0** (§13's original 10 MODIFY + 1 CREATE, plus these 2 MODIFY). No 14th path was found by the exhaustive trace above.
+
+### 21.2 Test-path sufficiency (re-audited)
+
+No additional test path is required. §13 I2 path #9 (`test_oqi_remediation_identity_binding_postgres.py`) remains sufficient and is hereby confirmed, not merely assumed, to be the correct and only location for:
+- domain-level construction of both new fields (exercised transitively through every real service call this file already makes);
+- the repository round trip (persisted via the same real-Postgres session this file already uses);
+- decision-update persistence for both APPROVE and REJECT;
+- missing/null display-claim behavior;
+- both adversarial cases below.
+
+### 21.3 Required adversarial tests (added to I2 path #9, not a new file)
+
+1. **Same display name, distinct principals:** Principal A (`principal_id=A`, `display_name="Alex Smith"`) requests; Principal B (`principal_id=B`, `display_name="Alex Smith"`) decides. Must succeed (`APPROVED`) — proving display-name equality never implies principal equality.
+2. **Distinct display name, same principal:** Principal A requests as `display_name="Old Name"`; the same `principal_id=A` later attempts to decide presenting `display_name="New Name"`. Must still fail with `REMEDIATION_SELF_APPROVAL_PROHIBITED` — proving principal equality overrides any display-name difference, so a rename can never bypass separation of duties.
+
+### 21.4 Partial-commit disposition
+
+**PRESERVE.** Commit `1461058df337161d255545b199530e8824f9f5c5` (paths #1-#2: `TrustedPrincipal.display_name` and its configuration) is independently re-verified this phase as byte-exact, additive-only, and fully consistent with the corrected architecture — it requires no rework. NOETVA-OQI-DEMO-UX-HARDENING-I2-R1 resumes directly on top of it.
+
+### 21.5 Governance hash record
+
+```
+Original CDD-091 SHA-256 (sections 1-20, as originally frozen) = d0876b46ee7e95b365d101b959e2259470bb75b2d3062227421803679bddc97e
+```
+
+The amended document's own hash is computed and recorded by the committing phase immediately after this section is appended (§21.5 itself cannot contain its own final hash). Both hashes remain permanently on record; no future phase may cite the original hash as still authoritative for I2's path ceiling — only the amended hash governs I2-R1 onward.
+
+### 21.6 I2-R1 authorization
+
+**NOETVA-OQI-DEMO-UX-HARDENING-I2-R1** is authorized to resume from the preserved partial commit and implement exactly the corrected 13-path set (§21.1), run the complete §13 security-test crown plus §21.3's two adversarial tests (all within existing authorized test path #9), run the migration (§13 path #6, now correctly populable), run backend/frontend regression, run Docker verification, perform CIAM Stage 1 on both `noetva-dev-backend-api` and `noetva-demo-backend-api` exactly as §10/§18-20 already froze, perform real Azure Stage 2 verification, and execute the two-principal human-readable-attribution crown. I2-R1 does not merge. I2-R1 may not expand beyond the 13-path set without a further, equally narrow correction following this same discipline.
+
+### 21.7 Scope reaffirmed unchanged
+
+OQI propagated-impact limitation; Gate S sibling authority-binding defect; `CTEC_ENVIRONMENT=development`; existing (pre-I2) `optionalClaims` cleanup; build-pipeline `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` hardening; CDD numbering collision; any production deployment; PR #253/#254 merge — none touched, none reopened by this amendment.
+
+---
+
+*This document authorizes governance only. It does not implement, deploy, or verify anything itself. §21 amends CDD-091 additively; §§1-20 are not edited in place and remain available in full for historical/audit reference.*
