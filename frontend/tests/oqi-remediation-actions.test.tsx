@@ -73,6 +73,7 @@ describe("Decide Authorization Dialog — authenticated identity", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
 
     await waitFor(() => expect(decideAuthorizationMock).toHaveBeenCalled());
@@ -110,6 +111,7 @@ describe("Decide Authorization Dialog — approval and rejection", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
     await waitFor(() => expect(onDecided).toHaveBeenCalled());
     expect(decideAuthorizationMock.mock.calls[0][0]).toBe("real-auth-id-abc");
@@ -156,13 +158,90 @@ describe("Decide Authorization Dialog — approval and rejection", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
     await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
   });
 });
 
+describe("Decide Authorization Dialog — CDD-091 radio initial state and interaction", () => {
+  function openDialog() {
+    render(
+      <DecideAuthorizationDialog
+        authorizationId="auth-1"
+        instruction="x"
+        onDecided={() => {}}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Decide Authorization" }),
+    );
+  }
+
+  it("neither Approve nor Reject is selected when the dialog first opens", () => {
+    openDialog();
+    expect(screen.getByRole("radio", { name: "Approve" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Reject" })).not.toBeChecked();
+  });
+
+  it("the confirmation CTA is disabled with no decision selected, and reads a neutral label", () => {
+    openDialog();
+    expect(
+      screen.getByRole("button", { name: "Confirm decision" }),
+    ).toBeDisabled();
+  });
+
+  it("selecting Approve checks only Approve and enables Confirm: Approve", () => {
+    openDialog();
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
+    expect(screen.getByRole("radio", { name: "Approve" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Reject" })).not.toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Confirm: Approve" }),
+    ).toBeEnabled();
+  });
+
+  it("selecting Reject checks only Reject and enables Confirm: Reject", () => {
+    openDialog();
+    fireEvent.click(screen.getByRole("radio", { name: "Reject" }));
+    expect(screen.getByRole("radio", { name: "Reject" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Approve" })).not.toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Confirm: Reject" }),
+    ).toBeEnabled();
+  });
+
+  it("switching Approve -> Reject updates the checked radio and the CTA correctly", () => {
+    openDialog();
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Reject" }));
+    expect(screen.getByRole("radio", { name: "Approve" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Reject" })).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Confirm: Reject" }),
+    ).toBeInTheDocument();
+  });
+
+  it("switching Reject -> Approve updates the checked radio and the CTA correctly", () => {
+    openDialog();
+    fireEvent.click(screen.getByRole("radio", { name: "Reject" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
+    expect(screen.getByRole("radio", { name: "Reject" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Approve" })).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Confirm: Approve" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clicking the label text (not just the radio circle) selects the option -- native label association", () => {
+    openDialog();
+    fireEvent.click(screen.getByText("Approve"));
+    expect(screen.getByRole("radio", { name: "Approve" })).toBeChecked();
+  });
+});
+
 describe("Decide Authorization Dialog — domain errors", () => {
-  it("self-approval prohibition is shown distinctly, not generically", async () => {
+  it("self-approval prohibition is shown distinctly, not generically, and enters the governed blocked state", async () => {
     decideAuthorizationMock.mockRejectedValue(
       new OqiApiError("REMEDIATION_SELF_APPROVAL_PROHIBITED", 403),
     );
@@ -176,9 +255,93 @@ describe("Decide Authorization Dialog — domain errors", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/requested this authorization/i);
+
+    // CDD-091 §4: the explanatory message remains visible, Approve becomes
+    // unavailable, and the forbidden action cannot be resubmitted through
+    // normal UI interaction -- while this is a UX affordance only, never
+    // the actual security boundary (the server already rejected it above).
+    expect(screen.getByRole("radio", { name: "Approve" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Confirm: Approve" }),
+    ).toBeDisabled();
+    expect(decideAuthorizationMock).toHaveBeenCalledTimes(1);
+
+    // Reject remains available -- self-approval prohibition is not a
+    // blanket "this principal cannot interact with the request" lock.
+    expect(screen.getByRole("radio", { name: "Reject" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("radio", { name: "Reject" }));
+    expect(
+      screen.getByRole("button", { name: "Confirm: Reject" }),
+    ).toBeEnabled();
+
+    // The explanatory message remains visible throughout.
+    expect(screen.getByRole("alert").textContent).toMatch(
+      /requested this authorization/i,
+    );
+
+    // Cancel/Close remains usable.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("Reject can still submit after a self-approval rejection, per the existing rejection contract", async () => {
+    decideAuthorizationMock
+      .mockRejectedValueOnce(
+        new OqiApiError("REMEDIATION_SELF_APPROVAL_PROHIBITED", 403),
+      )
+      .mockResolvedValueOnce({ case_status: "AWAITING_AUTHORITY" });
+    render(
+      <DecideAuthorizationDialog
+        authorizationId="auth-1"
+        instruction="x"
+        onDecided={() => {}}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Decide Authorization" }),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Reject" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm: Reject" }));
+
+    await waitFor(() =>
+      expect(decideAuthorizationMock).toHaveBeenCalledTimes(2),
+    );
+    expect(decideAuthorizationMock.mock.calls[1][1]).toMatchObject({
+      approve: false,
+    });
+  });
+
+  it("a generic/unknown API error does not enter the self-approval-blocked state and does not disable Approve", async () => {
+    decideAuthorizationMock.mockRejectedValue(
+      new OqiApiError("SOME_TRANSIENT_FAILURE", 500),
+    );
+    render(
+      <DecideAuthorizationDialog
+        authorizationId="auth-1"
+        instruction="x"
+        onDecided={() => {}}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Decide Authorization" }),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
+    await screen.findByRole("alert");
+
+    // Unlike the self-approval case, Approve remains fully usable -- the
+    // user can simply retry.
+    expect(screen.getByRole("radio", { name: "Approve" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Confirm: Approve" }),
+    ).toBeEnabled();
   });
 
   it("not-pending is shown distinctly, not generically", async () => {
@@ -195,6 +358,7 @@ describe("Decide Authorization Dialog — domain errors", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/no longer pending/i);
@@ -661,6 +825,7 @@ describe("Remediation Panel — governed truth boundary", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
     await waitFor(() => expect(decideAuthorizationMock).toHaveBeenCalled());
     expect(decideAuthorizationMock.mock.calls[0][0]).toBe("auth-real-id");
@@ -716,6 +881,7 @@ describe("Remediation Panel — governed truth boundary", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Decide Authorization" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Approve" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm: Approve" }));
     await waitFor(() => expect(onMutated).toHaveBeenCalledTimes(1));
     // The rendered panel is still driven by the original, unmutated prop --

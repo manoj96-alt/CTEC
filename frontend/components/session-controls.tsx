@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import type { User } from "oidc-client-ts";
 import {
   accessToken,
   observeSessionLoss,
@@ -9,6 +10,22 @@ import {
   signIn,
   signOut,
 } from "@/lib/auth/browser-session";
+
+// CDD-091 §5/§6: presentational only -- never used for security, tenant
+// selection, or any authorization decision (those remain exclusively
+// backend-authoritative, via the access token's own `sub`, unrelated to
+// this). `name` is preferred (matches the directory displayName an
+// enterprise admin sets); `preferred_username` is the fallback; absence of
+// both is a valid, safe outcome (renders no label at all, never a raw
+// claim like `sub` or any other opaque/internal identifier).
+function trustedDisplayName(user: User): string | null {
+  const { name, preferred_username: preferredUsername } = user.profile;
+  if (typeof name === "string" && name.length > 0) return name;
+  if (typeof preferredUsername === "string" && preferredUsername.length > 0) {
+    return preferredUsername;
+  }
+  return null;
+}
 
 export function SessionControls() {
   const pathname = usePathname();
@@ -21,6 +38,9 @@ export function SessionControls() {
   // without becoming a reactive effect dependency.
   const initialPathnameRef = useRef(pathname);
   const [signedIn, setSignedIn] = useState(false);
+  // CDD-091 §6: cosmetic only -- see trustedDisplayName() above. Never
+  // read for, and never substituted into, any authorization-relevant path.
+  const [displayName, setDisplayName] = useState<string | null>(null);
   // Distinct from `signedIn`: whether browser auth is configured at all
   // (e.g. NEXT_PUBLIC_OIDC_* present). Defaults to false so a misconfigured
   // deployment renders nothing -- never a "Sign in" control with nowhere
@@ -72,13 +92,19 @@ export function SessionControls() {
       liveStateObserved = true;
       markAuthAvailable();
       if (sessionLossObserved) return;
-      if (active) setSignedIn(!user.expired);
+      if (active) {
+        setSignedIn(!user.expired);
+        setDisplayName(user.expired ? null : trustedDisplayName(user));
+      }
     });
     const unsubscribeUnloaded = manager.events.addUserUnloaded(() => {
       liveStateObserved = true;
       sessionLossObserved = true;
       markAuthAvailable();
-      if (active) setSignedIn(false);
+      if (active) {
+        setSignedIn(false);
+        setDisplayName(null);
+      }
     });
 
     // AUTH-UX-I-R: /auth/callback is the sole owner of processing the
@@ -107,12 +133,34 @@ export function SessionControls() {
             setSignedIn(false);
           }
         });
+      // CDD-091 §6: a separate, side-effect-free read of the same in-memory
+      // store, purely for the cosmetic display name -- deliberately not
+      // folded into accessToken()/restoredUser() above, which exist to
+      // acquire a *usable* session (including the bounded-renewal attempt)
+      // and must stay exactly as narrowly scoped as VM already proved
+      // correct. A `null`/expired result here simply leaves no name shown
+      // yet; the addUserLoaded handler above still fills it in the moment
+      // any renewal this mount attempts actually succeeds.
+      manager.getUser().then((user) => {
+        if (
+          active &&
+          !liveStateObserved &&
+          !sessionLossObserved &&
+          user &&
+          !user.expired
+        ) {
+          setDisplayName(trustedDisplayName(user));
+        }
+      });
     }
 
     const stopObserving = observeSessionLoss(() => {
       sessionLossObserved = true;
       markAuthAvailable();
-      if (active) setSignedIn(false);
+      if (active) {
+        setSignedIn(false);
+        setDisplayName(null);
+      }
     });
 
     return () => {
@@ -138,8 +186,18 @@ export function SessionControls() {
   }
 
   return (
-    <button type="button" className="button" onClick={() => void signOut()}>
-      Sign out
-    </button>
+    <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
+      {/* CDD-091 §6: compact, cosmetic only -- never sub/tenant id/any
+          opaque or internal identifier. Omitted entirely (no placeholder)
+          when neither trusted claim is available. */}
+      {displayName && (
+        <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+          {displayName}
+        </span>
+      )}
+      <button type="button" className="button" onClick={() => void signOut()}>
+        Sign out
+      </button>
+    </div>
   );
 }

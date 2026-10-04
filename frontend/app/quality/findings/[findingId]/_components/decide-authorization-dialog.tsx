@@ -32,20 +32,33 @@ export function DecideAuthorizationDialog({
   onDecided: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [approve, setApprove] = useState(true);
+  // CDD-091 §3: no default decision -- null means neither Approve nor
+  // Reject has been deliberately selected yet. Opening the dialog, or
+  // clicking the primary CTA, must never imply an authorization choice
+  // the user did not explicitly make.
+  const [approve, setApprove] = useState<boolean | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // CDD-091 §4: set only when the server has returned exactly
+  // REMEDIATION_SELF_APPROVAL_PROHIBITED for this authorization. Disabling
+  // Approve here is a UX affordance only -- it never substitutes for the
+  // server's own enforcement. A client that bypasses this control (e.g. by
+  // editing the DOM or calling the API directly) still receives the same
+  // server rejection on every attempt; nothing client-side is ever treated
+  // as the authority that decides whether self-approval is allowed.
+  const [selfApprovalBlocked, setSelfApprovalBlocked] = useState(false);
 
   function openDialog() {
-    setApprove(true);
+    setApprove(null);
     setRejectionReason("");
     setError(null);
+    setSelfApprovalBlocked(false);
     dialog.current?.showModal();
   }
 
   async function submit() {
-    if (busy) return;
+    if (busy || approve === null) return;
     setBusy(true);
     setError(null);
     try {
@@ -61,6 +74,9 @@ export function DecideAuthorizationDialog({
           ERROR_COPY[caught.code] ??
             `The decision could not be recorded (${caught.code}).`,
         );
+        if (caught.code === "REMEDIATION_SELF_APPROVAL_PROHIBITED") {
+          setSelfApprovalBlocked(true);
+        }
       } else {
         setError("The decision could not be recorded.");
       }
@@ -93,27 +109,32 @@ export function DecideAuthorizationDialog({
 
         <fieldset>
           <legend>Decision</legend>
-          <label>
+          {/* CDD-091 §3/§9: `.decision-option` scopes the row layout to
+              exactly these two labels -- the rejection-reason label below,
+              and every other dialog label elsewhere, keep the existing
+              stacked layout untouched. */}
+          <label className="decision-option">
             <input
               type="radio"
               name="decision"
-              checked={approve}
+              checked={approve === true}
+              disabled={selfApprovalBlocked}
               onChange={() => setApprove(true)}
             />
             Approve
           </label>
-          <label>
+          <label className="decision-option">
             <input
               type="radio"
               name="decision"
-              checked={!approve}
+              checked={approve === false}
               onChange={() => setApprove(false)}
             />
             Reject
           </label>
         </fieldset>
 
-        {!approve ? (
+        {approve === false ? (
           <label>
             Rejection reason (optional)
             <textarea
@@ -134,12 +155,22 @@ export function DecideAuthorizationDialog({
           <button type="button" onClick={() => dialog.current?.close()}>
             Cancel
           </button>
-          <button type="button" disabled={busy} onClick={() => void submit()}>
+          <button
+            type="button"
+            disabled={
+              busy ||
+              approve === null ||
+              (approve === true && selfApprovalBlocked)
+            }
+            onClick={() => void submit()}
+          >
             {busy
               ? "Recording…"
-              : approve
-                ? "Confirm: Approve"
-                : "Confirm: Reject"}
+              : approve === null
+                ? "Confirm decision"
+                : approve
+                  ? "Confirm: Approve"
+                  : "Confirm: Reject"}
           </button>
         </div>
       </dialog>
