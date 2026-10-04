@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     oidc_tenant_claim: str = "tenant_id"
     oidc_scope_claim: str = "scope"
     oidc_roles_claim: str = "roles"
+    # CDD-091 §6: presentation only -- never security-critical. Unlike the
+    # claims above, a missing/absent claim never raises; it simply means
+    # TrustedPrincipal.display_name is None.
+    oidc_display_name_claim: str = "name"
     oidc_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
     oidc_jwks_cache_seconds: int = Field(default=300, ge=30, le=3600)
     supplier_risk_payload_limit_bytes: int = Field(default=262_144, ge=1024)
