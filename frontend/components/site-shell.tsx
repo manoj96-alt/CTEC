@@ -71,7 +71,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
       <header className="observatory-header">
         <div className="observatory-header-inner">
           <div className="observatory-brand-row">
-            <Link className="observatory-wordmark" href="/">
+            <Link className="observatory-wordmark" href="/overview">
               <Telescope
                 className="observatory-wordmark-mark"
                 size={20}

@@ -226,7 +226,7 @@ test("renders HUMAN_APPROVAL_REQUIRED with no action controls", async () => {
   );
   expect(
     screen.getByText(
-      "CTEC recommends. A human decides. No action is taken automatically.",
+      "Noetva recommends. A human decides. No action is taken automatically.",
     ),
   ).toBeInTheDocument();
   expect(
@@ -250,7 +250,7 @@ test("renders UNKNOWN distinctly -- never as No/Rejected/Safe/Zero/Not material"
     ).toBeInTheDocument(),
   );
   expect(
-    screen.getByText(/CTEC cannot safely recommend an action/),
+    screen.getByText(/Noetva cannot safely recommend an action/),
   ).toBeInTheDocument();
   expect(screen.queryByText("No")).not.toBeInTheDocument();
   expect(screen.queryByText("Rejected")).not.toBeInTheDocument();

@@ -13,13 +13,17 @@ export function RecommendationPanel({
 }) {
   if (!candidate || candidate.outcome === null) {
     return (
-      <section className="panel" aria-label="CTEC recommendation" role="status">
-        <div className="eyebrow">CTEC recommendation</div>
+      <section
+        className="panel"
+        aria-label="Noetva recommendation"
+        role="status"
+      >
+        <div className="eyebrow">Noetva recommendation</div>
         <h2>Insufficient governed evidence</h2>
         <p>
-          CTEC cannot safely recommend an action because required governed
-          evidence is unavailable. This is not a rejection -- it means CTEC does
-          not guess.
+          Noetva cannot safely recommend an action because required governed
+          evidence is unavailable. This is not a rejection -- it means Noetva
+          does not guess.
         </p>
         <p className="eyebrow" style={{ marginTop: "0.5rem" }}>
           Policy: {policyReference} v{policyVersion}
@@ -28,8 +32,11 @@ export function RecommendationPanel({
     );
   }
   return (
-    <section className="panel recommendation" aria-label="CTEC recommendation">
-      <div className="eyebrow">CTEC recommendation</div>
+    <section
+      className="panel recommendation"
+      aria-label="Noetva recommendation"
+    >
+      <div className="eyebrow">Noetva recommendation</div>
       <h2>{candidate.outcome}</h2>
       {candidate.reason && <p>{candidate.reason}</p>}
       {candidate.narrative && <p>{candidate.narrative}</p>}

@@ -13,7 +13,9 @@ export function HumanAuthorityBanner({
       <p className="standing">
         <strong>Human approval required</strong>
       </p>
-      <p>CTEC recommends. A human decides. No action is taken automatically.</p>
+      <p>
+        Noetva recommends. A human decides. No action is taken automatically.
+      </p>
     </section>
   );
 }
