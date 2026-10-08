@@ -1,0 +1,51 @@
+name: Feature request
+description: Propose a capability for consideration in a future CDD.
+title: "[FEATURE] "
+labels: ["enhancement", "triage"]
+body:
+  - type: input
+    id: business_problem
+    attributes:
+      label: Business problem
+      description: State the user or enterprise problem without prescribing a solution.
+    validations:
+      required: true
+  - type: dropdown
+    id: user
+    attributes:
+      label: Primary user
+      options:
+        - Supply Chain Director
+        - Procurement VP
+        - Chief Data Officer
+        - Data Steward
+        - Developer or operator
+        - Other enterprise user
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Explain what should become possible and how success would be recognized.
+    validations:
+      required: true
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture considerations
+      description: Identify relevant Constitution, RFC, model, TAS, dataset, or CDD constraints.
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Out of scope
+      description: State behavior that should not be included.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: This request does not invent an unapproved business entity, relationship, or attribute.
+          required: true
+        - label: I searched for an existing issue covering this request.
+          required: true

@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a reproducible defect in an implemented CTEC layer.
+title: "[BUG] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for helping improve CTEC. Do not include secrets or sensitive enterprise data.
+  - type: input
+    id: cdd
+    attributes:
+      label: Affected CDD or layer
+      description: Identify the CDD or architectural layer where the defect occurs.
+      placeholder: CDD-001 — Project Foundation
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: Describe the observed behavior and business or engineering impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, browser, runtime versions, and deployment mode when relevant.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add sanitized logs, screenshots, or error messages.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I verified that this report contains no credentials or sensitive enterprise data.
+          required: true
+        - label: I searched for an existing issue describing this defect.
+          required: true
