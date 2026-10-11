@@ -914,6 +914,8 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
               decided_on: "2026-01-03T00:00:00Z",
               rejection_reason: null,
               is_stale: false,
+              requested_by_display_name: null,
+              decided_by_display_name: "Demo Approver",
             },
           },
         ],
@@ -928,11 +930,91 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
     });
     await renderTab("Remediation");
     expect(screen.getByText("RECOMMEND_CANDIDATE")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Authorized by steward@example.com/),
-    ).toBeInTheDocument();
+    // CDD-091 §9/§22.12: the persisted trusted display snapshot is the
+    // primary label; the opaque machine principal never is.
+    expect(screen.getByText(/Authorized by Demo Approver/)).toBeInTheDocument();
+    expect(screen.queryByText(/steward@example\.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/remediated/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^fixed$/i)).not.toBeInTheDocument();
+  });
+
+  it("an authorization without a display snapshot renders the governed fallback, never the opaque principal", async () => {
+    mockAll({
+      remediation: {
+        case_status: "AUTHORIZED",
+        candidates: [
+          {
+            candidate_id: "c1",
+            proposed_value: "ABC123",
+            basis: "SPECIALIST_SUPPORTED",
+            authorization: {
+              authorization_id: "auth-1",
+              status: "APPROVED",
+              requested_by: "principal-steward",
+              requested_on: "2026-01-02T00:00:00Z",
+              decided_by: "TKdj6d4rM5NYg-opaque",
+              decided_on: "2026-01-03T00:00:00Z",
+              rejection_reason: null,
+              is_stale: false,
+              requested_by_display_name: null,
+              decided_by_display_name: null,
+            },
+          },
+        ],
+        recommendation: null,
+        external_execution: null,
+      },
+    });
+    await renderTab("Remediation");
+    expect(
+      screen.getByText(/Authorized by signed-in principal/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/TKdj6d4rM5NYg-opaque/)).not.toBeInTheDocument();
+  });
+
+  const rejectedRemediation = (decidedByDisplayName: string | null) => ({
+    case_status: "PREPARED",
+    candidates: [
+      {
+        candidate_id: "c1",
+        proposed_value: "ABC123",
+        basis: "SPECIALIST_SUPPORTED",
+        authorization: {
+          authorization_id: "auth-1",
+          status: "REJECTED",
+          requested_by: "principal-steward",
+          requested_on: "2026-01-02T00:00:00Z",
+          decided_by: "principal-approver-opaque",
+          decided_on: "2026-01-03T00:00:00Z",
+          rejection_reason: "rejected",
+          is_stale: false,
+          requested_by_display_name: "Demo Steward",
+          decided_by_display_name: decidedByDisplayName,
+        },
+      },
+    ],
+    recommendation: null,
+    external_execution: null,
+  });
+
+  it("a rejected authorization renders human-readable rejected attribution", async () => {
+    mockAll({ remediation: rejectedRemediation("Demo Approver") });
+    await renderTab("Remediation");
+    expect(screen.getByText(/Rejected by Demo Approver/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/principal-approver-opaque/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a rejected authorization without a display snapshot renders the governed fallback", async () => {
+    mockAll({ remediation: rejectedRemediation(null) });
+    await renderTab("Remediation");
+    expect(
+      screen.getByText(/Rejected by signed-in principal/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/principal-approver-opaque/),
+    ).not.toBeInTheDocument();
   });
 
   it("stale authorization is visibly non-actionable", async () => {
@@ -953,6 +1035,8 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
               decided_on: "2026-01-01T00:00:00Z",
               rejection_reason: null,
               is_stale: true,
+              requested_by_display_name: null,
+              decided_by_display_name: null,
             },
           },
         ],

@@ -491,6 +491,8 @@ def get_remediation(
                     decided_on=item.authorization.decided_on,
                     rejection_reason=item.authorization.rejection_reason,
                     is_stale=item.authorization.is_stale,
+                    requested_by_display_name=item.authorization.requested_by_display_name,
+                    decided_by_display_name=item.authorization.decided_by_display_name,
                 )
                 if item.authorization is not None
                 else None
@@ -537,6 +539,9 @@ def prepare_remediation(
             finding_id=finding_id,
             requested_by=authenticated.principal_id,
             correlation_id=body.correlation_id,
+            # CDD-091 §22.4: trusted presentation snapshot from the same
+            # validated access token as `principal_id` -- never request input.
+            requested_by_display_name=authenticated.display_name,
         )
     except ProductionRemediationOrchestrationError as exc:
         raise HTTPException(
@@ -606,6 +611,7 @@ def decide_authorization(
             approve=body.approve,
             decided_by=authenticated.principal_id,
             rejection_reason=body.rejection_reason,
+            decided_by_display_name=authenticated.display_name,
         )
     except OqiRemediationError as exc:
         raise HTTPException(

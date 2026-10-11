@@ -209,6 +209,11 @@ class RemediationCandidateAuthorizationRow:
     decided_on: datetime | None
     rejection_reason: str | None
     is_stale: bool
+    # CDD-091 §21.1 (G-R1): optional trusted display-name snapshots,
+    # carried straight through from the domain object -- never derived,
+    # defaulted, or looked up here.
+    requested_by_display_name: str | None
+    decided_by_display_name: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1241,6 +1246,8 @@ class OqiProductExperienceService:
                     decided_on=authorization.decided_on,
                     rejection_reason=authorization.rejection_reason,
                     is_stale=is_stale,
+                    requested_by_display_name=authorization.requested_by_display_name,
+                    decided_by_display_name=authorization.decided_by_display_name,
                 )
             candidate_rows.append(
                 RemediationCandidateItemRow(
@@ -1283,6 +1290,7 @@ class OqiProductExperienceService:
         approve: bool,
         decided_by: str,
         rejection_reason: str | None,
+        decided_by_display_name: str | None = None,
     ) -> str:
         service = OqiRemediationService(
             repository=self._remediation_repo,
@@ -1290,7 +1298,10 @@ class OqiProductExperienceService:
         )
         if approve:
             authorization = service.approve(
-                tenant_id=tenant_id, authorization_id=authorization_id, decided_by=decided_by
+                tenant_id=tenant_id,
+                authorization_id=authorization_id,
+                decided_by=decided_by,
+                decided_by_display_name=decided_by_display_name,
             )
         else:
             authorization = service.reject(
@@ -1298,6 +1309,7 @@ class OqiProductExperienceService:
                 authorization_id=authorization_id,
                 decided_by=decided_by,
                 rejection_reason=rejection_reason or "rejected",
+                decided_by_display_name=decided_by_display_name,
             )
         return authorization.status.value
 

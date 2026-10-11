@@ -140,6 +140,11 @@ class RemediationCandidateAuthorizationView(BaseModel):
     decided_on: datetime | None
     rejection_reason: str | None
     is_stale: bool
+    # CDD-091 §21.1 (G-R1): presentation-only trusted display-name
+    # snapshots -- never consulted by any client or server authorization
+    # logic. Absence (None) is always a valid, safe UI fallback case.
+    requested_by_display_name: str | None
+    decided_by_display_name: str | None
 
 
 class RemediationCandidateItemView(BaseModel):

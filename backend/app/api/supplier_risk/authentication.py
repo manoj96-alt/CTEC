@@ -33,6 +33,30 @@ class TrustedPrincipal:
     display_name: str | None = None
 
 
+# CDD-091 §22.7/§22.8: the directory's own documented displayName bound
+# (Microsoft Graph user.displayName, max 256 characters), matching the
+# VARCHAR(256) snapshot columns exactly.
+MAX_DISPLAY_NAME_LENGTH = 256
+
+
+def normalize_display_name(raw: object) -> str | None:
+    """CDD-091 §22.8: the single trust-boundary normalization of the
+    presentation-only display claim. Missing, non-string, empty, or
+    whitespace-only -> None; otherwise surrounding whitespace is trimmed and
+    every interior character preserved exactly (no Unicode normalization,
+    case folding, or identity canonicalization). A trimmed value longer than
+    MAX_DISPLAY_NAME_LENGTH -> None -- never truncated (that would falsify
+    the trusted snapshot) and never an error (presentation identity must
+    never become an authentication or authorization availability
+    dependency)."""
+    if not isinstance(raw, str):
+        return None
+    trimmed = raw.strip()
+    if not trimmed or len(trimmed) > MAX_DISPLAY_NAME_LENGTH:
+        return None
+    return trimmed
+
+
 class TokenVerifier(Protocol):
     def verify(self, token: str) -> TrustedPrincipal: ...
 
@@ -110,12 +134,7 @@ class OidcJwtVerifier:
         # optional presentation value. It never raises AuthenticationError
         # and is never consulted by any authorization/separation-of-duty
         # check.
-        raw_display_name = claims.get(self._settings.oidc_display_name_claim)
-        display_name = (
-            raw_display_name.strip()
-            if isinstance(raw_display_name, str) and raw_display_name.strip()
-            else None
-        )
+        display_name = normalize_display_name(claims.get(self._settings.oidc_display_name_claim))
         return TrustedPrincipal(
             principal_id=subject,
             tenant_id=tenant,

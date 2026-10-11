@@ -329,7 +329,7 @@ def demo_verify() -> bool:
 # those entirely -- they are immutable append-only ledgers by design, and
 # the certified Golden path never adjudicates the Aurora X1/AURORA X1 pair
 # in the first place, so nothing there ever needs restoring).
-_GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD = "0048_oqi_remediation_mutex"
+_GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD = "0049_oqi_remediation_actor_name"
 
 
 class GoldenDemoRestoreNotAllowedError(Exception):

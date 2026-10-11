@@ -128,6 +128,11 @@ export interface RemediationCandidateAuthorizationView {
   decided_on: string | null;
   rejection_reason: string | null;
   is_stale: boolean;
+  // CDD-091 §12/§22.12: server-owned trusted display-name snapshots,
+  // captured once per event from the validated access token. Presentation
+  // only -- never derived client-side, never an authorization input.
+  requested_by_display_name: string | null;
+  decided_by_display_name: string | null;
 }
 
 export interface RemediationCandidateItemView {

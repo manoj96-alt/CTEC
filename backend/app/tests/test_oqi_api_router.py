@@ -430,6 +430,8 @@ def test_remediation_authorization_id_survives_serialization_to_json() -> None:
                     decided_on=None,
                     rejection_reason=None,
                     is_stale=False,
+                    requested_by_display_name=None,
+                    decided_by_display_name=None,
                 ),
             ),
         ),
