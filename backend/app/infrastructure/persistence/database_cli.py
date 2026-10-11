@@ -221,6 +221,38 @@ def demo_verify() -> bool:
         )
         _check("aurora_material_exists", aurora_material is not None, "")
         _check("aurora_bom_exists", aurora_bom is not None, "")
+        # CDD-092 §18: the governed propagated-exposure chain from the Golden
+        # finding, read through the same governed read model the API uses.
+        from app.application.oqi_product_experience_service import (
+            OqiProductExperienceService,
+        )
+
+        impact = (
+            OqiProductExperienceService(session).get_ontology_impact(
+                tenant_id=tenant_id, finding_id=consistency_finding.finding_id
+            )
+            if consistency_finding is not None
+            else None
+        )
+        exposed = (
+            [(item.entity_id, item.depth) for item in impact.propagated_impacts]
+            if impact is not None
+            else []
+        )
+        aurora_paths = [
+            tuple(hop.relationship_type_name for hop in path)
+            for item in (impact.propagated_impacts if impact is not None else ())
+            if item.entity_id == _H6_PRODUCT_A_ID
+            for path in item.paths
+        ]
+        _check(
+            "ontology_propagated_chain",
+            impact is not None
+            and impact.direct_entity_id == _SUPPLIER_ENTITY_ID
+            and exposed == [(_AURORA_MATERIAL_ID, 1), (_AURORA_BOM_ID, 2), (_H6_PRODUCT_A_ID, 3)]
+            and aurora_paths == [("supplies", "usedIn", "defines")],
+            f"exposed={len(exposed)} aurora_paths={aurora_paths}",
+        )
 
         h6_finding = session.scalar(
             select(UniquenessFindingORM).where(

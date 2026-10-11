@@ -109,6 +109,9 @@ class OqiOntologyImpactEvaluationService:
         direct = self._repository.resolve_direct_impact(
             tenant_id=tenant_id, source_object_ids=subject.source_object_ids
         )
+        # CDD-092 §5/§12: one evaluation moment -- the eligibility `as_of`
+        # and the persisted `evaluated_at` are the same instant.
+        moment = self._clock()
 
         observations: list[OntologyImpactObservation] = []
         paths: list[OntologyImpactPath] = []
@@ -127,7 +130,7 @@ class OqiOntologyImpactEvaluationService:
                 )
             )
             candidates = self._repository.traverse_propagation(
-                tenant_id=tenant_id, direct_entity_id=direct.entity_id
+                tenant_id=tenant_id, direct_entity_id=direct.entity_id, as_of=moment
             )
             for element in _deduplicate_and_cap_paths(candidates):
                 observations.append(
@@ -140,9 +143,16 @@ class OqiOntologyImpactEvaluationService:
                     )
                 )
                 for path_index, candidate in enumerate(element.retained_paths):
-                    for hop_index, (rel_id, policy_id, policy_version, direction) in enumerate(
+                    for hop_index, (
+                        rel_id,
+                        rel_version,
+                        policy_id,
+                        policy_version,
+                        direction,
+                    ) in enumerate(
                         zip(
                             candidate.relationship_ids,
+                            candidate.relationship_versions,
                             candidate.policy_ids,
                             candidate.policy_versions,
                             candidate.directions,
@@ -159,7 +169,8 @@ class OqiOntologyImpactEvaluationService:
                                 policy_version_number=policy_version,
                             )
                         )
-                        traversed_relationships.append((rel_id, 1))
+                        # CDD-042 §11.4 / CDD-092 §12: the real relationship version.
+                        traversed_relationships.append((rel_id, rel_version))
                         applied_policies[policy_id] = policy_version
 
         digest = compute_traversed_state_digest(
@@ -184,7 +195,7 @@ class OqiOntologyImpactEvaluationService:
             outcome=direct.outcome,
             resolution_record_id=direct.resolution_record_id,
             traversed_state_digest=digest,
-            evaluated_at=self._clock(),
+            evaluated_at=moment,
             observations=tuple(observations),
             paths=tuple(paths),
         )

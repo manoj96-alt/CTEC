@@ -83,6 +83,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
           direct_entity_id: null,
           direct_entity_type: null,
           propagated_path: null,
+          propagated_impacts: [],
         }}
       />,
     );

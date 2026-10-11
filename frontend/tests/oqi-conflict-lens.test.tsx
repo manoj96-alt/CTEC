@@ -33,6 +33,7 @@ const EMPTY_IMPACT: OntologyImpactResponse = {
   direct_entity_id: null,
   direct_entity_type: null,
   propagated_path: null,
+  propagated_impacts: [],
 };
 const EMPTY_BUSINESS_IMPACT: BusinessImpactResponse = {
   outcome: "NO_KNOWN_BUSINESS_IMPACT",
@@ -232,6 +233,7 @@ describe("Conflict Lens — no fabricated metrics", () => {
           direct_entity_id: "e1",
           direct_entity_type: "MATERIAL",
           propagated_path: null,
+          propagated_impacts: [],
         }}
         businessImpact={{
           outcome: "BUSINESS_IMPACT_IDENTIFIED",

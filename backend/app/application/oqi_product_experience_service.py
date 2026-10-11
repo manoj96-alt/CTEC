@@ -32,6 +32,7 @@ from app.domain.oqi_business_impact.reliance import RelianceState
 from app.domain.oqi_finding_origin.origin import FindingStorageFamily
 from app.domain.oqi_ontology_impact.evaluation import (
     CurrentImpactStatus,
+    CurrentOntologyImpact,
     FindingFamily,
     ImpactClass,
     ImpactOutcome,
@@ -43,6 +44,10 @@ from app.domain.oqi_remediation_agent.role import AgentRoleId
 from app.domain.shared.exceptions import ValidationException
 from app.infrastructure.persistence.models.enterprise_entity import (
     EnterpriseEntity as EnterpriseEntityORM,
+)
+from app.infrastructure.persistence.models.entity_type import EntityType as EntityTypeORM
+from app.infrastructure.persistence.models.institutional_relationship import (
+    InstitutionalRelationship as InstitutionalRelationshipORM,
 )
 from app.infrastructure.persistence.models.oqi_business_impact import (
     CurrentRelianceORM,
@@ -68,6 +73,9 @@ from app.infrastructure.persistence.models.oqi_remediation_agent import (
 )
 from app.infrastructure.persistence.models.oqi_timeliness import TimelinessFindingORM
 from app.infrastructure.persistence.models.oqi_uniqueness import UniquenessFindingORM
+from app.infrastructure.persistence.models.relationship_type import (
+    RelationshipType as RelationshipTypeORM,
+)
 from app.infrastructure.persistence.oqi_business_impact_repository import (
     OqiBusinessImpactRepositoryImpl,
 )
@@ -140,11 +148,41 @@ class OntologyImpactPathRow:
 
 
 @dataclass(frozen=True, slots=True)
+class PropagatedImpactHopRow:
+    """CDD-092 §15: one hop of a retained governed path proof, in traversal
+    order. IDs come from the immutable ledger and are authoritative; names
+    and types are read-time presentation enrichment only."""
+
+    relationship_instance_id: UUID
+    relationship_type_name: str
+    direction: str
+    from_entity_id: UUID
+    from_entity_name: str
+    to_entity_id: UUID
+    to_entity_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class PropagatedImpactRow:
+    """CDD-092 §15: one propagated-exposure element with its retained path
+    proofs (at most 3, shortest first)."""
+
+    entity_id: UUID
+    entity_type_name: str
+    entity_name: str
+    depth: int
+    paths: tuple[tuple[PropagatedImpactHopRow, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class OntologyImpactRow:
     outcome: ImpactOutcome
     direct_entity_id: UUID | None
     direct_entity_type: OntologyElementType | None
+    # CDD-092 §15: legacy, non-authoritative -- the flattened retained hops of
+    # the first element in `propagated_impacts` order, kept for compatibility.
     propagated_path: tuple[OntologyImpactPathRow, ...] | None
+    propagated_impacts: tuple[PropagatedImpactRow, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -998,24 +1036,161 @@ class OqiProductExperienceService:
         propagated_rows = [row for row in active if row.impact_kind is ImpactClass.PROPAGATED]
         direct_entity_id = direct_rows[0].ontology_element_id if direct_rows else None
         direct_entity_type = direct_rows[0].ontology_element_type if direct_rows else None
+        propagated_impacts = self._propagated_impacts(tenant_id=tenant_id, rows=propagated_rows)
         propagated_path: tuple[OntologyImpactPathRow, ...] | None = None
-        if propagated_rows:
-            evaluation = self._impact_repo.get_evaluation(propagated_rows[0].latest_evaluation_id)
-            if evaluation is not None:
-                propagated_path = tuple(
-                    OntologyImpactPathRow(
-                        relationship_instance_id=path.institutional_relationship_id,
-                        path_ordinal=path.path_ordinal,
-                        direction=path.direction,
-                    )
-                    for path in sorted(evaluation.paths, key=lambda p: p.path_ordinal)
-                    if path.ontology_element_id == propagated_rows[0].ontology_element_id
+        if propagated_impacts:
+            propagated_path = tuple(
+                OntologyImpactPathRow(
+                    relationship_instance_id=hop.relationship_instance_id,
+                    path_ordinal=path_index * 100 + hop_index,
+                    direction=hop.direction,
                 )
+                for path_index, path in enumerate(propagated_impacts[0].paths)
+                for hop_index, hop in enumerate(path)
+            )
         return OntologyImpactRow(
             outcome=ImpactOutcome.IMPACTED,
             direct_entity_id=direct_entity_id,
             direct_entity_type=direct_entity_type,
             propagated_path=propagated_path,
+            propagated_impacts=propagated_impacts,
+        )
+
+    def _propagated_impacts(
+        self, *, tenant_id: str, rows: list[CurrentOntologyImpact]
+    ) -> tuple[PropagatedImpactRow, ...]:
+        """CDD-092 §15: every ACTIVE propagated element (never only the
+        first), each with its retained ledger path proofs, enriched by two
+        batched, tenant-filtered reads (no per-hop queries). Ordered by
+        (depth, case-folded name, entity id)."""
+        if not rows:
+            return ()
+        evaluations = {
+            evaluation_id: self._impact_repo.get_evaluation(evaluation_id)
+            for evaluation_id in sorted({row.latest_evaluation_id for row in rows}, key=str)
+        }
+        element_ids = {row.ontology_element_id for row in rows}
+        depth_by_element: dict[UUID, int] = {}
+        hops_by_element: dict[UUID, dict[int, list[tuple[int, UUID, str]]]] = {}
+        for row in rows:
+            evaluation = evaluations.get(row.latest_evaluation_id)
+            if evaluation is None:
+                continue
+            for observation in evaluation.observations:
+                if (
+                    observation.ontology_element_id == row.ontology_element_id
+                    and observation.impact_kind is ImpactClass.PROPAGATED
+                ):
+                    depth_by_element[row.ontology_element_id] = observation.depth
+            for ledger_path in evaluation.paths:
+                if ledger_path.ontology_element_id != row.ontology_element_id:
+                    continue
+                hops_by_element.setdefault(row.ontology_element_id, {}).setdefault(
+                    ledger_path.path_ordinal // 100, []
+                ).append(
+                    (
+                        ledger_path.path_ordinal % 100,
+                        ledger_path.institutional_relationship_id,
+                        ledger_path.direction,
+                    )
+                )
+        relationship_ids = {
+            rel_id
+            for paths in hops_by_element.values()
+            for hops in paths.values()
+            for _, rel_id, _ in hops
+        }
+        relationships = {
+            found.institutional_relationship_id: found
+            for found in self.session.execute(
+                select(
+                    InstitutionalRelationshipORM.institutional_relationship_id,
+                    InstitutionalRelationshipORM.from_entity_id,
+                    InstitutionalRelationshipORM.to_entity_id,
+                    RelationshipTypeORM.relationship_type_name,
+                )
+                .join(
+                    RelationshipTypeORM,
+                    RelationshipTypeORM.relationship_type_id
+                    == InstitutionalRelationshipORM.relationship_type_id,
+                )
+                .where(
+                    InstitutionalRelationshipORM.tenant_id == tenant_id,
+                    InstitutionalRelationshipORM.institutional_relationship_id.in_(
+                        relationship_ids
+                    ),
+                )
+            ).all()
+        }
+        entity_ids = set(element_ids)
+        for found in relationships.values():
+            entity_ids.update((found.from_entity_id, found.to_entity_id))
+        entities = {
+            entity.enterprise_entity_id: entity
+            for entity in self.session.execute(
+                select(
+                    EnterpriseEntityORM.enterprise_entity_id,
+                    EnterpriseEntityORM.enterprise_entity_name,
+                    EntityTypeORM.entity_type_name,
+                )
+                .join(
+                    EntityTypeORM,
+                    EntityTypeORM.entity_type_id == EnterpriseEntityORM.entity_type_id,
+                )
+                .where(
+                    EnterpriseEntityORM.tenant_id == tenant_id,
+                    EnterpriseEntityORM.enterprise_entity_id.in_(entity_ids),
+                )
+            ).all()
+        }
+        impacts: list[PropagatedImpactRow] = []
+        for element_id in element_ids:
+            element = entities.get(element_id)
+            if element is None or element_id not in depth_by_element:
+                continue
+            paths: list[tuple[PropagatedImpactHopRow, ...]] = []
+            for _, hops in sorted(hops_by_element.get(element_id, {}).items()):
+                hop_rows: list[PropagatedImpactHopRow] = []
+                for _, rel_id, direction in sorted(hops):
+                    relationship_row = relationships.get(rel_id)
+                    if relationship_row is None:
+                        hop_rows = []
+                        break
+                    source, target = (
+                        (relationship_row.from_entity_id, relationship_row.to_entity_id)
+                        if direction == "FORWARD"
+                        else (relationship_row.to_entity_id, relationship_row.from_entity_id)
+                    )
+                    if source not in entities or target not in entities:
+                        hop_rows = []
+                        break
+                    hop_rows.append(
+                        PropagatedImpactHopRow(
+                            relationship_instance_id=rel_id,
+                            relationship_type_name=relationship_row.relationship_type_name,
+                            direction=direction,
+                            from_entity_id=source,
+                            from_entity_name=entities[source].enterprise_entity_name,
+                            to_entity_id=target,
+                            to_entity_name=entities[target].enterprise_entity_name,
+                        )
+                    )
+                if hop_rows:
+                    paths.append(tuple(hop_rows))
+            impacts.append(
+                PropagatedImpactRow(
+                    entity_id=element_id,
+                    entity_type_name=element.entity_type_name,
+                    entity_name=element.enterprise_entity_name,
+                    depth=depth_by_element[element_id],
+                    paths=tuple(paths),
+                )
+            )
+        return tuple(
+            sorted(
+                impacts,
+                key=lambda item: (item.depth, item.entity_name.casefold(), str(item.entity_id)),
+            )
         )
 
     # ------------------------------------------------------------------

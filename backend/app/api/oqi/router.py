@@ -39,6 +39,8 @@ from app.api.oqi.schemas import (
     OntologyImpactResultView,
     PrepareRemediationRequest,
     PrepareRemediationResponse,
+    PropagatedImpact,
+    PropagatedImpactHop,
     RecordHumanVerifiedEvidenceRequest,
     ReferenceEvidenceAssertionResponse,
     ReferenceEvidenceConflictListResponse,
@@ -389,6 +391,30 @@ def get_ontology_impact(
         direct_entity_id=row.direct_entity_id,
         direct_entity_type=row.direct_entity_type.value if row.direct_entity_type else None,
         propagated_path=propagated_path,
+        propagated_impacts=tuple(
+            PropagatedImpact(
+                entity_id=item.entity_id,
+                entity_type_name=item.entity_type_name,
+                entity_name=item.entity_name,
+                depth=item.depth,
+                paths=tuple(
+                    tuple(
+                        PropagatedImpactHop(
+                            relationship_instance_id=hop.relationship_instance_id,
+                            relationship_type_name=hop.relationship_type_name,
+                            direction=hop.direction,
+                            from_entity_id=hop.from_entity_id,
+                            from_entity_name=hop.from_entity_name,
+                            to_entity_id=hop.to_entity_id,
+                            to_entity_name=hop.to_entity_name,
+                        )
+                        for hop in path
+                    )
+                    for path in item.paths
+                ),
+            )
+            for item in row.propagated_impacts
+        ),
     )
 
 

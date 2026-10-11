@@ -68,11 +68,35 @@ export interface OntologyImpactPathSegment {
   direction: string;
 }
 
+// CDD-092 §15: one hop of a retained governed path proof, in traversal
+// order. IDs are authoritative; names are server-side read-time presentation.
+export interface PropagatedImpactHop {
+  relationship_instance_id: string;
+  relationship_type_name: string;
+  direction: string;
+  from_entity_id: string;
+  from_entity_name: string;
+  to_entity_id: string;
+  to_entity_name: string;
+}
+
+// CDD-092 §15: one propagated-exposure element with its retained (at most 3,
+// shortest-first) governed path proofs.
+export interface PropagatedImpact {
+  entity_id: string;
+  entity_type_name: string;
+  entity_name: string;
+  depth: number;
+  paths: PropagatedImpactHop[][];
+}
+
 export interface OntologyImpactResponse {
   outcome: string;
   direct_entity_id: string | null;
   direct_entity_type: string | null;
+  // Legacy, non-authoritative (CDD-092 §15): use propagated_impacts instead.
   propagated_path: OntologyImpactPathSegment[] | null;
+  propagated_impacts: PropagatedImpact[];
 }
 
 export interface BusinessImpactDependency {

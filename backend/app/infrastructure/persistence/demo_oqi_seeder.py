@@ -138,6 +138,11 @@ from app.domain.oqi_integrity.requirement import (
     IntegrityRelationshipCardinalityStatus,
 )
 from app.domain.oqi_ontology_impact.evaluation import FindingFamily, OntologyElementType
+from app.domain.oqi_ontology_impact.policy import (
+    ImpactPropagationPolicy,
+    PolicyGovernanceStatus,
+    PropagationDirection,
+)
 from app.domain.oqi_timeliness.policy import new_timeliness_policy
 from app.domain.oqi_uniqueness.policy import new_uniqueness_policy
 from app.domain.semantic_mapping.model import SemanticMapping
@@ -151,6 +156,9 @@ from app.infrastructure.persistence.models.entity_type import EntityType
 from app.infrastructure.persistence.models.field_value_evidence import FieldValueEvidenceORM
 from app.infrastructure.persistence.models.institutional_relationship import (
     InstitutionalRelationship,
+)
+from app.infrastructure.persistence.models.oqi_ontology_impact_policy import (
+    ImpactPropagationPolicyORM,
 )
 from app.infrastructure.persistence.models.relationship_type import RelationshipType
 from app.infrastructure.persistence.models.source_object import SourceObject
@@ -191,6 +199,9 @@ from app.infrastructure.persistence.oqi_integrity_structural_evaluation_reposito
 )
 from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository import (
     OqiOntologyImpactEvaluationRepositoryImpl,
+)
+from app.infrastructure.persistence.oqi_ontology_impact_policy_repository import (
+    OqiOntologyImpactPolicyRepositoryImpl,
 )
 from app.infrastructure.persistence.oqi_quality_rule_repository import OqiQualityRuleRepositoryImpl
 from app.infrastructure.persistence.oqi_reference_evidence_repository import (
@@ -365,6 +376,16 @@ _AURORA_BOM_ID = _uid("aurora-x1-bill-of-materials")
 _AURORA_SUPPLIES_EDGE_ID = _uid("aurora-supplies-edge")
 _AURORA_USED_IN_EDGE_ID = _uid("aurora-used-in-edge")
 _AURORA_DEFINES_EDGE_ID = _uid("aurora-defines-edge")
+# CDD-092 §9: the Golden tenant's governed propagation-policy enrollment.
+# Policies govern relationship TYPES (never instances, entities, or names);
+# traversal operates on eligible relationship INSTANCES. Deterministic IDs;
+# idempotent (an existing ID is never re-created or re-versioned).
+_GOLDEN_PROPAGATION_POLICY_MAX_DEPTH = 5
+_GOLDEN_PROPAGATION_POLICIES = (
+    (_uid("impact-propagation-policy:supplies:FORWARD"), _AURORA_SUPPLIES_RELATIONSHIP_TYPE_NAME),
+    (_uid("impact-propagation-policy:usedIn:FORWARD"), _AURORA_USED_IN_RELATIONSHIP_TYPE_NAME),
+    (_uid("impact-propagation-policy:defines:FORWARD"), _AURORA_DEFINES_RELATIONSHIP_TYPE_NAME),
+)
 _AURORA_MATERIAL_NAME = "Aurora X1 Battery Cell"
 _AURORA_BOM_NAME = "Aurora X1 Bill of Materials"
 
@@ -1697,6 +1718,28 @@ class DemoOqiSeeder:
             _H6_PRODUCT_A_ID,
             defines_type_id,
         )
+        self.session.flush()
+        type_ids = {
+            _AURORA_SUPPLIES_RELATIONSHIP_TYPE_NAME: supplies_type_id,
+            _AURORA_USED_IN_RELATIONSHIP_TYPE_NAME: used_in_type_id,
+            _AURORA_DEFINES_RELATIONSHIP_TYPE_NAME: defines_type_id,
+        }
+        policy_repository = OqiOntologyImpactPolicyRepositoryImpl(self.session)
+        for policy_id, type_name in _GOLDEN_PROPAGATION_POLICIES:
+            if self.session.get(ImpactPropagationPolicyORM, policy_id) is not None:
+                continue
+            policy_repository.create(
+                ImpactPropagationPolicy(
+                    policy_id=policy_id,
+                    tenant_id=tenant_id,
+                    relationship_type_id=type_ids[type_name],
+                    direction=PropagationDirection.FORWARD,
+                    max_depth=_GOLDEN_PROPAGATION_POLICY_MAX_DEPTH,
+                    governance_status=PolicyGovernanceStatus.ACTIVE,
+                    version_number=1,
+                    previous_version_id=None,
+                )
+            )
         self.session.flush()
 
     # ------------------------------------------------------------------
