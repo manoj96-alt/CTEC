@@ -452,3 +452,110 @@ This amended document's own hash is computed and recorded by the committing phas
 ---
 
 *§22 amends CDD-091 additively; §§1-21 and the original footer above it are unchanged byte-for-byte.*
+
+---
+
+## 23. G-R3 final path-ceiling correction (amendment — does not reopen §§1-22)
+
+**Originating phases:** NOETVA-OQI-DEMO-UX-HARDENING-I2-R2 (STOPPED before any commit, Docker, CIAM, or Azure step), NOETVA-OQI-DEMO-UX-HARDENING-G-R3 (this freeze, following explicit approval of a 19-path ceiling, and binding that approval to repository proof rather than to the approval alone). §§1-22 are not edited; this section is appended after §22's footer so that the G-R2-R1 document (SHA-256 `aa9c5c89…54b8fb`) is an exact byte prefix of this one.
+
+**Baseline for every reference below:** committed source at `1461058df337161d255545b199530e8824f9f5c5` plus the uncommitted I2-R2 tree on `product/oqi-demo-ux-hardening-i2-r1` (fingerprints in §23.8). `origin/main` = `171a398af6d4af6bd2149ff69879f4cdc178ed3e`; PR #253 OPEN @ `af20323d…`, PR #254 OPEN @ `4bf410a0…` — unchanged.
+
+### 23.1 Why I2-R2 stopped — why the 16-path ceiling was incomplete
+
+I2-R2 implemented the entire §22 capability inside the 16 paths and its 36-test security crown passed on real PostgreSQL, but the complete gates exposed three mechanically required paths that §22's static caller audit had not reached. G-R2's analysis was wrong in three specific ways: it described `database_cli.py` as "only deletes/counts" and missed its pinned migration-head constant; it stated `frontend/tests/oqi-remediation-actions.test.tsx` used only `as unknown as` casts when three fixtures are typed against the contract; and it audited production constructors of the read row but not test fakes of it.
+
+1. **`backend/app/infrastructure/persistence/database_cli.py:332`** pins `_GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD = "0048_oqi_remediation_mutex"`, and `_assert_golden_demo_restore_allowed` (`:390-394`) refuses to run when `alembic_version.version_num` differs. Once migration 0049 is head, the governed Golden restore refuses to operate — in tests and in the §22.14 Azure Golden reset. In the full backend suite the refusing fixtures also leaked `CTEC_DATABASE_URL` pointing at a dropped database, cascading into ~60 unrelated failures/errors (I2-R2 tree: 50 failed + 12 errors, versus 2348 passed / 0 failed on clean `1461058`).
+2. **`backend/app/tests/test_oqi_api_router.py:424`** (`test_remediation_authorization_id_survives_serialization_to_json`) builds a duck-typed fake authorization `Row` without the two display fields; the router's `RemediationCandidateAuthorizationView` construction (§22 path #7) now reads them, so the fake fails with `AttributeError`.
+3. **`frontend/tests/oqi-remediation-actions.test.tsx`** has three fixtures typed via `RemediationResponse` (objects at `:775`, `:1000`, `:1039` at baseline) that omit the two fields. `tsc --noEmit` fails, and because `frontend/tsconfig.json` includes `**/*.tsx`, **`next build` fails** — blocking the frontend image.
+
+### 23.2 Independent searches performed (G-R3)
+
+- **Migration-head assumptions (repository-wide, every file type):** the literal `0048_oqi_remediation_mutex` occurs only in `database_cli.py:332` and in migration 0048's own `revision`. `test_database_cli_postgres.py` imports the constant (`:48`) rather than repeating the literal, so it needs no change. `.github/workflows/ci.yml:142-145` compares `version_num` to the dynamic `alembic heads`; `azure-lifecycle-start.yml` reuses that dynamic check; the fixed table count (`ci.yml:151`, 131) is unaffected because 0049 adds columns, not tables. Every other revision literal outside `migrations/versions/` is a historical downgrade target (0040-0043) in migration round-trip tests, independent of head. **No other head pin exists.**
+- **Backend authorization read-row constructors (AST scan of every call and dict literal carrying `is_stale`/`requested_on`/`decided_on`, plus `replace`/`**`/mock/`SimpleNamespace`):** exactly three — `router.py:485` (§22 #7), `oqi_product_experience_service.py:1235` (§22 #4), and the `test_oqi_api_router.py:424` fake (#18). Remaining hits are unrelated Gate S and Uniqueness types. No dict-literal, `replace`, `**`, or mock construction exists.
+- **Frontend typed fixtures (every `is_stale` literal classified):** `oqi-remediation-actions.test.tsx` — 7 `as unknown as` casts (no change needed) and 3 `RemediationResponse`-typed objects (#19); `oqi-product-truth.test.tsx:251` — typed JSX prop (§22 #15, already updated); `oqi-finding-detail.test.tsx:916/955` — `mockAll`'s `remediation: unknown` (§22 #16, already updated). `tsc` in the isolated proof (§23.3) is the definitive confirmation.
+
+### 23.3 Isolated full-gate proof (mandatory completeness criterion)
+
+Constructed in a disposable detached worktree, never on a governed branch: `1461058` + the exact I2-R2 tracked diff (reproduced byte-identically, SHA-256 `de690406…a758`) + the exact untracked migration (`f737e3d7…cb824`) + the three changes in §23.4, derived independently from source (their change lines are identical to I2-R2's scratch patch, which was treated as evidence only). A scratch commit (never pushed; discarded with the worktree) was made **in that disposable worktree only**, so the repository's dirty-tree guard tests (`test_runtime_architecture.py`, `frontend/tests/gate-x-runtime-architecture.test.tsx`) executed normally rather than being disabled. Disposable local PostgreSQL databases only.
+
+| Gate | Result |
+|---|---|
+| Full backend suite (real PostgreSQL) | **2380 passed, 0 failed, 0 errors** (I2-R2's 2379 + the runtime-architecture guard, which only fails on a dirty tree) |
+| Targeted security crown (`test_oqi_remediation_identity_binding_postgres.py`) | **36 / 36** |
+| Golden restore suite (`test_database_cli_postgres.py`) | all pass at head `0049_oqi_remediation_actor_name`, including `test_check4_wrong_migration_head_refuses` (fail-closed preserved) |
+| `tsc --noEmit` | **0 errors** |
+| Full Vitest | **462 / 462** (50 files) |
+| Gate X | **5 / 5** |
+| eslint `--max-warnings=0` / prettier `--check` | clean / clean |
+| `next build` | **succeeds** (34/34 static pages; tree remains clean after build) |
+
+The production call graph (§22.3), the migration-head search, the backend constructor search, the frontend fixture search, and all of these gates agree. **No twentieth path is required.**
+
+### 23.4 Authorized changes for the three new paths (exact and exhaustive)
+
+- **#17 `backend/app/infrastructure/persistence/database_cli.py`** — the constant only: `_GOLDEN_RESTORE_EXPECTED_MIGRATION_HEAD = "0049_oqi_remediation_actor_name"` (+1/−1). A mechanical schema-head synchronization. Golden restore semantics, deletion behavior, tenant behavior, seeding, demo verification, and every safety check are unchanged; the tool must still fail closed on any unexpected head.
+- **#18 `backend/app/tests/test_oqi_api_router.py`** — add `requested_by_display_name=None` and `decided_by_display_name=None` to the single fake authorization `Row` in `test_remediation_authorization_id_survives_serialization_to_json` (+2). No assertion change is required (proven by §23.3); no cast bypass; no other edit.
+- **#19 `frontend/tests/oqi-remediation-actions.test.tsx`** — add `requested_by_display_name: null` and `decided_by_display_name: null` to exactly the three `RemediationResponse`-typed authorization fixtures (+6). No other edit.
+
+### 23.5 Frontend contract decision (frozen)
+
+`requested_by_display_name: string | null` and `decided_by_display_name: string | null` remain **required** properties in `frontend/lib/oqi/contracts.ts`. Making them optional (`?:`) merely to avoid fixture updates is explicitly rejected: the server always returns both fields, explicit `null` is the representation of absence, and the frontend must stay strongly checked against the server contract.
+
+### 23.6 Database CLI guard decision (frozen for I2-R3)
+
+After #17, I2-R3 must prove that Golden restore runs successfully against head `0049_oqi_remediation_actor_name`, and that it still refuses an unexpected head, **before** any Azure Golden reset. The guard is synchronized, never weakened or removed.
+
+### 23.7 Final exact implementation ceiling — 19 paths (supersedes §22.10's count)
+
+| # | Path | Action |
+|---|---|---|
+| 1 | `backend/app/api/supplier_risk/authentication.py` | MODIFY |
+| 2 | `backend/app/core/config.py` | MODIFY (done in `1461058`) |
+| 3 | `backend/app/application/oqi_remediation_service.py` | MODIFY |
+| 4 | `backend/app/application/oqi_product_experience_service.py` | MODIFY |
+| 5 | `backend/app/infrastructure/persistence/models/oqi_remediation.py` | MODIFY |
+| 6 | `backend/app/infrastructure/persistence/migrations/versions/0049_oqi_remediation_actor_display_name.py` | CREATE |
+| 7 | `backend/app/api/oqi/router.py` | MODIFY |
+| 8 | `backend/app/api/oqi/schemas.py` | MODIFY |
+| 9 | `backend/app/tests/test_oqi_remediation_identity_binding_postgres.py` | MODIFY |
+| 10 | `frontend/lib/oqi/contracts.ts` | MODIFY |
+| 11 | `frontend/app/quality/findings/[findingId]/_components/remediation-panel.tsx` | MODIFY |
+| 12 | `backend/app/domain/oqi_remediation/authorization.py` | MODIFY |
+| 13 | `backend/app/infrastructure/persistence/oqi_remediation_repository.py` | MODIFY |
+| 14 | `backend/app/application/production_remediation_orchestration_service.py` | MODIFY |
+| 15 | `frontend/tests/oqi-product-truth.test.tsx` | MODIFY |
+| 16 | `frontend/tests/oqi-finding-detail.test.tsx` | MODIFY |
+| 17 | `backend/app/infrastructure/persistence/database_cli.py` | MODIFY (new — §23.4) |
+| 18 | `backend/app/tests/test_oqi_api_router.py` | MODIFY (new — §23.4) |
+| 19 | `frontend/tests/oqi-remediation-actions.test.tsx` | MODIFY (new — §23.4) |
+
+**Counts: MODIFY = 18, CREATE = 1, DELETE = 0.** No other path is authorized.
+
+### 23.8 I2-R3 resume disposition
+
+**NOETVA-OQI-DEMO-UX-HARDENING-I2-R3** resumes from the current uncommitted I2-R2 tree — not a restart — on `product/oqi-demo-ux-hardening-i2-r1` at `1461058…`. I2-R2 tree fingerprints at freeze: tracked diff SHA-256 `de6904065dbc8db32027c0b4c75dd234750c580ff983a55266a0751d5031a758` (14 tracked paths: §23.7 #1, #3-#5, #7-#16 except #2 and #6); untracked migration SHA-256 `f737e3d78f49cccfd7c6b8c58473d97daf89d33a517e8f05cbd734b073cdb824`. Already implemented in that tree (inspected read-only at G-R3; to be independently re-verified by I2-R3, not trusted): §22.8 trust-boundary normalization (`normalize_display_name`, `MAX_DISPLAY_NAME_LENGTH = 256`); §22.9 ≤256 domain invariant; `String(256)` ORM columns; migration with `revision = "0049_oqi_remediation_actor_name"`, `down_revision = "0048_oqi_remediation_mutex"`, nullable `VARCHAR(256)`; orchestration and router requester threading; product-experience and router decider threading; repository persistence at all three sites; read propagation; required-nullable API view fields; required `string | null` frontend contract; `Authorized/Rejected by <snapshot ?? "signed-in principal">` panel rendering; SUPERSEDED branch unchanged with no decider; self-approval guard `decided_by == authorization.requested_by` unchanged.
+
+Required sequence: (1) verify this document's G-R3 hash; (2) verify the fingerprints above; (3) independently inspect the WIP; (4) apply only §23.4's three changes; (5) rerun the targeted crown; (6) full backend; (7) full frontend; (8) typecheck/lint/format/build; (9) prove the exact 19-path diff against `9e71eed` lineage (I2 paths only) and separately derive the full integrated diff against `origin/main`; (10) commit the implementation; (11) Docker; (12) CIAM Stage 1; (13) Azure deploy; (14) Stage 2 real-token proof; (15) Golden restore (§23.6 proven first); (16) Steward/Approver crown (§22.14). Correct WIP is not redone for cleanliness. If a twentieth path is genuinely required: **STOP**.
+
+### 23.9 Unchanged
+
+The security architecture is unchanged: machine `requested_by`/`decided_by` remain the sole authority; no display name participates in any authorization or separation-of-duty logic; no write contract carries any actor field. The §22.14 cloud sequence (SOURCE → TESTS → MIGRATION → REGRESSION → DOCKER → CIAM STAGE 1 → AZURE DEPLOY → STAGE 2 → GOLDEN CROWN) and every §17/§21.7/§22.15 exclusion — including generalized instruction display identity — are unchanged.
+
+### 23.10 Implementation-governance lesson (CDD-091 scope only)
+
+For any future implementation-ceiling correction in this capability, path completeness should, when practical, be established by assembling the complete proposed diff in an isolated candidate and running backend regression, frontend typecheck, frontend tests, the production build, and the relevant schema/migration gates — with a disposable scratch commit so dirty-tree guards run normally. Static caller audits alone are insufficient: implementation dependencies also live in migration-head constants, typed fixtures, test fakes, and build-time type checking. This records a lesson for CDD-091; it does not amend any broader governance document.
+
+### 23.11 Hash record
+
+```
+Original CDD-091 (sections 1-20)  = d0876b46ee7e95b365d101b959e2259470bb75b2d3062227421803679bddc97e
+G-R1 amended (sections 1-21)      = 9fbc5cfb03b7f1e046de5ee39f0a5f4c1efd7208001fa8f711c7e358f1d61382
+G-R2-R1 amended (sections 1-22)   = aa9c5c897e277ea92e6a4a1acbf716e9727b8dca6d0d9d12373adbdbe454b8fb
+```
+
+This amended document's own hash is computed and recorded by the committing phase immediately after this section is appended. From that point only the G-R3 hash governs I2-R3.
+
+---
+
+*§23 amends CDD-091 additively; §§1-22 and every earlier footer above it are unchanged byte-for-byte.*
