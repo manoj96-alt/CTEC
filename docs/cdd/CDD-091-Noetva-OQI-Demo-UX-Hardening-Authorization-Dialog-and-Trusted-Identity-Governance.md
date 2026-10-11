@@ -312,3 +312,143 @@ OQI propagated-impact limitation; Gate S sibling authority-binding defect; `CTEC
 ---
 
 *This document authorizes governance only. It does not implement, deploy, or verify anything itself. §21 amends CDD-091 additively; §§1-20 are not edited in place and remain available in full for historical/audit reference.*
+
+---
+
+## 22. G-R2 final governance correction (amendment — does not reopen §§1-21)
+
+**Originating phases:** NOETVA-OQI-DEMO-UX-HARDENING-I2-R1 (STOPPED before any write), NOETVA-OQI-DEMO-UX-HARDENING-G-R2 (STOPPED — full analysis, no amendment written, because its own fail-closed rule required STOP when the true path count was not exactly 14), NOETVA-OQI-DEMO-UX-HARDENING-G-R2-R1 (this freeze, following explicit approval of the 16-path ceiling). §§1-21 are not edited; this section is appended after the original footer so that the G-R1 document (SHA-256 `9fbc5cfb…1382`) is an exact byte prefix of this one.
+
+**Baseline for every line reference below:** source at `1461058df337161d255545b199530e8824f9f5c5` (preserved partial I2 commit; `origin/main` = `171a398af6d4af6bd2149ff69879f4cdc178ed3e`; PR #253 OPEN @ `af20323d…`, PR #254 OPEN @ `4bf410a0…`).
+
+### 22.1 Why I2-R1 stopped — the missing production orchestration hop
+
+§13 path #7 assumed the router threads `authenticated.display_name` directly into `request_authorization`. It does not. The actual production request-time chain is:
+
+`router.prepare_remediation` (`backend/app/api/oqi/router.py:519`, call at `:535`) → `ProductionRemediationOrchestrationService.prepare_remediation(*, tenant_id, finding_id, requested_by, correlation_id)` (`backend/app/application/production_remediation_orchestration_service.py:197`) → `service.request_authorization(tenant_id, instruction_id, requested_by, now)` (same file, `:292`).
+
+`:292` is the **only** production caller of `OqiRemediationService.request_authorization` anywhere in the repository. `prepare_remediation()` has no parameter, field, or context capable of carrying a display snapshot. Adding `requested_by_display_name: str | None = None` to `prepare_remediation()` and forwarding it on `:292` is the narrowest correct solution and is pure transport: the orchestration service must not resolve identity, inspect tokens, perform directory lookup, compare display names, default, or invent a name.
+
+### 22.2 Why two frontend test paths are required
+
+`frontend/tests/oqi-product-truth.test.tsx:263` and `frontend/tests/oqi-finding-detail.test.tsx:932` each assert `screen.getByText(/Authorized by steward@example.com/)` — i.e. the opaque `decided_by` rendering that §9/§12 require I2 to replace. Their fixtures are inline JSX props type-checked against `RemediationCandidateAuthorizationView` (no cast), so they must change whether the new contract fields are required (`tsc` failure) or optional (assertion failure under the §9 fallback). They are also the only existing tests of the panel's attribution sentence (`remediation-panel.tsx:218`, which renders both `Authorized by …` and `Rejected by …`). Both were exhaustively confirmed to be the only frontend assertions on the rendered decider string; `frontend/tests/oqi-remediation-actions.test.tsx` uses `as unknown as` casts and asserts no attribution text, so it is **not** required. These two paths are mandatory mechanical consequences of the already-frozen UX, not feature expansion; no unrelated rewrite of either file is authorized.
+
+### 22.3 Complete production caller audit (two independent techniques, cross-checked)
+
+Performed by (1) whole-repository PCRE text search and (2) a Python AST scan of every call node (including `dataclasses.replace`, `getattr`, `functools.partial`) — results identical; re-run at G-R2-R1 with zero drift.
+
+| Concern | Sole production path |
+|---|---|
+| Authorization creation | `router.py:535` → `production_remediation_orchestration_service.py:292` → `oqi_remediation_service.py:349` (construct) → `:358` `create_authorization` |
+| Authorization decision | `router.py:603` → `OqiProductExperienceService.decide_authorization` (`oqi_product_experience_service.py:1278`; `approve` at `:1292`, `reject` at `:1296`) → shared `_decide()` (`oqi_remediation_service.py:438`; construct `:459`) → `update_authorization_decision` (`:473`) |
+| Read | `get_candidates_with_authorizations_for_case` → `_authorization_to_domain` (`oqi_remediation_repository.py:791`) → `RemediationCandidateAuthorizationRow` (sole constructor `oqi_product_experience_service.py:1235`) → `RemediationCandidateAuthorizationView` (sole constructor `router.py:485`) → `contracts.ts` → `remediation-panel.tsx:218` |
+
+Other writers of `oqi_remediation_authorizations`, none of which establishes a human actor: `supersede_pending_sibling_authorizations` writes only `status`/`decided_on` (`oqi_remediation_repository.py:423-424`) — SUPERSEDED is a system consequence with `decided_by` and `decided_by_display_name` both NULL; `consume_authorization` writes only `consumed_on`/`consumed_execution_id` (`:431-432`); `database_cli.py` Golden restore only deletes/counts. Unrelated same-named methods: `GateSApprovalService.approve/reject/_decide`, ontology-modeling and semantic-mapping proposal `approve/reject`, `oqi_remediation_agent_service` (uses only `construct_instruction`). `PrepareRemediationResponse.authorizations` exposes only id/instruction/status — no second actor-bearing read model exists. The frontend has no mapper/whitelist between JSON and the contract type.
+
+### 22.4 Frozen flows
+
+**Requester:** validated access token → `TrustedPrincipal.display_name` → `router.prepare_remediation` → `ProductionRemediationOrchestrationService.prepare_remediation(requested_by_display_name=…)` → `OqiRemediationService.request_authorization(requested_by_display_name=…)` → `RemediationAuthorization.requested_by_display_name` → `_authorization_to_orm` → ORM → DB.
+
+**Decider:** validated access token → `TrustedPrincipal.display_name` → `router.decide_authorization` → `OqiProductExperienceService.decide_authorization(decided_by_display_name=…)` → `approve()`/`reject()` → `_decide()` → `RemediationAuthorization.decided_by_display_name` → `update_authorization_decision` (also copies `decided_by_display_name`) → DB. `_decide()` carries the pre-decision row's `requested_by_display_name` through unchanged; the requester's snapshot is never copied into the decider's.
+
+**Security boundary (unchanged):** the self-approval guard remains exclusively `if decided_by == authorization.requested_by` (`oqi_remediation_service.py:454`). No display name is ever read by that guard or by any other authorization/separation-of-duty logic.
+
+### 22.5 Idempotency invariant (frozen)
+
+`requested_by_display_name` is written **exactly once**, when a new authorization is created. When `prepare_remediation()` finds an existing authorization for an instruction it performs only a read (`repository.get_authorization_by_id`) and makes no `request_authorization` call and no repository write; concurrent prepares are serialized by a `pg_advisory_xact_lock` held for the entire method with a single final commit. Neither `requested_by` nor `requested_by_display_name` of an existing authorization can therefore be overwritten by a later prepare, by any caller. This holds under the existing architecture; no additional path is required.
+
+### 22.6 Migration (frozen)
+
+- **Path:** `backend/app/infrastructure/persistence/migrations/versions/0049_oqi_remediation_actor_display_name.py` (the directory named by `backend/alembic.ini` `version_locations`; there is no `backend/alembic/versions/`).
+- **`revision = "0049_oqi_remediation_actor_name"`** (31 characters; unique).
+- **`down_revision = "0048_oqi_remediation_mutex"`**.
+- The revision id is intentionally shorter than the filename: Alembic declares `Column("version_num", String(32), nullable=False)` (`alembic/ddl/impl.py:169`), `backend/alembic/env.py` sets no `version_table` override, and a live PostgreSQL 15 check (temp table) rejected the 39-character id with `value too long for type character varying(32)` while accepting the 31-character id. Identical in kind to the CDD-040/CDD-051 and migration-0046 precedents (filename kept, `revision` shortened). The 39-character WIP revision must not survive into I2-R2.
+- Upgrade adds the two columns in §22.7; downgrade drops exactly those two columns. No backfill, no destructive operation.
+
+### 22.7 Display-name storage (frozen — supersedes §11's `VARCHAR(200)`)
+
+`requested_by_display_name VARCHAR(256) NULL`, `decided_by_display_name VARCHAR(256) NULL`. Not TEXT (bounded presentation metadata, not free text); not VARCHAR(200).
+
+Evidence: Microsoft Graph `user.displayName` — "Maximum length is 256 characters"; the Entra access-token `name` claim is documented as mutable and "for display purposes only… Don't use this value to make authorization decisions." Live PostgreSQL 15 (temp tables): a 256-character value fails in `VARCHAR(200)` (`value too long`), and `VARCHAR(256)` accepts 256 multibyte characters (512 bytes) — the limit is in characters, consistent with Python `len`. `VARCHAR(200)` would therefore make a legitimate authorization fail, violating §9.
+
+### 22.8 Normalization and overflow (frozen — enforced once, at the trust boundary in `authentication.py`)
+
+| Claim value | `TrustedPrincipal.display_name` |
+|---|---|
+| missing | `None` |
+| non-string | `None` |
+| empty string | `None` |
+| whitespace-only | `None` |
+| valid string | surrounding whitespace trimmed; every interior character preserved exactly |
+| trimmed length ≤ 256 | exact trimmed value |
+| trimmed length > 256 | `None` |
+
+No truncation. No Unicode normalization, case folding, email extraction, or canonical identity mapping. An unusable display claim never rejects authentication, authorization request, or decision — presentation identity is never an availability dependency. Overflow options evaluated: truncate (rejected — falsifies the trusted snapshot), reject the operation (rejected — violates §9), store NULL beyond the directory's own bound (adopted as defense in depth), widen to the directory's documented bound (adopted).
+
+### 22.9 Domain defensive invariant (frozen)
+
+`RemediationAuthorization.__post_init__`: if `requested_by_display_name`/`decided_by_display_name` is not `None`, it must be a non-blank `str` (existing actor-field convention) and `len ≤ 256` (mirroring the existing `rejection_reason` length-check pattern). Production input already satisfies this via §22.8; the check is a defensive invariant only and never participates in separation-of-duty logic.
+
+### 22.10 Corrected exact I2 path ceiling — 16 paths (supersedes §13's and §21.1's counts)
+
+| # | Path | Action |
+|---|---|---|
+| 1 | `backend/app/api/supplier_risk/authentication.py` | MODIFY (partial done in `1461058`; I2-R2 adds the §22.8 >256 → `None` rule) |
+| 2 | `backend/app/core/config.py` | MODIFY (done in `1461058`) |
+| 3 | `backend/app/application/oqi_remediation_service.py` | MODIFY |
+| 4 | `backend/app/application/oqi_product_experience_service.py` | MODIFY |
+| 5 | `backend/app/infrastructure/persistence/models/oqi_remediation.py` | MODIFY |
+| 6 | `backend/app/infrastructure/persistence/migrations/versions/0049_oqi_remediation_actor_display_name.py` | CREATE |
+| 7 | `backend/app/api/oqi/router.py` | MODIFY |
+| 8 | `backend/app/api/oqi/schemas.py` | MODIFY |
+| 9 | `backend/app/tests/test_oqi_remediation_identity_binding_postgres.py` | MODIFY |
+| 10 | `frontend/lib/oqi/contracts.ts` | MODIFY |
+| 11 | `frontend/app/quality/findings/[findingId]/_components/remediation-panel.tsx` | MODIFY |
+| 12 | `backend/app/domain/oqi_remediation/authorization.py` | MODIFY |
+| 13 | `backend/app/infrastructure/persistence/oqi_remediation_repository.py` | MODIFY |
+| 14 | `backend/app/application/production_remediation_orchestration_service.py` | MODIFY (new — §22.1) |
+| 15 | `frontend/tests/oqi-product-truth.test.tsx` | MODIFY (new — §22.2) |
+| 16 | `frontend/tests/oqi-finding-detail.test.tsx` | MODIFY (new — §22.2) |
+
+**Counts: MODIFY = 15, CREATE = 1, DELETE = 0.** No other path is authorized. Path #9 remains sufficient for every backend proof (it may drive real orchestration by importing existing helpers, e.g. from `test_production_remediation_orchestration_postgres.py`, without adding a path). `backend/app/tests/test_oqi_api_router.py`'s fake `decide_authorization(**kwargs)` and key-level asserts, and every `get_current_head()`-based head test, are unaffected and require no change.
+
+### 22.11 WIP disposition (pre-existing, uncommitted, on `product/oqi-demo-ux-hardening-i2-r1`)
+
+Fingerprints at freeze: tracked-diff SHA-256 `820941886c48c62d58e238cb1619c43009a9b8ab25799d8740a0468cc33900f8` (7 paths: #3, #4, #5, #7, #8, #12, #13); untracked migration SHA-256 `d1f4a75183b530562f517b8ff2036756dfba59f840b59132b709550352a22886`.
+
+- **Partial commit `1461058…`: PRESERVE.**
+- **WIP migration: PRESERVE + CORRECT** — `revision` → `"0049_oqi_remediation_actor_name"`; both columns → `sa.String(length=256)`. `down_revision`, nullability, downgrade, and filename are already correct.
+- **WIP source: PRESERVE, subject to I2-R2's own independent verification** (never blind trust). Appears consistent with this governance: domain fields and validation loop; schema view fields; product-experience row and construction; router view construction; all three repository mapping sites; service/`_decide()` threading including carry-through of the requester snapshot. **Requires correction:** ORM `String(200)` → `String(256)`; domain ≤256 defensive check. **Not yet written:** router requester and decider threading of `authenticated.display_name`; `OqiProductExperienceService.decide_authorization` `decided_by_display_name` kwarg; orchestration `requested_by_display_name` kwarg and forwarding; `authentication.py` >256 → `None`; `contracts.ts`; panel rendering; all tests (paths #9, #15, #16).
+
+### 22.12 Frontend rendering (restating §9/§12 precisely for I2-R2)
+
+`contracts.ts` mirrors `requested_by_display_name: string | null` and `decided_by_display_name: string | null`. The panel sentence at `remediation-panel.tsx:218` renders `Authorized by <decided_by_display_name>` / `Rejected by <decided_by_display_name>` when present, and `Authorized by signed-in principal` / `Rejected by signed-in principal` when `null`; the timestamp is preserved. The opaque `decided_by` is never the primary label and is never used to derive a name. No new requester-attribution UI element is authorized.
+
+### 22.13 Required I2-R2 test crown (minimum)
+
+Backend (path #9, real router + real service + real PostgreSQL): (1) trusted requester name passes through real production orchestration; (2) requester snapshot persists; (3) repeated prepare does not overwrite requester attribution; (4) trusted decider name persists; (5) APPROVE attribution; (6) REJECT attribution; (7) same display name / different principals → permitted; (8) same principal / changed display name → `REMEDIATION_SELF_APPROVAL_PROHIBITED`; (9) missing display claim does not block; (10) blank claim → `None`; (11) >256-character claim → `None`; (12) exactly 256 characters persists exactly; (13) client cannot spoof any of `requested_by`, `requested_by_display_name`, `decided_by`, `decided_by_display_name` (zero effect on persistence, whether the schema rejects — `PrepareRemediationRequest`, `extra="forbid"` → 422 — or ignores — `DecideAuthorizationRequest`); (14) NULL historical rows remain readable; (15) real PostgreSQL round trip; plus every §13 and §21.3 test. Migration: (16) upgrade from `0048_oqi_remediation_mutex`; (17) clean chain to head; (18) downgrade/upgrade; (19) the `alembic_version` row contains `0049_oqi_remediation_actor_name`. Frontend (paths #15/#16): (20) human-readable authorizer renders; (21) `signed-in principal` fallback renders; (22) rejected attribution renders. (23) I1 self-approval UX and all I1 tests remain green.
+
+### 22.14 OpenAPI, Docker, and cloud ordering (frozen)
+
+I2-R2 inspects the live OpenAPI: none of the four actor fields may appear in any write contract; both display fields appear on `RemediationCandidateAuthorizationView` as nullable. Mandatory order, never reordered: **SOURCE → TESTS → MIGRATION → REGRESSION → DOCKER** (backend + frontend image builds, real PostgreSQL, clean migration, upgrade, boot, health, live prepare, live decision, human-readable attribution) **→ CIAM STAGE 1** (exactly `optionalClaims.accessToken: name` on `noetva-demo-backend-api` and `noetva-dev-backend-api`, no other change, no existing-optionalClaims cleanup) **→ AZURE DEPLOY** (exact verified demo candidate only) **→ STAGE 2** (real Authorization Code + PKCE for Demo Steward and Demo Approver; sanitized proof that the issued access tokens carry `name`; never a raw token) **→ GOLDEN CROWN** (§16: Steward self-approval blocked; Approver approval succeeds; UI `Authorized by Demo Approver`; DB `decided_by` = immutable principal and `decided_by_display_name` = trusted snapshot, and likewise for the requester; sibling SUPERSEDED, never REJECTED; RECOMMENDATION ≠ AUTHORIZATION; REMEDIATION ≠ RESOLUTION).
+
+### 22.15 Scope
+
+**Explicitly out of scope (future consideration only):** `construct_instruction(created_by=requested_by)` records a machine actor on instructions without a display snapshot; CDD-091's display-snapshot symmetry applies to the authorization event only, and I2-R2 must not generalize instruction identity attribution. All §17/§21.7 exclusions remain unchanged: OQI propagated impact; Gate S sibling authority-binding; `CTEC_ENVIRONMENT=development`; existing optionalClaims cleanup; `NEXT_PUBLIC_OIDC_API_RESOURCE_URI` build-pipeline hardening; CDD numbering collision; production deployment; PR #253/#254 merge; unrelated UX cleanup; Graph lookup for display identity.
+
+### 22.16 Hash record
+
+```
+Original CDD-091 (sections 1-20)  = d0876b46ee7e95b365d101b959e2259470bb75b2d3062227421803679bddc97e
+G-R1 amended (sections 1-21)      = 9fbc5cfb03b7f1e046de5ee39f0a5f4c1efd7208001fa8f711c7e358f1d61382
+```
+
+This amended document's own hash is computed and recorded by the committing phase immediately after this section is appended. From that point only the G-R2-R1 hash governs I2-R2; neither earlier hash may be cited as the current I2 path ceiling.
+
+### 22.17 I2-R2 authorization
+
+**NOETVA-OQI-DEMO-UX-HARDENING-I2-R2** is authorized to resume — not restart — on `product/oqi-demo-ux-hardening-i2-r1` from `1461058…` plus the §22.11 WIP. It must first verify this document's G-R2-R1 hash, preserve `1461058…`, independently inspect the WIP against the fingerprints above, then apply only the §22.11 corrections and completions within the exact 16-path ceiling, run the §22.13 crown, and follow the §22.14 order. I2-R2 does not merge. If a seventeenth path is genuinely required: **STOP**.
+
+---
+
+*§22 amends CDD-091 additively; §§1-21 and the original footer above it are unchanged byte-for-byte.*
