@@ -395,6 +395,13 @@ class DemoTenantRequiredError(Exception):
     labeled demo tenant."""
 
 
+class GoldenPropagationPolicyConflictError(Exception):
+    """CDD-092 R1: a frozen deterministic Golden propagation-policy ID exists
+    with governed semantics that differ from the frozen definition (or its
+    relationship type is absent). Deterministic identity is not semantic
+    equivalence; the seed transaction fails closed."""
+
+
 @dataclass(frozen=True, slots=True)
 class DemoOqiSeedSummary:
     tenant_id: str
@@ -434,6 +441,10 @@ class DemoOqiSeeder:
                 f"only one of {_ALLOWED_SEED_TENANTS!r} is permitted"
             )
         dependency_id = self._seed_context(tenant_id)
+        # CDD-092 R1: after context ensure (fresh bootstrap OR the
+        # already-seeded early return in `_seed_context`) and before any
+        # evaluation -- the single authoritative enrollment point.
+        self._enroll_golden_propagation_policies(tenant_id)
         return self._evaluate(tenant_id, dependency_id)
 
     # ------------------------------------------------------------------
@@ -1719,27 +1730,63 @@ class DemoOqiSeeder:
             defines_type_id,
         )
         self.session.flush()
-        type_ids = {
-            _AURORA_SUPPLIES_RELATIONSHIP_TYPE_NAME: supplies_type_id,
-            _AURORA_USED_IN_RELATIONSHIP_TYPE_NAME: used_in_type_id,
-            _AURORA_DEFINES_RELATIONSHIP_TYPE_NAME: defines_type_id,
-        }
+
+    def _enroll_golden_propagation_policies(self, tenant_id: str) -> None:
+        """CDD-092 R1: ensure the exact frozen Golden propagation-policy set
+        exists and semantically matches its deterministic identities.
+
+        Missing -> created exactly as frozen. Present and identical -> accepted
+        untouched (no update, no new version). Present under a frozen ID with
+        any differing governed field -> GoldenPropagationPolicyConflictError
+        (fail closed: never accepted, overwritten, retired or re-versioned).
+        A different-ID Active policy in the same (tenant, type, direction)
+        slot is left to `uq_impact_propagation_policies_one_active`, which
+        rejects the insert. Runs inside the caller's transaction; it never
+        commits, evaluates, or touches anything but these three policies."""
         policy_repository = OqiOntologyImpactPolicyRepositoryImpl(self.session)
         for policy_id, type_name in _GOLDEN_PROPAGATION_POLICIES:
-            if self.session.get(ImpactPropagationPolicyORM, policy_id) is not None:
-                continue
-            policy_repository.create(
-                ImpactPropagationPolicy(
-                    policy_id=policy_id,
-                    tenant_id=tenant_id,
-                    relationship_type_id=type_ids[type_name],
-                    direction=PropagationDirection.FORWARD,
-                    max_depth=_GOLDEN_PROPAGATION_POLICY_MAX_DEPTH,
-                    governance_status=PolicyGovernanceStatus.ACTIVE,
-                    version_number=1,
-                    previous_version_id=None,
+            relationship_type_id = self.session.scalar(
+                select(RelationshipType.relationship_type_id).where(
+                    RelationshipType.relationship_type_name == type_name
                 )
             )
+            if relationship_type_id is None:
+                raise GoldenPropagationPolicyConflictError(
+                    f"Golden propagation policy {policy_id}: relationship type "
+                    f"{type_name!r} is not present"
+                )
+            expected = {
+                "tenant_id": tenant_id,
+                "relationship_type_id": relationship_type_id,
+                "direction": PropagationDirection.FORWARD.value,
+                "max_depth": _GOLDEN_PROPAGATION_POLICY_MAX_DEPTH,
+                "governance_status": PolicyGovernanceStatus.ACTIVE.value,
+                "version_number": 1,
+                "previous_version_id": None,
+            }
+            existing = self.session.get(ImpactPropagationPolicyORM, policy_id)
+            if existing is None:
+                policy_repository.create(
+                    ImpactPropagationPolicy(
+                        policy_id=policy_id,
+                        tenant_id=tenant_id,
+                        relationship_type_id=relationship_type_id,
+                        direction=PropagationDirection.FORWARD,
+                        max_depth=_GOLDEN_PROPAGATION_POLICY_MAX_DEPTH,
+                        governance_status=PolicyGovernanceStatus.ACTIVE,
+                        version_number=1,
+                        previous_version_id=None,
+                    )
+                )
+                continue
+            mismatched = sorted(
+                field for field, value in expected.items() if getattr(existing, field) != value
+            )
+            if mismatched:
+                raise GoldenPropagationPolicyConflictError(
+                    f"Golden propagation policy {policy_id} ({type_name} FORWARD) exists "
+                    f"with non-frozen governed fields: {', '.join(mismatched)}"
+                )
         self.session.flush()
 
     # ------------------------------------------------------------------

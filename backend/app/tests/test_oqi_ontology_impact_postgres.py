@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from uuid import UUID, uuid4
@@ -30,7 +31,7 @@ import alembic.command
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine, event, inspect, select, text, update
+from sqlalchemy import Engine, event, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -2474,3 +2475,451 @@ def test_cdd092_read_model_exposes_every_element_with_enriched_ordered_paths(
         assert impact.propagated_path is not None  # legacy compatibility projection retained
         foreign = service.get_ontology_impact(tenant_id=f"tenant-{uuid4()}", finding_id=finding_id)
         assert foreign is None
+
+
+# ---------------------------------------------------------------------------
+# CDD-092 R1 -- Golden propagation-policy enrollment is upgrade-safe: every
+# DemoOqiSeeder.seed() ensures (and semantically validates) the frozen policy
+# set after context ensure and before evaluation, whether the Golden tenant is
+# fresh or was seeded by an earlier application version. Each test runs the
+# real production seeder inside one outer transaction that is rolled back.
+# ---------------------------------------------------------------------------
+
+_GOLDEN_POLICY_IDS = (
+    UUID("680b9f10-82c4-57e6-8655-16bc54bb2d78"),  # supplies FORWARD
+    UUID("42554a60-e7c6-5d03-be94-5258bca06641"),  # usedIn FORWARD
+    UUID("5c9ca4d7-b3a7-5276-941f-573b22b03712"),  # defines FORWARD
+)
+
+
+@pytest.fixture()
+def golden_factory(migrated_engine: Engine) -> Iterator[sessionmaker[Session]]:
+    from app.infrastructure.persistence.blueprint_seed import BlueprintSeeder
+    from app.infrastructure.persistence.ontology_seed import OntologySeeder
+
+    connection = migrated_engine.connect()
+    outer = connection.begin()
+    factory = sessionmaker(bind=connection, join_transaction_mode="create_savepoint")
+    with factory() as session:
+        OntologySeeder(session).load()
+        session.commit()
+        BlueprintSeeder(session).load()
+        session.commit()
+    try:
+        yield factory
+    finally:
+        outer.rollback()
+        connection.close()
+
+
+def _seed_without_policies(factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pre-CDD-092 Golden tenant: base context, ontology chain, findings and
+    evaluations exist, but no propagation policy was ever enrolled (the image
+    that created it predates enrollment)."""
+    import app.infrastructure.persistence.demo_oqi_seeder as seeder_module
+
+    with monkeypatch.context() as patch:
+        patch.setattr(seeder_module, "_GOLDEN_PROPAGATION_POLICIES", ())
+        with factory() as session:
+            seeder_module.DemoOqiSeeder(session).seed()
+            session.commit()
+    with factory() as session:
+        assert _golden_policy_rows(session) == []
+
+
+def _golden_policy_rows(session: Session) -> list[tuple[object, ...]]:
+    """Every policy that is either a frozen Golden ID or belongs to the
+    Golden tenant (other modules commit policies under their own tenants)."""
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID as tenant
+
+    from app.infrastructure.persistence.models.oqi_ontology_impact_policy import (
+        ImpactPropagationPolicyORM as Policy,
+    )
+
+    return [
+        tuple(row)
+        for row in session.execute(
+            select(
+                Policy.policy_id,
+                Policy.tenant_id,
+                Policy.relationship_type_id,
+                Policy.direction,
+                Policy.max_depth,
+                Policy.governance_status,
+                Policy.version_number,
+                Policy.previous_version_id,
+            )
+            .where(Policy.policy_id.in_(_GOLDEN_POLICY_IDS) | (Policy.tenant_id == tenant))
+            .order_by(Policy.policy_id)
+        ).all()
+    ]
+
+
+def _golden_exposure(session: Session) -> list[tuple[str, int]]:
+    from app.application.oqi_product_experience_service import OqiProductExperienceService
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+    from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+    from app.infrastructure.persistence.demo_oqi_seeder import (
+        _COMPARISON_SUBJECT_ID,
+        _QUALITY_CONDITION_ID,
+    )
+
+    impact = OqiProductExperienceService(session).get_ontology_impact(
+        tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+        finding_id=derive_comparison_finding_id(
+            tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+            quality_condition_id=_QUALITY_CONDITION_ID,
+            comparison_subject_id=_COMPARISON_SUBJECT_ID,
+        ),
+    )
+    assert impact is not None
+    return [(item.entity_name, item.depth) for item in impact.propagated_impacts]
+
+
+_GOLDEN_CHAIN = [
+    ("Aurora X1 Battery Cell", 1),
+    ("Aurora X1 Bill of Materials", 2),
+    ("Aurora X1", 3),
+]
+
+
+def _assert_frozen_policy_set(session: Session) -> None:
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+
+    rows = _golden_policy_rows(session)
+    names: dict[object, str] = dict(
+        session.execute(
+            select(RelationshipType.relationship_type_id, RelationshipType.relationship_type_name)
+        ).all()
+    )
+    assert sorted((r[0], names[r[2]], *r[3:]) for r in rows) == sorted(
+        [
+            (_GOLDEN_POLICY_IDS[0], "supplies", "FORWARD", 5, "Active", 1, None),
+            (_GOLDEN_POLICY_IDS[1], "usedIn", "FORWARD", 5, "Active", 1, None),
+            (_GOLDEN_POLICY_IDS[2], "defines", "FORWARD", 5, "Active", 1, None),
+        ]
+    )
+    assert {r[1] for r in rows} == {BOOTSTRAP_DEMO_TENANT_ID}
+
+
+def test_cdd092r1_fresh_golden_seed_enrolls_frozen_policies_then_propagates(
+    golden_factory: sessionmaker[Session],
+) -> None:
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    with golden_factory() as session:
+        DemoOqiSeeder(session).seed()
+        session.commit()
+    with golden_factory() as session:
+        _assert_frozen_policy_set(session)
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+def test_cdd092r1_preseeded_zero_policy_tenant_is_upgraded_before_evaluation(
+    golden_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reproduces the Azure incident: a Golden tenant seeded before policy
+    enrollment existed. `_seed_context` takes its existing-tenant early return
+    (the ontology-chain helper is never reached), yet the frozen policies are
+    ensured before the OQI4 evaluation runs."""
+    import app.infrastructure.persistence.demo_oqi_seeder as seeder_module
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        assert _golden_exposure(session) == []  # the pre-upgrade (Azure) state
+
+    calls: list[str] = []
+    seeder = seeder_module.DemoOqiSeeder
+    for name in ("_seed_aurora_ontology_chain", "_evaluate"):
+        original = getattr(seeder, name)
+
+        def _spy(self: object, *args: object, _name: str = name, _original=original) -> object:  # type: ignore[no-untyped-def]
+            calls.append(f"{_name}:policies={len(_golden_policy_rows(self.session))}")  # type: ignore[attr-defined]
+            return _original(self, *args)
+
+        monkeypatch.setattr(seeder, name, _spy)
+    with golden_factory() as session:
+        seeder(session).seed()
+        session.commit()
+    assert calls == ["_evaluate:policies=3"]  # early return taken; enrolled before evaluation
+    with golden_factory() as session:
+        _assert_frozen_policy_set(session)
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+def test_cdd092r1_repeated_seed_is_row_identical(
+    golden_factory: sessionmaker[Session],
+) -> None:
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    with golden_factory() as session:
+        DemoOqiSeeder(session).seed()
+        session.commit()
+    with golden_factory() as session:
+        before = _golden_policy_rows(session)
+    for _ in range(2):
+        with golden_factory() as session:
+            DemoOqiSeeder(session).seed()
+            session.commit()
+    with golden_factory() as session:
+        assert _golden_policy_rows(session) == before
+        assert len(before) == 3
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+def _insert_policy_row(session: Session, **values: object) -> None:
+    """Adversarial pre-state, written through the governed repository (the
+    single authorized ORM construction site), never a raw ORM row."""
+    OqiOntologyImpactPolicyRepositoryImpl(session).create(
+        ImpactPropagationPolicy(
+            policy_id=values["policy_id"],  # type: ignore[arg-type]
+            tenant_id=values["tenant_id"],  # type: ignore[arg-type]
+            relationship_type_id=values["relationship_type_id"],  # type: ignore[arg-type]
+            direction=PropagationDirection(str(values["direction"])),
+            max_depth=values["max_depth"],  # type: ignore[arg-type]
+            governance_status=PolicyGovernanceStatus(str(values["governance_status"])),
+            version_number=values["version_number"],  # type: ignore[arg-type]
+            previous_version_id=values["previous_version_id"],  # type: ignore[arg-type]
+        )
+    )
+    session.flush()
+
+
+def _type_id(session: Session, name: str) -> UUID:
+    type_id = session.scalar(
+        select(RelationshipType.relationship_type_id).where(
+            RelationshipType.relationship_type_name == name
+        )
+    )
+    assert type_id is not None
+    return type_id
+
+
+def _frozen_supplies_row(session: Session) -> dict[str, object]:
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+
+    return {
+        "policy_id": _GOLDEN_POLICY_IDS[0],
+        "tenant_id": BOOTSTRAP_DEMO_TENANT_ID,
+        "relationship_type_id": _type_id(session, "supplies"),
+        "direction": "FORWARD",
+        "max_depth": 5,
+        "governance_status": "Active",
+        "version_number": 1,
+        "previous_version_id": None,
+    }
+
+
+def test_cdd092r1_partial_policy_set_is_completed_without_touching_the_existing_one(
+    golden_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adversarial recovery state (the governed seeder cannot produce it: all
+    three are written in one transaction): only `supplies` exists."""
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        _insert_policy_row(session, **_frozen_supplies_row(session))
+        session.commit()
+        existing = _golden_policy_rows(session)
+    with golden_factory() as session:
+        DemoOqiSeeder(session).seed()
+        session.commit()
+    with golden_factory() as session:
+        _assert_frozen_policy_set(session)
+        assert existing[0] in _golden_policy_rows(session)
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+_SEMANTIC_MISMATCHES: list[tuple[str, dict[str, object]]] = [
+    ("direction", {"direction": "REVERSE"}),
+    ("max_depth", {"max_depth": 4}),
+    ("governance_status", {"governance_status": "Retired"}),
+    ("version_number", {"version_number": 2}),
+    ("relationship_type", {"relationship_type_name": "usedIn"}),
+    ("tenant", {"tenant_id": "foreign-tenant"}),
+]
+
+
+@pytest.mark.parametrize(("label", "mutation"), _SEMANTIC_MISMATCHES)
+def test_cdd092r1_deterministic_id_with_wrong_semantics_fails_closed(
+    golden_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    label: str,
+    mutation: dict[str, object],
+) -> None:
+    """DETERMINISTIC IDENTITY != SEMANTIC EQUIVALENCE: the frozen `supplies`
+    ID exists with one governed field changed. Seeding must refuse -- never
+    accept, overwrite, retire, or re-version it -- and nothing is evaluated."""
+    from app.infrastructure.persistence.demo_oqi_seeder import (
+        DemoOqiSeeder,
+        GoldenPropagationPolicyConflictError,
+    )
+    from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
+        OntologyImpactEvaluationORM,
+    )
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        row = _frozen_supplies_row(session)
+        mutation = dict(mutation)
+        if mutation.get("version_number") == 2:
+            # A governed v2 must name its predecessor: plant a Retired v1.
+            predecessor = {**row, "policy_id": uuid4(), "governance_status": "Retired"}
+            _insert_policy_row(session, **predecessor)
+            mutation["previous_version_id"] = predecessor["policy_id"]
+        if "relationship_type_name" in mutation:
+            row["relationship_type_id"] = _type_id(
+                session, str(mutation.pop("relationship_type_name"))
+            )
+        row.update(mutation)
+        _insert_policy_row(session, **row)
+        session.commit()
+        planted = _golden_policy_rows(session)
+        evaluations = session.scalar(select(func.count()).select_from(OntologyImpactEvaluationORM))
+    with golden_factory() as session:
+        with pytest.raises(GoldenPropagationPolicyConflictError) as raised:
+            DemoOqiSeeder(session).seed()
+        session.rollback()
+    assert str(_GOLDEN_POLICY_IDS[0]) in str(raised.value), label
+    with golden_factory() as session:
+        assert _golden_policy_rows(session) == planted  # untouched, nothing added
+        assert (
+            session.scalar(select(func.count()).select_from(OntologyImpactEvaluationORM))
+            == evaluations
+        )
+
+
+def test_cdd092r1_different_id_active_conflict_is_rejected_by_the_database(
+    golden_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different-ID Active policy already occupies the (tenant, supplies,
+    FORWARD) slot: `uq_impact_propagation_policies_one_active` rejects the
+    frozen insert and the seed transaction fails closed."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        row = _frozen_supplies_row(session)
+        row["policy_id"] = uuid4()
+        _insert_policy_row(session, **row)
+        session.commit()
+        planted = _golden_policy_rows(session)
+    with golden_factory() as session:
+        with pytest.raises(IntegrityError, match="uq_impact_propagation_policies_one_active"):
+            DemoOqiSeeder(session).seed()
+        session.rollback()
+    with golden_factory() as session:
+        assert _golden_policy_rows(session) == planted
+
+
+def test_cdd092r1_golden_restore_conflict_commits_nothing_including_scoped_deletes(
+    test_database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real `golden_demo_restore()` entry point (its own session, real
+    commits) on a dedicated throwaway database: a frozen policy ID planted with
+    non-frozen semantics makes enrollment fail closed AFTER the restore's
+    scoped remediation DELETEs ran in the same session -- and nothing is
+    committed: the remediation case survives, the bad row is untouched, and
+    no new ontology-impact evaluation is persisted."""
+    import alembic.command
+    from alembic.config import Config
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import make_url
+
+    import app.infrastructure.persistence.demo_oqi_seeder as seeder_module
+    from app.application.oqi_remediation_service import OqiRemediationService
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+    import app.core.config as config_module
+    import app.infrastructure.persistence.database_cli as database_cli_module
+    from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+    from app.domain.oqi_remediation.case import FindingFamily as RemediationFindingFamily
+    from app.infrastructure.persistence.blueprint_seed import BlueprintSeeder
+    from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
+        OntologyImpactEvaluationORM,
+    )
+    from app.infrastructure.persistence.models.oqi_remediation import OqiRemediationCaseORM
+    from app.infrastructure.persistence.ontology_seed import OntologySeeder
+    from app.infrastructure.persistence.oqi_remediation_repository import (
+        OqiRemediationParticipantReader,
+        OqiRemediationRepositoryImpl,
+    )
+    from app.infrastructure.persistence.session import create_session_factory
+
+    base_url = make_url(test_database_url)
+    db_name = f"ctec_cdd092r1_{uuid4().hex[:12]}"
+    admin = create_engine(base_url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    with admin.connect() as connection:
+        connection.execute(text(f'CREATE DATABASE "{db_name}"'))
+    url = base_url.set(database=db_name).render_as_string(hide_password=False)
+    monkeypatch.setenv("CTEC_DATABASE_URL", url)
+    monkeypatch.setenv("CTEC_ENVIRONMENT", "demo")
+    monkeypatch.setenv("CTEC_GOLDEN_DEMO_RESTORE_ALLOWED", "true")
+    monkeypatch.setenv("CTEC_GOLDEN_RESTORE_EXPECTED_HOST", base_url.host or "")
+    # Never touch the process-wide lru_cache of get_settings(): other modules'
+    # migration fixtures rely on its existing state. Point both readers (the
+    # alembic env.py import and database_cli) at dedicated settings instead;
+    # monkeypatch restores them.
+    dedicated_settings = config_module.Settings()
+    monkeypatch.setattr(config_module, "get_settings", lambda: dedicated_settings)
+    monkeypatch.setattr(database_cli_module, "get_settings", lambda: dedicated_settings)
+    golden_demo_restore = database_cli_module.golden_demo_restore
+    engine = create_engine(url)
+    try:
+        config = Config("alembic.ini")
+        config.set_main_option("sqlalchemy.url", url)
+        alembic.command.upgrade(config, "head")
+        factory = create_session_factory(engine)
+        with factory() as session:
+            OntologySeeder(session).load()
+            session.commit()
+            BlueprintSeeder(session).load()
+            session.commit()
+        with monkeypatch.context() as patch:  # the pre-enrollment Golden database
+            patch.setattr(seeder_module, "_GOLDEN_PROPAGATION_POLICIES", ())
+            golden_demo_restore()
+        with factory() as session:
+            row = _frozen_supplies_row(session)
+            row["max_depth"] = 4
+            _insert_policy_row(session, **row)
+            OqiRemediationService(
+                repository=OqiRemediationRepositoryImpl(session),
+                participant_reader=OqiRemediationParticipantReader(session),
+            ).extract_candidates(
+                tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+                finding_family=RemediationFindingFamily.OQI2,
+                finding_id=derive_comparison_finding_id(
+                    tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+                    quality_condition_id=seeder_module._QUALITY_CONDITION_ID,
+                    comparison_subject_id=seeder_module._COMPARISON_SUBJECT_ID,
+                ),
+            )
+            session.commit()
+
+        def _state() -> tuple[object, ...]:
+            with factory() as session:
+                return (
+                    session.scalar(select(func.count()).select_from(OqiRemediationCaseORM)),
+                    _golden_policy_rows(session),
+                    session.scalar(select(func.count()).select_from(OntologyImpactEvaluationORM)),
+                )
+
+        before = _state()
+        assert before[0] == 1 and len(before[1]) == 1  # type: ignore[arg-type]
+        with pytest.raises(seeder_module.GoldenPropagationPolicyConflictError):
+            golden_demo_restore()
+        assert _state() == before
+    finally:
+        engine.dispose()
+        with admin.connect() as connection:
+            connection.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :db AND pid <> pg_backend_pid()"
+                ),
+                {"db": db_name},
+            )
+            connection.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+        admin.dispose()
