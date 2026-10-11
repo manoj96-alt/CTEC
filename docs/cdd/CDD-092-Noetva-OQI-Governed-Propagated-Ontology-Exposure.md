@@ -232,3 +232,189 @@ Total path-count exposure (needs schema); downstream Business Impact derivation;
 ---
 
 *CDD-092 authorizes governance only. It does not implement, deploy, or verify anything itself. It is subordinate to CDD-042, which remains the architectural authority for OQI4 ontology impact.*
+
+---
+
+# CDD-092 R1 — Governance Correction: Upgrade-Safe Golden Policy Enrollment
+
+**Status:** FROZEN (R1)
+**Version:** 1.1 (R1 amendment; v1.0 text above is unchanged and remains frozen)
+**Date:** 2026-10-11
+**Originating phases:** NOETVA-OQI-PROPAGATED-IMPACT-I (STOPPED — MATERIAL DEFECT / GOVERNANCE BOUNDARY) → NOETVA-OQI-PROPAGATED-IMPACT-G-R1
+**v1.0 SHA-256 (sections 1–27 exactly as frozen at `995abac`):** `0382f8769dd5da334603cb778ca4135639f79090b904e946386e8a79e60a1b1e`
+**Form:** append-only. Sections 1–27 are not rewritten; where R1 supersedes a v1.0 rule it says so explicitly (R1.4 supersedes the *placement* and *idempotency* sentences of §9 only; the §9 policy table is unchanged).
+
+R1 changes exactly three things: (1) the lifecycle placement of Golden propagation-policy enrollment; (2) semantic validation of a pre-existing deterministic policy before it is accepted; (3) the pre-cloud upgrade-path proof standard. Every other CDD-092 v1.0 decision stands unchanged (R1.15).
+
+## R1.1 Original freeze (v1.0 §9)
+
+v1.0 §9 froze enrollment "inside `_seed_aurora_ontology_chain` after the chain edges are flushed and therefore before `_evaluate`", idempotent by "skip if the deterministic ID exists", and asserted that "Re-seeding and Golden restore leave exactly three policy rows (proven in the packaged runtime)". The packaged proof behind that sentence (§19) ran on a **fresh** database only.
+
+## R1.2 Defect
+
+`DemoOqiSeeder._seed_context` returns early for an already-seeded tenant, before `_seed_aurora_ontology_chain` is reached. A Golden tenant created by any image that predates enrollment therefore never receives the policies; `_evaluate` then runs OQI4 under deny-by-default with zero policies and records no propagation. Traversal, API, frontend, policy IDs and Docker packaging behaved correctly; the defect is solely the frozen enrollment *placement*.
+
+## R1.3 Azure incident evidence (read-only, re-verified at G-R1)
+
+- Candidate `80ac89a56085fcf6459273fef4356a55da1b11a4` deployed to demo: backend `sha256:470bfd0b569351f12eac50256a4f68584dd880b01249c2e7037e7a2eb372a19e` (`noetva-demo-eus2-backend--0000003`), frontend `sha256:1919d905d231ddc80bcf1a96dcd51cba0e94b336185e15f283aac2bc71f39e0e` (`--0000005`), Golden Restore job rebound to the backend digest (configuration diff: image only); migrate job untouched on `sha256:c34e8ed5…`.
+- Golden Restore execution `noetva-demo-eus2-golden-restore-c1qqsrc` (started 2026-10-11T19:27:35Z): status **Failed**. Log Analytics (`ContainerAppConsoleLogs_CL`): 15 checks, 14 PASS, sole failure `[FAIL] ontology_propagated_chain -- exposed=0 aurora_paths=[]`, then `demo-verify: CHECKS FAILED`. SAP=US, PLM=MX, HIGH Business Impact, RELIANCE_AT_RISK, Ask Noetva, H6 candidate all PASS.
+- Reproduced byte-for-byte locally at G-R1 with the same digest `470bfd0b…` against a database created by the previously certified runtime (R1.10): identical single failure, policies = 0.
+
+## R1.4 Corrected architecture (supersedes the placement and idempotency sentences of §9)
+
+**Invariant — GOLDEN PROPAGATION POLICY ENROLLMENT IS UPGRADE-SAFE:** every Golden seed/restore execution idempotently ensures, and semantically validates, the frozen propagation-policy set **after context ensure and before ontology-impact evaluation**, regardless of whether the base Golden tenant data was created in the current execution or by a previous application version.
+
+Frozen placement — **Option A, seed-lifecycle orchestration**, the single authoritative enrollment location:
+
+```
+DemoOqiSeeder.seed(tenant_id)
+  1. tenant validation            (DemoTenantRequiredError if not an allowed seed tenant)
+  2. self._seed_context(tenant_id)          -> fresh bootstrap OR existing-tenant early return
+  3. self._enroll_golden_propagation_policies(tenant_id)   [R1]
+  4. self._evaluate(tenant_id, dependency_id)
+  (5. commit is owned by the caller)
+```
+
+Enrollment is **removed** from `_seed_aurora_ontology_chain` (no duplicate defensive location). The §9 policy table, tenant, deterministic IDs, FORWARD-only, `max_depth = 5`, Active, version 1, `previous_version_id = NULL`, and deny-by-default are unchanged.
+
+**Option B (enroll at the top of `_evaluate`) — rejected.** It is equally reachable today, but it makes an evaluation step perform bootstrap mutation; evaluation must consume governed policy state, not create it. Option A keeps `_evaluate` evaluation-only and places reference-data lifecycle in the orchestration method every entry point already converges on.
+
+## R1.5 Call-graph and control-flow reachability proof (at `80ac89a`, repository-wide search)
+
+Production entry points into `DemoOqiSeeder` (search: `DemoOqiSeeder(`, `.seed(`, `_seed_context(`, `_seed_aurora_ontology_chain(`, `_evaluate(`; non-app files: workflows, Bicep, Dockerfile/entrypoint, docs):
+
+| # | Entry point | Route | Commit boundary |
+|---|---|---|---|
+| A | `database_cli golden-demo-restore` (`database_cli.py:457`) | safety predicate → scoped 4-table DELETE → `DemoOqiSeeder(session).seed(tenant_id=BOOTSTRAP_DEMO_TENANT_ID)` (`:519`) | single `session.commit()` after `seed()` returns |
+| B | `database_cli demo-reset` (`database_cli.py:80`; `seed()` at `:105`) | `reset_database()` → OntologySeeder commit → BlueprintSeeder commit → `DemoOqiSeeder(session).seed()` | `session.commit()` after `seed()` returns |
+| C | `python -m app.infrastructure.persistence.demo_oqi_seeder` (`__main__`, `:2146`) | `DemoOqiSeeder(session).seed()` | `session.commit()` after `seed()` returns |
+
+Classification of every other hit: the Azure Golden Restore job (Bicep `container-apps-job-golden-restore.bicep:65`; workflow `azure-golden-demo-restore.yml` only starts that job) runs **A** then `demo-verify`; CI (`ci.yml:275`) and `DOCKER_SMOKE_TEST.md` run **C**; the backend `docker-entrypoint.sh` runs migrations + OntologySeeder + BlueprintSeeder only (never `DemoOqiSeeder`); `database_cli seed` is the unrelated EDT-001 `SeedLoader` (correction to the I-phase stop report, which mislabeled `:105` as the seed CLI — it is `demo-reset`). Test callers (golden story ×2, H4 integrity crown, generic finding-detail parity) call `seed()` and are not production paths. Other `*Seeder.seed()` hits are unrelated classes. **No fourth production path exists.**
+
+Inside `DemoOqiSeeder` at `80ac89a`: `_seed_context` is called only by `seed()` (`:436`); `_evaluate` only by `seed()` (`:437`); `_seed_aurora_ontology_chain` only by `_seed_context` (`:688`). Branches of `seed()`:
+
+- `tenant_id not in _ALLOWED_SEED_TENANTS` → raise before any mutation or evaluation (nothing to enroll; correct).
+- `_seed_context` has exactly two returns: the existing-tenant early return (`:451–452`, taken when an active QualityRule `_QUALITY_CONDITION_ID` **and** an active supplier dependency exist) and the fresh-bootstrap return (`:689`, after `_seed_aurora_ontology_chain`). **Both** return control to `seed()`, which then unconditionally executes step 3 before step 4. Any exception inside `_seed_context` propagates out of `seed()` before evaluation.
+- There is no return, branch, or exception handler in `seed()` between steps 2, 3 and 4. Therefore every production Golden evaluation reached through A, B or C executes enrollment first. Proven dynamically (R1.9 crown 2): with a pre-upgrade tenant, `_seed_aurora_ontology_chain` is not called and `_evaluate` observes 3 policies on entry.
+
+## R1.6 Transaction atomicity
+
+`_enroll_golden_propagation_policies` uses the caller's session and only `flush()`es; it never commits. A, B and C each commit once, after `seed()` returns. Any failure in policy validation, policy creation (including a database constraint violation), traversal or evaluation raises out of `seed()`; the caller's session is closed without commit, so nothing — including A's preceding scoped DELETE — is committed. No intermediate commit is introduced. Proven: conflict crowns leave planted rows and evaluation counts unchanged (R1.9). Partial committed upgrade is therefore impossible through A, B or C.
+
+## R1.7 Existing-policy validation (frozen)
+
+For each `(policy_id, relationship_type_name)` in `_GOLDEN_PROPAGATION_POLICIES`:
+
+1. Resolve `relationship_type_id` by `relationship_types.relationship_type_name` (`supplies` / `usedIn` / `defines`). Absent → `GoldenPropagationPolicyConflictError` (fail closed).
+2. Look up `impact_propagation_policies` by primary key `policy_id` (tenant-independent lookup, so a frozen ID present under another tenant is detected, not silently re-inserted).
+3. **Not present** → create exactly the frozen policy via `OqiOntologyImpactPolicyRepositoryImpl.create(ImpactPropagationPolicy(...))` (the single authorized ORM construction site).
+4. **Present and semantically identical** → accept without any write (no update, no new version, row byte-identical).
+5. **Present under the deterministic ID with any differing governed field** → `GoldenPropagationPolicyConflictError`; never accept, update, overwrite, retire, re-version, or proceed to evaluation.
+6. **Slot occupied by a different-ID Active policy** for the same `(tenant_id, relationship_type_id, direction)` → the insert in step 3 is rejected by the database (R1.8); not bypassed, not pre-empted by application logic.
+
+Partial sets are handled by the same per-policy rule: only missing frozen policies are created. **Governed runtime** produces only 0 or 3 correct policies (all three are written in one session and committed together; there is no production policy-authoring API; the seeder is the only production writer). Partial sets are an **adversarial / out-of-band** recovery state and are tested as such.
+
+**Comparison fields (exact model names; the table has no other columns besides the key `policy_id`, so no persistence metadata is excluded or compared):**
+
+| field | frozen value |
+|---|---|
+| `tenant_id` | the seeded tenant (`ctec-demo-tenant` for the Golden demo) |
+| `relationship_type_id` | id of `supplies` / `usedIn` / `defines` respectively |
+| `direction` | `FORWARD` |
+| `max_depth` | `5` |
+| `governance_status` | `Active` |
+| `version_number` | `1` |
+| `previous_version_id` | `NULL` |
+
+Note (consistent with the existing seeder design): Golden deterministic IDs, policy IDs included, are tenant-independent `uuid5` labels, so one database hosts one Golden seed tenant; a frozen policy ID owned by a different tenant is a semantic conflict (`tenant_id`) and fails closed.
+
+**Error contract:** one new exception, `GoldenPropagationPolicyConflictError(Exception)`, declared in `demo_oqi_seeder.py` beside the existing `DemoTenantRequiredError` (seeder-local fail-closed convention). No existing exception fits: `DemoTenantRequiredError` is tenant-scope only and `ValidationException` is domain-input validation. Message names the policy ID, the relationship-type name, and the **names** of mismatched governed fields only — no values, no secrets.
+
+## R1.8 Database-constraint interaction
+
+- `uq_impact_propagation_policies_one_active`: partial unique index on `(tenant_id, relationship_type_id, direction) WHERE governance_status = 'Active'` (CDD-042 §8).
+- `uq_impact_propagation_policies_tenant_pk`: unique `(tenant_id, policy_id)`; `policy_id` is the primary key.
+
+Application validation protects **same ID / wrong semantics**; the database protects **different ID / conflicting Active slot**. R1 adds no application logic duplicating or weakening the index. A committed different-ID Active policy can exist only while the frozen policy is absent; enrolling the frozen policy then raises `IntegrityError` naming `uq_impact_propagation_policies_one_active` and the seed transaction fails closed (proven).
+
+## R1.9 Prototype evidence (isolated worktree, scratch commits never pushed, destroyed after capture)
+
+Prototype base `80ac89a`; R1 delta (2 paths) sha256 `3ea258993cb338daa2210b574f143320764f0d3f92a5fb7567a71f0939e96b4d` (reference only; I-R1 re-implements it). Real PostgreSQL; each crown runs the production `DemoOqiSeeder.seed()` inside one outer transaction that is rolled back. Pre-upgrade state is produced by running the real seeder with the policy set empty (the pre-enrollment seeder's observable behavior); the packaged crown (R1.10) is the authoritative upgrade proof.
+
+| # | Crown (`test_oqi_ontology_impact_postgres.py`) | vs `80ac89a` seeder | vs R1 seeder |
+|---|---|---|---|
+| 1 | `test_cdd092r1_fresh_golden_seed_enrolls_frozen_policies_then_propagates` | pass | pass |
+| 2 | `test_cdd092r1_preseeded_zero_policy_tenant_is_upgraded_before_evaluation` | **FAIL** (`['_evaluate:policies=0']`) | pass (`['_evaluate:policies=3']`; chain helper not called) |
+| 3 | `test_cdd092r1_repeated_seed_is_row_identical` | pass | pass |
+| 4 | `test_cdd092r1_partial_policy_set_is_completed_without_touching_the_existing_one` | **FAIL** | pass |
+| 5–10 | `test_cdd092r1_deterministic_id_with_wrong_semantics_fails_closed` [direction, max_depth, governance_status, version_number (governed v2 with Retired v1 predecessor), relationship_type, tenant] | **FAIL** ×6 (no validation exists) | pass ×6 (raises; row untouched; evaluation count unchanged) |
+| 11 | `test_cdd092r1_different_id_active_conflict_is_rejected_by_the_database` | **FAIL** (enrollment never reached) | pass (`IntegrityError` on `uq_impact_propagation_policies_one_active`; nothing written) |
+
+Expected chain in crowns 1–4: Aurora X1 Battery Cell depth 1 → Aurora X1 Bill of Materials depth 2 → Aurora X1 depth 3. Adversarial pre-state is written through the governed repository (the CDD-042 single-construction-site guard `test_oqi4_ontology_impact_orms_have_single_construction_site` stays green).
+
+Full prototype gates: backend **2424 passed / 0 failed** (2413 + 11); ruff clean; mypy clean (663 files); frontend tsc 0, Vitest **464/464**, Gate X **5/5**, `next build` exit 0; CDD-091 identity crown **36/36**, authorization UI **48/48**; prototype final feature diff vs `e8c61ae` = exactly the §20 16 paths (16 M / 0 A / 0 D); no migration (head `0049_oqi_remediation_actor_name`).
+
+## R1.10 Packaged upgrade crowns (prototype, linux/amd64, real PostgreSQL 17)
+
+The exact Azure job command (`golden-demo-restore` then `demo-verify`) was used for every restore.
+
+1. **Old certified runtime establishes the pre-upgrade database.** Old image `noetvademoeus2acr.azurecr.io/noetva/backend@sha256:c34e8ed5f06ddad441aa354641b5a752d787cc30b8a11f5c727d53133188967a` (= ACR tag `e8c61ae840f9cef362788dad1ea91f64bd88d276` = Azure revision `--0000002`) against a fresh persistent volume: its own entrypoint (migrate + ontology + Blueprint seed), its seeder `__main__`, its Golden Restore job → `demo-verify: ALL CHECKS PASSED` (14 checks). Result: head `0049`, Golden supplier and chain edges present, **propagation policies = 0**, 0 active propagated impacts.
+2. **Azure failure reproduction** (copy of that database): candidate `80ac89a` image `470bfd0b…` Golden Restore → `[FAIL] ontology_propagated_chain -- exposed=0 aurora_paths=[]`, `demo-verify: CHECKS FAILED`, 14 PASS, policies 0.
+3. **Upgrade:** same volume and database (not recreated), R1 prototype image → `[PASS] ontology_propagated_chain -- exposed=3 aurora_paths=[('supplies', 'usedIn', 'defines')]`, literal `demo-verify: ALL CHECKS PASSED` (15 checks); exactly the three frozen policy rows (IDs/semantics per §9); depths 1/2/3 Battery Cell → BOM → Aurora X1; head `0049`.
+4. **Repeated new-image restore** on the same database: PASS / ALL CHECKS PASSED; policy rows byte-identical (3); propagated chain identical.
+5. **Azure-history replay** (old → `80ac89a` failed → R1 on the reproduction copy): PASS / ALL CHECKS PASSED; policies 3.
+6. **Fresh new-image database** (separate PostgreSQL; R1 image entrypoint, seeder `__main__`, Golden Restore job): PASS / ALL CHECKS PASSED (15); policy rows identical to the upgraded database.
+
+## R1.11 Path ceilings (frozen)
+
+**Final feature ceiling** (final candidate vs certified feature baseline `e8c61ae`): unchanged — exactly the 16 §20 paths, **16 MODIFY / 0 CREATE / 0 DELETE**, no migration.
+
+**R1 correction ceiling** (I-R1 commit(s) vs `80ac89a`): exactly **2 MODIFY / 0 CREATE / 0 DELETE**:
+
+1. `backend/app/infrastructure/persistence/demo_oqi_seeder.py` — add `GoldenPropagationPolicyConflictError`; add `_enroll_golden_propagation_policies`; call it in `seed()` between `_seed_context` and `_evaluate`; remove enrollment from `_seed_aurora_ontology_chain`. Nothing else.
+2. `backend/app/tests/test_oqi_ontology_impact_postgres.py` — the eleven R1.9 crowns and their fixtures/helpers (outer-transaction rollback; adversarial pre-state only through the governed repository; Golden-scoped policy queries).
+
+Any other path relative to `80ac89a` → STOP. The other 14 CDD-092 paths are **not** reopened by R1.
+
+## R1.12 Implementation authorization (NOETVA-OQI-PROPAGATED-IMPACT-I-R1)
+
+Base: `80ac89a…` on `product/oqi-propagated-impact-i` (do not redo the feature from `e8c61ae`). Implement only R1.4–R1.8 within R1.11. Helper responsibility is frozen narrowly: *ensure that the exact CDD-092 Golden propagation-policy definitions exist and semantically match their deterministic identities* — it must not evaluate, modify edges/findings/Business Impact/Reliance, author arbitrary policies, expose any API, commit, or reconcile semantic conflicts.
+
+Required before any Azure mutation (all must pass): R1.11 ceilings (both ledgers); the eleven R1.9 crowns; full backend; ruff; mypy; frontend tsc, Vitest, Gate X, `next build`; CDD-091 identity and authorization crowns; CDD-092 propagation crowns including the 50,000-row fail-closed crown; Docker fresh Golden Restore; **packaged old-image (`sha256:c34e8ed5…`) → new-image persisted-database upgrade** with `[PASS] ontology_propagated_chain` and literal `demo-verify: ALL CHECKS PASSED`; repeated new-image restore with byte-identical policy rows. Fresh-Docker success alone never authorizes cloud deployment.
+
+## R1.13 Azure boundary
+
+- **State at G-R1 freeze (read-only):** the separately authorized rollback has **not** occurred. Live: backend `--0000003` (`470bfd0b…`, 100%), frontend `--0000005` (`1919d905…`, 100%), Golden Restore job `470bfd0b…`, migrate job `c34e8ed5…` (untouched). Certified revisions `--0000002` (`c34e8ed5…`) and `--0000004` (`caf36622…`) exist inactive (Single revision mode). Last Golden Restore execution: `…-c1qqsrc` Failed (R1.3).
+- **I-R1 Azure crown** (only after R1.12 passes): deploy the exact corrected backend/frontend digests to demo under the CDD-090 manual procedure (linux/amd64, ACR push, bind by digest); bind the Golden Restore job to the exact corrected backend digest; do **not** touch the migrate job; run Golden Restore against the real long-lived demo database; require `[PASS] ontology_propagated_chain` and `demo-verify: ALL CHECKS PASSED`; only then live API/UI crown and the CEO/VC screenshot.
+- **Failure on R1:** if Golden Restore again reports `exposed=0` or any failure → STOP; no manual policy insertion, no database patching, no demo-verify bypass, no screenshot.
+- **No manual policy repair:** no recovery procedure may insert the three policies into Azure PostgreSQL by hand; the application lifecycle must upgrade its own governed bootstrap data.
+- No Golden Restore job logic/configuration change; no migrate rebinding; no CIAM, dev or production change. G-R1 performed no Azure mutation.
+
+## R1.14 Invariants (frozen)
+
+- **FRESH-BOOT SUCCESS ≠ UPGRADE SAFETY.**
+- **DETERMINISTIC IDENTITY ≠ SEMANTIC EQUIVALENCE.**
+- **GOLDEN RESTORE MUST ENSURE REQUIRED GOVERNED BOOTSTRAP DATA BEFORE EVALUATION.**
+- **BOOTSTRAP RECONCILIATION MUST FAIL CLOSED ON SEMANTIC CONFLICT.**
+- **PREVIOUS-RUNTIME → CANDIDATE-RUNTIME UPGRADE PROOF IS REQUIRED FOR NEW SEEDED STATE.**
+- **POLICY ENSURE OCCURS AFTER CONTEXT ENSURE AND BEFORE EVALUATION, ON EVERY BRANCH.**
+
+## R1.15 Unchanged by R1
+
+Propagation meaning; policy IDs and semantics; edge/node eligibility; explicit `as_of`; direct-impact precondition; direction; depth; cycles; the 50,000-row fail-closed ceiling; path retention; digest correction; persistence; read model; API; UX; tenant isolation; Business Impact, Reliance, Agent and Ask Noetva boundaries; the CEO/VC claim; CDD-091.
+
+## R1.16 STOP conditions (I-R1)
+
+STOP if: any production entry point bypasses `seed()` steps 3→4; a path outside R1.11 is required; a migration is required; a deterministic-ID conflict does not fail closed; a different-ID Active conflict can coexist with the frozen policy; any failure leaves committed partial state; the packaged old runtime cannot establish a representative pre-upgrade database; the new runtime cannot upgrade it without manual repair; fresh bootstrap regresses; repeated restore duplicates or re-versions policies; propagation semantics, Business Impact or Reliance must change; Azure Golden Restore fails for any reason; CDD-091 regresses.
+
+## R1.17 Program-level recommendation (recorded, not enacted here)
+
+**FRESH-BOOT PASS IS NOT DEPLOYMENT PROOF.** Any feature that introduces or changes required seeded / reference / bootstrap state for an existing environment should prove: (1) fresh bootstrap; (2) already-seeded upgrade; (3) previous packaged runtime → candidate packaged runtime upgrade on a persisted database; (4) repeated candidate idempotency. **BOOTSTRAP + UPGRADE + IDEMPOTENCY + CONFLICT SAFETY = DEPLOYMENT CORRECTNESS.** No other governance artifact is modified by R1.
+
+## R1.18 Deferred
+
+Everything in §27, plus: a generic bootstrap-reconciliation framework for other seeded reference data; tenant-scoped deterministic Golden IDs; any policy-authoring surface; adoption of R1.17 into program-wide delivery doctrine.
+
+---
+
+*CDD-092 R1 authorizes governance only. It does not implement, deploy, or verify anything itself. CDD-092 remains subordinate to CDD-042.*
