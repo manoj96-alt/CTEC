@@ -241,3 +241,137 @@ CLI settings-cache test-ordering fragility (`test_database_cli_postgres.py::dedi
 ---
 
 *CDD-093 authorizes integration governance only. It implements, pushes, merges, and deploys nothing itself. It amends no other CDD.*
+
+---
+
+# CDD-093 R1 — Required CI-Conformance Repair (append-only amendment)
+
+**Status:** FROZEN (R1)
+**Version:** 1.1 (v1.0 text above is unchanged and remains frozen)
+**Date:** 2026-10-11
+**Originating phases:** NOETVA-OQI-PROPAGATED-IMPACT-INTEGRATION-I (STOP — INTEGRATION BLOCKED) → NOETVA-OQI-PROPAGATED-IMPACT-INTEGRATION-G-R1 (first attempt STOPPED; this freeze)
+**v1.0 SHA-256 (exact byte prefix of this document):** `4912192eece60707c06649ec748c716aa7215d2dc9531ae60bb77c4ed3f1c8d3`
+**Classification:** REQUIRED CI-CONFORMANCE REPAIR — comments only, tests only, zero product semantic change, zero Azure change. Not an OQI propagation change, not a CDD-091 security change, not a CDD-092 remediation, not an Azure correction. CDD-091 and CDD-092 (incl. R1) are not reopened.
+
+R1 supersedes v1.0 only where it says so: §7 (content, inventory, fingerprint), §8 (construction gains two steps), §9 (push target is the existing branch / existing PR), §10.1–§10.2 (gates gain exact CI parity), §11 (prohibitions gain the R1.9 exceptions-and-limits), and §16 (STOP conditions extended). Everything else in v1.0 stands.
+
+## R1.1 Incident
+
+INTEGRATION-I constructed head `2f2cb3ce3a6624b1e7ba29407b28dc367d74f719` (tree `131ff911bf8a0a29135c00c12e85e025251a023c`, exactly as predicted), passed its local crown, pushed `governance/oqi-propagated-impact-main-integration`, and opened PR #255. Required checks on that exact head: `frontend` SUCCESS, `containers` SUCCESS, **`backend` FAILURE** (both runs: 38180995860, 38181025024). The backend job stopped at `isort --check-only .` on exactly one file. A first G-R1 attempt proved that the proposed one-line isort fix was correct but **insufficient**: the next CI step, `ruff check .`, fails on 16 pre-existing findings that the isort failure had masked. That attempt correctly STOPPED without amending governance.
+
+## R1.2 Exact backend CI contract (authority: `.github/workflows/ci.yml`, byte-identical on `main` 171a398 and on 2f2cb3c, blob `b12f7550fde4…`)
+
+Python 3.12; `pip install -e '.[dev]'` (floating ranges: `black>=25.1,<26`, `isort>=6,<7`, `ruff>=0.9,<1`, `mypy>=1.15,<2`, `pytest>=8.3,<9`, `pytest-cov>=6,<7`); then in order `black --check .` → `isort --check-only .` → `ruff check .` → `mypy app` → `pytest` (addopts `--cov=app --cov-report=term-missing --cov-fail-under=80`). Frontend: Node 22, `npm ci` → `npm run format:check` → `npm run lint` → `npm run typecheck` → `npm test -- --run --coverage` (thresholds 80% lines/functions/statements/branches on `components/**/*.tsx`) → `npm run build`. Containers: the 15-step compose smoke incl. migration head = repository head, exactly 131 tables, Keycloak scope classification, 401 unauthenticated, PKCE-authenticated OQI read, demo seeder. Required checks (branch protection, re-read at G-R1): `backend`, `frontend`, `containers`; strict=false; 0 approvals; linear history not required.
+
+**Resolved toolchain (CI parity manifest).** Failing run 38181025024 installed 51 packages including black 25.12.0, isort 6.1.0, ruff 0.17.0, mypy 1.20.2, pytest 8.4.2, pytest-cov 6.3.0. A fresh *unpinned* `pip install -e '.[dev]'` on CPython 3.12.7 at G-R1 resolved **identical versions for all 51 packages** (no pinning was used). `main` was last green on 2026-09-25 with ruff 0.16.9 (CI log evidence); ruff 0.17.0 was published 2026-10-09 and is what every CI run since resolves.
+
+## R1.3 Blocker 1 — isort (pre-existing, CDD-091 lineage)
+
+- Failing file (only one; 30 files skipped): `backend/app/tests/test_oqi_remediation_identity_binding_postgres.py`. Clean at `ec896e2`; incompatible from `e8c61ae` (CDD-091 I2-R3), which added `from alembic import command as alembic_command` / `from alembic.config import Config`; carried unchanged through `80ac89a`, `f7c63bf`, and the integration. It predates CDD-092.
+- Cause: isort classifies `alembic` as first-party (the repository-local `backend/alembic/` directory is in its `src_paths`), ruff classifies it as third-party (`known-first-party = ["app"]` only). Both alternatives were tried at G-R1: the isort-preferred order fails ruff (I001); the `import alembic.command` form still fails isort. No ordering satisfies both under current configuration.
+- Repository convention: 30 files carry `# isort: skip_file`, including every other non-migration module that imports `alembic` (21 test files); migrations use `from alembic import op` only. This file is the sole non-migration `alembic` importer without the directive.
+- Classification: **pre-existing integration-gate incompatibility exposed by the first exact CI-parity execution.**
+
+## R1.4 Blocker 2 — ruff 0.17.0 RUF100 (pre-existing on `main`)
+
+`ruff check .` (ruff 0.17.0) reports exactly **16 findings, all `RUF100` (unused `noqa` directive, non-enabled `DTZ001`) in 14 test files**. Main control: the identical 16 findings (same path, line, column, message; 16/16 identical line content) exist on `origin/main` 171a398; **none** is in a file touched by the integration diff. `DTZ001` is not among the 407 enabled rules (the enabled DTZ set is DTZ002/003/004 only); `RUF100` is enabled. Classification: **floating dev-dependency resolution exposed stale suppression comments that the newly resolved ruff version treats as RUF100 failures** — not an application regression.
+
+## R1.5 Alternatives considered
+
+| Option | Decision |
+|---|---|
+| isort: reorder imports | Rejected — no order satisfies both isort and ruff (proven) |
+| isort: change global isort config | Rejected — global tooling policy change, wider blast radius |
+| isort: change ruff config | Rejected — same |
+| **isort: add repository-standard `# isort: skip_file`** | **Selected** — matches 30-file convention, one comment line, no import change |
+| **ruff: remove only the 16 stale `noqa: DTZ001` directives** | **Selected** — they suppress a non-enabled rule; removal fixes the underlying hygiene issue; AST unchanged |
+| ruff: pin `ruff<0.17` | Rejected — tooling-policy change; preserves stale suppressions |
+| ruff: per-file-ignores / config tolerance | Rejected — config change; masks the finding |
+| ruff: disable RUF100 | Rejected — masks all future stale suppressions repository-wide |
+| ruff: `ruff check --select RUF100 --fix` | **Prohibited** — proven at G-R1 to modify 31 files (with only RUF100 selected, every legitimate BLE001/TRY004/PLR0124 suppression appears unused and is stripped together with its rationale) |
+
+## R1.6 Frozen repair (exact; 15 unique paths; comments only)
+
+**(a) isort — 1 path, +1 line.** In `backend/app/tests/test_oqi_remediation_identity_binding_postgres.py` insert the single line `# isort: skip_file` immediately above the line `from __future__ import annotations` (the repository-standard position used by `test_database_cli_postgres.py` and `test_oqi_api_postgres.py`). No other change to that file.
+
+**(b) ruff — 14 paths, 16 edits.** For each row below, on exactly that line, delete the `noqa: DTZ001` directive. Where the directive carries rationale prose after a `--`/`-` separator, the prose is preserved as a plain trailing comment (`  # <prose>`); otherwise the whole `  # noqa: DTZ001` comment is removed. All 16 directives are trailing (none standalone). No other byte changes.
+
+| # | Path | Line | Before (stripped) | After (stripped) |
+|---|---|---|---|---|
+| 1 | `backend/app/tests/test_blueprint_persistence.py` | 53 | `_blueprint(created_on=datetime(2026, 1, 1))  # noqa: DTZ001` | `_blueprint(created_on=datetime(2026, 1, 1))` |
+| 2 | `backend/app/tests/test_domain_foundation.py` | 171 | `**_profile(effective_from=datetime(2026, 1, 1)),  # noqa: DTZ001` | `**_profile(effective_from=datetime(2026, 1, 1)),` |
+| 3 | `backend/app/tests/test_domain_operational.py` | 144 | `**_profile(effective_from=datetime(2026, 1, 1)),  # noqa: DTZ001` | `**_profile(effective_from=datetime(2026, 1, 1)),` |
+| 4 | `backend/app/tests/test_field_value_evidence_persistence.py` | 83 | `observed_at=datetime(2026, 1, 1),  # noqa: DTZ001` | `observed_at=datetime(2026, 1, 1),` |
+| 5 | `backend/app/tests/test_field_value_evidence_persistence.py` | 95 | `received_at=datetime(2026, 1, 1),  # noqa: DTZ001` | `received_at=datetime(2026, 1, 1),` |
+| 6 | `backend/app/tests/test_integration_contracts.py` | 55 | `datetime(2026, 1, 1),  # noqa: DTZ001 - deliberately naive negative fixture` | `datetime(2026, 1, 1),  # deliberately naive negative fixture` |
+| 7 | `backend/app/tests/test_knowledge_engine.py` | 284 | `store.current(assertion_id, as_of=datetime(2026, 1, 1))  # noqa: DTZ001` | `store.current(assertion_id, as_of=datetime(2026, 1, 1))` |
+| 8 | `backend/app/tests/test_oqi_cross_source_evaluation_domain.py` | 332 | `evaluation_horizon=datetime(2026, 1, 1, tzinfo=None),  # noqa: DTZ001` | `evaluation_horizon=datetime(2026, 1, 1, tzinfo=None),` |
+| 9 | `backend/app/tests/test_oqi_integrity_reference_evaluation_domain.py` | 138 | `evaluation_horizon=datetime(2026, 1, 1),  # noqa: DTZ001 -- deliberately naive` | `evaluation_horizon=datetime(2026, 1, 1),  # deliberately naive` |
+| 10 | `backend/app/tests/test_oqi_integrity_structural_evaluation_domain.py` | 214 | `evaluation_horizon=datetime(2026, 1, 1),  # noqa: DTZ001 -- deliberately naive` | `evaluation_horizon=datetime(2026, 1, 1),  # deliberately naive` |
+| 11 | `backend/app/tests/test_oqi_quality_evaluation_service.py` | 208 | `naive_horizon = datetime(2026, 1, 1, tzinfo=None)  # noqa: DTZ001 -- deliberately naive` | `naive_horizon = datetime(2026, 1, 1, tzinfo=None)  # deliberately naive` |
+| 12 | `backend/app/tests/test_oqi_timeliness_evaluation_domain.py` | 112 | `created_on=datetime(2026, 1, 1),  # noqa: DTZ001 -- deliberately naive` | `created_on=datetime(2026, 1, 1),  # deliberately naive` |
+| 13 | `backend/app/tests/test_oqi_timeliness_evaluation_domain.py` | 342 | `evaluation_horizon=datetime(2026, 1, 1),  # noqa: DTZ001` | `evaluation_horizon=datetime(2026, 1, 1),` |
+| 14 | `backend/app/tests/test_runtime_invocation.py` | 169 | `store = InMemoryExecutionStore(clock=lambda: datetime(2026, 1, 1))  # noqa: DTZ001` | `store = InMemoryExecutionStore(clock=lambda: datetime(2026, 1, 1))` |
+| 15 | `backend/app/tests/test_semantic_mapping_persistence.py` | 41 | `_semantic_mapping(created_on=datetime(2026, 1, 1))  # noqa: DTZ001` | `_semantic_mapping(created_on=datetime(2026, 1, 1))` |
+| 16 | `backend/app/tests/test_source_field_persistence.py` | 38 | `_source_field(created_on=datetime(2026, 1, 1))  # noqa: DTZ001` | `_source_field(created_on=datetime(2026, 1, 1))` |
+
+**Unique path count:** 15 (the isort file is not among the 14 ruff files). Every path matches `backend/app/tests/test_*.py`. No application, deployment, migration, frontend, workflow, dependency, or configuration path.
+
+**Fingerprints** (each = SHA-256 of `git diff` output, default context, against `2f2cb3ce…`, paths in git order):
+- isort patch: `8e518194c0759ba9a9ac8f5841bbdc91cef2587e99fe54d996434b6369a1d23c` (identical to the INTEGRATION-I / first-G-R1 reference)
+- ruff patch (14 files): `fb959dde13e714ad085044d8e05ce533ec31b798a52db139dc6fc36a03fab97b`
+- combined repair (15 files, +17 −16): `f4dcab517cdd85fe701b93eef7296b88a0107e716d3a76a8779ffea8e1ca2070`
+
+**Executable-semantics proof (G-R1, all 15 files):** location-free `ast.dump` identical before/after, and the `tokenize` stream excluding `COMMENT`/`NL` tokens identical before/after. No import, expression, fixture, assertion, SQL, or parameter changed.
+
+## R1.7 Corrected content, inventory, and fingerprint (supersedes v1.0 §7 counts)
+
+Repair-only tree (2f2cb3c + R1.6, CDD-093 still at v1.0 bytes): `4f507b47cbd7f9fb4be4969dcd44bf6434da185b` (constructed in a disposable worktree). After the repair, the integration diff vs `origin/main` 171a398 is **56 paths: 45 MODIFY, 11 CREATE, 0 DELETE** = 51 implementation/test paths (v1.0's 37 + the 14 ruff paths; the isort file was already counted) + 5 governance documents. The v1.0 implementation-inventory fingerprint `d97f08e2…81d6` hashed the name-status path list and is **retired** because 14 paths entered; the corrected fingerprint (`git diff --name-status --no-renames 171a398 <head> -- . ':!docs/cdd'`) is `a37e4fabc4b37e0f384d05707ca174525cd7c6d2baccb92011926ec510fb73e8` (51 paths). Merging this R1 document changes only the bytes of the already-counted CDD-093 path; the final path count stays 56.
+
+## R1.8 Prototype certification of the repair tree (G-R1, CI-resolved toolchain)
+
+Backend CI contract, complete sequence: black PASS (664 unchanged) · isort PASS · ruff PASS · mypy PASS (663 files) · pytest **2425 passed, 0 failed, coverage 95.20%** (floor 80%). Frontend CI contract: npm ci · format:check PASS · lint PASS · typecheck PASS · `npm test -- --run --coverage` **464/464**, thresholds met (lines 98.51%, branches 87.75%, functions 90.24%) · build PASS (local Node v24; the frontend tree is byte-identical to 2f2cb3c, whose GitHub `frontend` check passed on Node 22). Containers CI contract: all 15 steps executed verbatim from ci.yml PASS (migration head `0049_oqi_remediation_actor_name`, 131 tables, scopes, 401, PKCE-authenticated OQI read 200, demo seeder) and torn down. Crowns: CDD-091 identity 36/36, authorization UI 48/48, Gate X 5/5, CDD-092 40/40 (incl. 50,000-row fail-closed 2/2 and R1 upgrade-safe enrollment 12/12), Golden story 19/19. `make verify-architecture` PASS (205 artifacts).
+
+## R1.9 INTEGRATION-I-R1 construction (supersedes v1.0 §8–§9 for the correction)
+
+Start from the existing local and remote branch `governance/oqi-propagated-impact-main-integration` at exactly `2f2cb3ce3a6624b1e7ba29407b28dc367d74f719` (no reconstruction, no reset). In a new worktree on that branch:
+
+```
+A. git merge --no-ff <CDD-093 R1 governance commit, full SHA from the G-R1 report>
+     -m "Merge CDD-093 R1 (CI-conformance) governance into OQI propagated-impact main integration"
+   (merge-base is 8253769, already in the branch: the result changes only docs/cdd/CDD-093-…; any conflict = STOP)
+B. Apply exactly R1.6 (manual, line-addressed; ruff/isort autofix prohibited), verify the combined
+   diff of B against A's result has SHA-256 f4dcab51… when produced as `git diff` default context
+   (paths in git order), then ONE commit:
+     "ci: required CI-conformance repair -- isort skip_file + remove 16 stale noqa:DTZ001 (CDD-093 R1)"
+```
+
+Governance precedes code (A before B). No other commit, no amend of existing commits, no merge of `main` or anything else. The resulting tree MUST equal the final expected tree recorded in the G-R1 report (this document cannot contain the hash of a tree that includes itself); any difference = STOP. Then: AST/token proof (R1.6) on the 15 files; exact backend, frontend, and containers CI contracts per R1.2 with the CI-resolved toolchain and the parity manifest recorded; crowns per R1.8; `make verify-architecture`; clean tree. Push **normally (non-force)** to the existing `governance/oqi-propagated-impact-main-integration` so PR #255 updates in place. No new PR, no closing #255, no branch deletion or recreation.
+
+## R1.10 Exact-head GitHub requirement and CI drift
+
+Before pushing, re-read `.github/workflows/ci.yml` at the intended head and base and branch protection; if any required command, required check, or protection setting changed since G-R1: STOP. After pushing, all required checks (`backend`, `frontend`, `containers`, and any other required check) must be SUCCESS **on the exact new PR #255 head SHA**; pending, cancelled, unexpectedly skipped, or stale (other-SHA) results do not count. Inspect the resolved tool versions in the new GitHub backend log; if any gating tool resolves to a version other than the R1.2 manifest and produces any new finding: STOP (no serial patching without governance). I-R1 does **not** merge.
+
+## R1.11 CI-parity delivery invariant
+
+**IF CI CAN BLOCK MERGE, ITS EXACT COMMANDS BELONG IN PRE-MERGE CERTIFICATION. CI PARITY INCLUDES RESOLVED TOOL VERSIONS, NOT ONLY COMMAND NAMES.** RUFF PASS ≠ ISORT PASS; LOCAL TOOL SUBSET ≠ REQUIRED CI PARITY; COMMAND PARITY WITHOUT VERSION PARITY IS NOT CI PARITY. From R1 onward, every local integration crown and INTEGRATION-VM must run the complete backend, frontend, and containers CI contracts (R1.2) with the CI-resolved toolchain, executing every step even after an earlier step fails, and record a CI parity manifest.
+
+## R1.12 INTEGRATION-VM boundary (extends v1.0 §10.2–§10.4)
+
+INTEGRATION-VM may begin only after I-R1 completes R1.9–R1.10 green. It must independently verify, on the exact PR #255 head: no material `main` drift; the head SHA and final tree; all governance hashes (CDD-087/090/091/092 unchanged; CDD-093 = R1 hash); the 56-path diff and the `a37e4fab…` fingerprint; the R1.6 repair is exactly 15 paths, comment-only, AST/token-identical; implementation semantics unchanged (every non-test, non-`docs/cdd` path byte-identical to the certified candidate tree `ef2e48d6…`); migration head; `make verify-architecture`; the complete CI parity contracts locally with the manifest; required GitHub checks green on the exact head; branch protection; mergeability; plus every v1.0 §10.2 item (Docker images from the exact tree with source-to-image identity, fresh-DB and old-image→new-image persisted upgrade with repeat). Merge only per v1.0 §10.3 (merge commit bound to the verified head SHA), with the immediate pre-merge re-verification of `origin/main`, PR head, governance hashes, required checks, mergeability, branch protection, and exact tree. Any drift: STOP.
+
+## R1.13 Azure boundary (unchanged, restated)
+
+R1 authorizes no backend or frontend redeployment, no Golden Restore, no migrate-job change, no CIAM, demo-database, dev, or production change. Product runtime bytes are unchanged by the repair.
+
+## R1.14 Additional STOP conditions
+
+STOP if: ruff, isort, or any CI step reports anything beyond the frozen set; any repair touches a byte beyond R1.6; any AST/token difference; any runtime, migration, workflow, dependency, configuration, or frontend change; dependency pinning becomes necessary; any CI contract (backend/frontend/containers) fails locally or on GitHub; CDD-091 or CDD-092 crowns regress; `verify-architecture` fails; the resulting tree differs from the G-R1-recorded final tree; `main`, PR #253/#254/#255 heads, governance sources, workflow, or branch protection drift; the final topology cannot include this R1 document.
+
+## R1.15 Deferred (recommendation only — not implemented here)
+
+Make CI tooling deterministic (lockfile, constraints file, or exact/compatible version policy; reproducible dev environment) so that a tool release cannot silently change merge gates. Plus all v1.0 §17 items.
+
+---
+
+*CDD-093 R1 authorizes integration-governance correction only. It implements, pushes, merges, and deploys nothing itself.*
