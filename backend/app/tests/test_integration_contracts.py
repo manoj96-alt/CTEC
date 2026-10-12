@@ -52,7 +52,7 @@ def test_source_observation_rejects_naive_timestamps() -> None:
             "Risk",
             "active",
             RiskSeverity.HIGH,
-            datetime(2026, 1, 1),  # noqa: DTZ001 - deliberately naive negative fixture
+            datetime(2026, 1, 1),  # deliberately naive negative fixture
             datetime.now(UTC),
             "evidence",
         )

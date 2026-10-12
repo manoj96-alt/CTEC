@@ -16,6 +16,7 @@ exactly that gap: real FastAPI router, real `OqiProductExperienceService`/
 mirroring the established full-stack pattern in
 `test_ontology_copilot_full_stack_postgres.py`."""
 
+# isort: skip_file
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

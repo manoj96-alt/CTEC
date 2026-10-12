@@ -211,7 +211,7 @@ def test_derive_structural_evaluation_id_rejects_naive_horizon() -> None:
             relationship_requirement_id=uuid4(),
             enterprise_entity_id=uuid4(),
             integrity_relationship_cardinality_id=uuid4(),
-            evaluation_horizon=datetime(2026, 1, 1),  # noqa: DTZ001 -- deliberately naive
+            evaluation_horizon=datetime(2026, 1, 1),  # deliberately naive
             qualifying_target_ids=(),
         )
 

@@ -35,7 +35,7 @@ def _source_field(**overrides: object) -> SourceField:
 
 def test_source_field_requires_timezone_aware_created_on() -> None:
     with pytest.raises(ValidationException):
-        _source_field(created_on=datetime(2026, 1, 1))  # noqa: DTZ001
+        _source_field(created_on=datetime(2026, 1, 1))
 
 
 def test_source_field_requires_a_canonical_name_field_label() -> None:

@@ -329,7 +329,7 @@ def test_evaluation_id_rejects_naive_horizon() -> None:
             rule_version=1,
             comparison_subject_id=uuid4(),
             evaluation_mode=EvaluationMode.CURRENT_STATE,
-            evaluation_horizon=datetime(2026, 1, 1, tzinfo=None),  # noqa: DTZ001
+            evaluation_horizon=datetime(2026, 1, 1, tzinfo=None),
             participant_digest="digest",
             comparison_subject_correspondence_id=uuid4(),
         )

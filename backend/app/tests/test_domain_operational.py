@@ -141,7 +141,7 @@ def test_operational_entities_require_timezone_aware_datetimes() -> None:
         SourceSystem(
             source_system_id=IDENTIFIER,
             source_system_name=CanonicalName("SAP"),
-            **_profile(effective_from=datetime(2026, 1, 1)),  # noqa: DTZ001
+            **_profile(effective_from=datetime(2026, 1, 1)),
         )
 
 

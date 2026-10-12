@@ -80,7 +80,7 @@ def test_naive_observed_at_is_rejected() -> None:
             source_field_id=_source_field_id(),
             source_record_reference="100045",
             observed_representation="Acme Taiwan Ltd",
-            observed_at=datetime(2026, 1, 1),  # noqa: DTZ001
+            observed_at=datetime(2026, 1, 1),
             received_at=NOW,
         )
 
@@ -92,7 +92,7 @@ def test_naive_received_at_is_rejected() -> None:
             source_record_reference="100045",
             observed_representation="Acme Taiwan Ltd",
             observed_at=NOW,
-            received_at=datetime(2026, 1, 1),  # noqa: DTZ001
+            received_at=datetime(2026, 1, 1),
         )
 
 
