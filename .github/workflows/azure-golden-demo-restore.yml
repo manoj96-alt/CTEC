@@ -1,0 +1,65 @@
+name: Azure Golden Demo Restore
+
+# CDD-087 §15: manual only, demo-only. Unlike azure-deploy.yml, this
+# workflow takes NO environment input at all -- dev/staging/prod must be
+# structurally unreachable through it, not merely discouraged by
+# convention. Every `az` command below hardcodes the literal "demo"
+# resource-group/Job name; there is no variable substitution path by which
+# a caller could redirect this workflow at another environment.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # required for OIDC federation to Azure -- no AZURE_CLIENT_SECRET anywhere
+  contents: read
+
+# Noetva I-R2 Section 22 precedent: shares the identical concurrency domain
+# every lifecycle/deploy workflow for `demo` already uses, so restore can
+# never race a start/stop/TTL-sweep/restart-monitor/deploy run targeting
+# the same environment.
+concurrency:
+  group: lifecycle-demo
+  cancel-in-progress: false
+
+jobs:
+  golden-demo-restore:
+    runs-on: ubuntu-latest
+    environment: demo
+    steps:
+      - name: Azure login (OIDC federation, no stored client secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.NOETVA_CICD_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify the target resource group is the demo group
+        run: |
+          set -euo pipefail
+          az group show --name "rg-noetva-demo" --query "name" -o tsv
+
+      - name: Start the Golden restore Job
+        run: |
+          set -euo pipefail
+          az containerapp job start \
+            --name "noetva-demo-eus2-golden-restore" \
+            --resource-group "rg-noetva-demo"
+
+      - name: Wait for the Golden restore Job to complete
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            status=$(az containerapp job execution list \
+              --name "noetva-demo-eus2-golden-restore" \
+              --resource-group "rg-noetva-demo" \
+              --query "[0].properties.status" -o tsv)
+            echo "golden-restore job status: $status"
+            if [ "$status" = "Succeeded" ]; then exit 0; fi
+            if [ "$status" = "Failed" ]; then
+              echo "::error::Golden restore Job failed -- restore and/or verification did not pass."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::Golden restore Job did not complete in time."
+          exit 1

@@ -109,7 +109,7 @@ def test_policy_rejects_naive_created_on() -> None:
             ingestion_sla_seconds=None,
             status=TimelinessPolicyStatus.ACTIVE,
             created_by="steward",
-            created_on=datetime(2026, 1, 1),  # noqa: DTZ001 -- deliberately naive
+            created_on=datetime(2026, 1, 1),  # deliberately naive
         )
 
 
@@ -339,7 +339,7 @@ def test_evaluation_identity_rejects_naive_horizon() -> None:
             finding_type=TimelinessFindingType.STALE_SOURCE_EVIDENCE,
             source_object_id=uuid4(),
             field_value_evidence_id=uuid4(),
-            evaluation_horizon=datetime(2026, 1, 1),  # noqa: DTZ001
+            evaluation_horizon=datetime(2026, 1, 1),
         )
 
 

@@ -107,6 +107,7 @@ class FakeService:
             direct_entity_id=None,
             direct_entity_type=None,
             propagated_path=None,
+            propagated_impacts=(),
         )
 
     def get_business_impact(self, *, tenant_id: str, finding_id: UUID) -> Row:
@@ -430,6 +431,8 @@ def test_remediation_authorization_id_survives_serialization_to_json() -> None:
                     decided_on=None,
                     rejection_reason=None,
                     is_stale=False,
+                    requested_by_display_name=None,
+                    decided_by_display_name=None,
                 ),
             ),
         ),
@@ -455,3 +458,90 @@ def test_all_nine_frozen_routes_exist() -> None:
 
     unrelated = client.get("/api/v1/oqi/nonexistent")
     assert unrelated.status_code == 404
+
+
+def _hop(rel: UUID, rel_type: str, a: UUID, a_name: str, b: UUID, b_name: str) -> Row:
+    return Row(
+        relationship_instance_id=rel,
+        relationship_type_name=rel_type,
+        direction="FORWARD",
+        from_entity_id=a,
+        from_entity_name=a_name,
+        to_entity_id=b,
+        to_entity_name=b_name,
+    )
+
+
+def test_ontology_impact_serializes_every_propagated_element_in_service_order() -> None:
+    """CDD-092 §15: the router maps every propagated element, path and hop
+    exactly as the governed read model orders them, alongside the legacy
+    compatibility projection."""
+    supplier, cell, bom, product = uuid4(), uuid4(), uuid4(), uuid4()
+    r1, r2, r3 = uuid4(), uuid4(), uuid4()
+    supplies = _hop(r1, "supplies", supplier, "Supplier", cell, "Cell")
+    used_in = _hop(r2, "usedIn", cell, "Cell", bom, "BOM")
+    defines = _hop(r3, "defines", bom, "BOM", product, "Product")
+    service = FakeService()
+    service.get_ontology_impact = lambda *, tenant_id, finding_id: Row(  # type: ignore[method-assign]
+        outcome=Row(value="IMPACTED"),
+        direct_entity_id=supplier,
+        direct_entity_type=Row(value="ENTITY"),
+        propagated_path=(Row(relationship_instance_id=r1, path_ordinal=0, direction="FORWARD"),),
+        propagated_impacts=(
+            Row(
+                entity_id=cell,
+                entity_type_name="Material",
+                entity_name="Cell",
+                depth=1,
+                paths=((supplies,),),
+            ),
+            Row(
+                entity_id=bom,
+                entity_type_name="BOM",
+                entity_name="BOM",
+                depth=2,
+                paths=((supplies, used_in),),
+            ),
+            Row(
+                entity_id=product,
+                entity_type_name="Product",
+                entity_name="Product",
+                depth=3,
+                paths=((supplies, used_in, defines),),
+            ),
+        ),
+    )
+    client = _client(_container(audit=Audit()), service, _principal(scopes=("oqi:read",)))
+    body = client.get(f"/api/v1/oqi/findings/{_FINDING_ID}/ontology-impact").json()
+    assert [(item["entity_name"], item["depth"]) for item in body["propagated_impacts"]] == [
+        ("Cell", 1),
+        ("BOM", 2),
+        ("Product", 3),
+    ]
+    (path,) = body["propagated_impacts"][2]["paths"]
+    assert [hop["relationship_type_name"] for hop in path] == ["supplies", "usedIn", "defines"]
+    assert [hop["relationship_instance_id"] for hop in path] == [str(r1), str(r2), str(r3)]
+    assert path[0]["from_entity_name"] == "Supplier"
+    assert path[-1]["to_entity_id"] == str(product)
+    assert body["propagated_path"] == [
+        {"relationship_instance_id": str(r1), "path_ordinal": 0, "direction": "FORWARD"}
+    ]
+
+
+def test_ontology_impact_has_no_writable_propagation_authority() -> None:
+    """CDD-092 §15: propagated exposure is read-only through the API -- the
+    ontology-impact route accepts GET only, and no request schema carries
+    propagation fields."""
+    spec = create_app().openapi()
+    operations = spec["paths"]["/api/v1/oqi/findings/{finding_id}/ontology-impact"]
+    assert set(operations) == {"get"}
+    response_schema = spec["components"]["schemas"]["OntologyImpactResponse"]["properties"]
+    assert {"propagated_impacts", "propagated_path"} <= set(response_schema)
+    for path_item in spec["paths"].values():
+        for operation in path_item.values():
+            body = operation.get("requestBody", {}).get("content", {}).get("application/json", {})
+            ref = body.get("schema", {}).get("$ref", "")
+            if ref:
+                fields = spec["components"]["schemas"][ref.split("/")[-1]].get("properties", {})
+                assert "propagated_impacts" not in fields
+                assert "propagated_path" not in fields

@@ -201,6 +201,7 @@ class ProductionRemediationOrchestrationService:
         finding_id: UUID,
         requested_by: str,
         correlation_id: UUID | None = None,
+        requested_by_display_name: str | None = None,
     ) -> PrepareRemediationResult:
         resolved = self._resolve_finding(tenant_id=tenant_id, finding_id=finding_id)
         if resolved is None:
@@ -289,10 +290,16 @@ class ProductionRemediationOrchestrationService:
                     .limit(1)
                 ).scalar_one_or_none()
                 if authorization_id is None:
+                    # CDD-091 §22.1/§22.5: pure transport of the
+                    # already-trusted requester display snapshot -- written
+                    # only here, when the authorization is first created;
+                    # the `else` branch below never rewrites an existing
+                    # authorization's requester attribution.
                     authorization = service.request_authorization(
                         tenant_id=tenant_id,
                         instruction_id=instruction_id,
                         requested_by=requested_by,
+                        requested_by_display_name=requested_by_display_name,
                         now=self._clock(),
                     )
                     authorization_status = authorization.status.value

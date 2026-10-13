@@ -305,6 +305,18 @@ dialog label {
   gap: 0.4rem;
   font-weight: 700;
 }
+/* CDD-091 §3/§9: a radio option's label must sit beside its control, not
+   stacked above/below it like a text-field label. Scoped to this one class
+   (higher specificity than the element-only `dialog label` rule above) so
+   no other dialog label -- e.g. the rejection-reason textarea's label --
+   is affected. */
+dialog label.decision-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
 .form-grid input,
 .form-grid select,
 dialog textarea,

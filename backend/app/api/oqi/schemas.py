@@ -78,11 +78,39 @@ class OntologyImpactPathSegment(BaseModel):
     direction: str
 
 
+class PropagatedImpactHop(BaseModel):
+    """CDD-092 §15: one hop of a retained governed path proof, in traversal
+    order. IDs are the authoritative identifiers; names are read-time
+    presentation."""
+
+    relationship_instance_id: UUID
+    relationship_type_name: str
+    direction: str
+    from_entity_id: UUID
+    from_entity_name: str
+    to_entity_id: UUID
+    to_entity_name: str
+
+
+class PropagatedImpact(BaseModel):
+    """CDD-092 §15: one propagated-exposure element and its retained (at most
+    3, shortest-first) governed path proofs."""
+
+    entity_id: UUID
+    entity_type_name: str
+    entity_name: str
+    depth: int
+    paths: tuple[tuple[PropagatedImpactHop, ...], ...]
+
+
 class OntologyImpactResponse(BaseModel):
     outcome: str
     direct_entity_id: UUID | None
     direct_entity_type: str | None
+    # CDD-092 §15: legacy, non-authoritative -- flattened hops of the first
+    # element in `propagated_impacts` order. Use `propagated_impacts`.
     propagated_path: tuple[OntologyImpactPathSegment, ...] | None
+    propagated_impacts: tuple[PropagatedImpact, ...]
 
 
 class BusinessImpactDependency(BaseModel):
@@ -140,6 +168,11 @@ class RemediationCandidateAuthorizationView(BaseModel):
     decided_on: datetime | None
     rejection_reason: str | None
     is_stale: bool
+    # CDD-091 §21.1 (G-R1): presentation-only trusted display-name
+    # snapshots -- never consulted by any client or server authorization
+    # logic. Absence (None) is always a valid, safe UI fallback case.
+    requested_by_display_name: str | None
+    decided_by_display_name: str | None
 
 
 class RemediationCandidateItemView(BaseModel):
@@ -168,8 +201,12 @@ class RemediationResponse(BaseModel):
 
 
 class DecideAuthorizationRequest(BaseModel):
+    """`decided_by` is deliberately not a field here: the decision actor
+    identity is authoritative only from the server-validated authenticated
+    principal (NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1), never client input.
+    The client supplies only the decision itself."""
+
     approve: bool
-    decided_by: str
     rejection_reason: str | None = None
 
 

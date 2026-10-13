@@ -90,6 +90,7 @@ const EMPTY_IMPACT = {
   direct_entity_id: null,
   direct_entity_type: null,
   propagated_path: null,
+  propagated_impacts: [],
 };
 const EMPTY_BUSINESS_IMPACT = {
   outcome: "NO_KNOWN_BUSINESS_IMPACT",
@@ -669,6 +670,7 @@ describe("OQI Finding Detail — ontology impact", () => {
         direct_entity_id: null,
         direct_entity_type: null,
         propagated_path: null,
+        propagated_impacts: [],
       },
     });
     await renderTab("Ontology Impact");
@@ -678,31 +680,170 @@ describe("OQI Finding Detail — ontology impact", () => {
     expect(screen.queryByText(/no impact/i)).not.toBeInTheDocument();
   });
 
-  it("provides an accessible non-graph path representation", async () => {
+  const governedHop = (
+    id: string,
+    type: string,
+    fromId: string,
+    from: string,
+    toId: string,
+    to: string,
+  ) => ({
+    relationship_instance_id: id,
+    relationship_type_name: type,
+    direction: "FORWARD",
+    from_entity_id: fromId,
+    from_entity_name: from,
+    to_entity_id: toId,
+    to_entity_name: to,
+  });
+
+  it("renders the governed exposure chain by name, never as opaque relationship ids", async () => {
+    const supplies = governedHop(
+      "r1",
+      "supplies",
+      "s",
+      "Meridian Cell Components",
+      "m",
+      "Aurora X1 Battery Cell",
+    );
+    const usedIn = governedHop(
+      "r2",
+      "usedIn",
+      "m",
+      "Aurora X1 Battery Cell",
+      "b",
+      "Aurora X1 BOM",
+    );
+    const defines = governedHop(
+      "r3",
+      "defines",
+      "b",
+      "Aurora X1 BOM",
+      "p",
+      "Aurora X1",
+    );
     mockAll({
       impact: {
         outcome: "IMPACTED",
-        direct_entity_id: "e1",
-        direct_entity_type: "MATERIAL",
-        propagated_path: [
+        direct_entity_id: "s",
+        direct_entity_type: "ENTITY",
+        propagated_path: null,
+        propagated_impacts: [
           {
-            relationship_instance_id: "r1",
-            path_ordinal: 1,
-            direction: "OUTBOUND",
+            entity_id: "m",
+            entity_type_name: "Material",
+            entity_name: "Aurora X1 Battery Cell",
+            depth: 1,
+            paths: [[supplies]],
+          },
+          {
+            entity_id: "b",
+            entity_type_name: "BOM",
+            entity_name: "Aurora X1 BOM",
+            depth: 2,
+            paths: [[supplies, usedIn]],
+          },
+          {
+            entity_id: "p",
+            entity_type_name: "Product",
+            entity_name: "Aurora X1",
+            depth: 3,
+            paths: [[supplies, usedIn, defines]],
           },
         ],
       },
     });
     await renderTab("Ontology Impact");
+    expect(screen.getByText(/exposes/i).textContent).toMatch(
+      /exposes 3 downstream entities through governed ontology dependencies/,
+    );
+    const chain = screen.getByRole("list", {
+      name: "Governed dependency path",
+    });
+    expect(
+      within(chain)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      "Meridian Cell Components",
+      "↓ suppliesAurora X1 Battery Cell",
+      "↓ used inAurora X1 BOM",
+      "↓ definesAurora X1",
+    ]);
+    expect(
+      screen.getByText(/Aurora X1 is exposed through this governed path/),
+    ).toBeInTheDocument();
+    const exposed = screen.getByRole("region", { name: "Exposed entities" });
+    expect(
+      within(exposed)
+        .getAllByRole("listitem")
+        .map((li) => li.querySelector("summary")?.textContent),
+    ).toEqual([
+      "Aurora X1 Battery Cell (Material, 1 hop)",
+      "Aurora X1 BOM (BOM, 2 hops)",
+      "Aurora X1 (Product, 3 hops)",
+    ]);
+    expect(
+      screen.queryByText(/Propagated \(FORWARD\)/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/relationship r1|^r1$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/not impacted/i)).not.toBeInTheDocument();
+  });
+
+  it("an element reached by three retained paths states that only the shortest paths are shown", async () => {
+    const paths = ["x", "y", "z"].map((mid) => [
+      governedHop(`a-${mid}`, "supplies", "s", "Supplier", mid, `Part ${mid}`),
+      governedHop(`b-${mid}`, "usedIn", mid, `Part ${mid}`, "t", "Assembly"),
+    ]);
+    mockAll({
+      impact: {
+        outcome: "IMPACTED",
+        direct_entity_id: "s",
+        direct_entity_type: "ENTITY",
+        propagated_path: null,
+        propagated_impacts: [
+          {
+            entity_id: "t",
+            entity_type_name: "BOM",
+            entity_name: "Assembly",
+            depth: 2,
+            paths,
+          },
+        ],
+      },
+    });
+    await renderTab("Ontology Impact");
+    const exposed = screen.getByRole("region", { name: "Exposed entities" });
+    expect(
+      within(exposed).getByText("Showing the 3 shortest governed paths."),
+    ).toBeInTheDocument();
+    expect(
+      within(exposed).getByText(
+        /Supplier — supplies → Part x · Part x — used in → Assembly/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("direct impact without propagated exposure never claims downstream entities are unaffected", async () => {
+    mockAll({
+      impact: {
+        outcome: "IMPACTED",
+        direct_entity_id: "e1",
+        direct_entity_type: "MATERIAL",
+        propagated_path: null,
+        propagated_impacts: [],
+      },
+    });
+    await renderTab("Ontology Impact");
+    expect(
+      screen.getByText(/No governed propagated exposure is recorded/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/not impacted/i)).not.toBeInTheDocument();
     const details = screen
       .getByText("Accessible path detail")
       .closest("details");
-    expect(details).not.toBeNull();
     expect(
       within(details as HTMLElement).getByText(/Direct impact: MATERIAL/),
-    ).toBeInTheDocument();
-    expect(
-      within(details as HTMLElement).getByText(/Propagated step 1/),
     ).toBeInTheDocument();
   });
 });
@@ -914,6 +1055,8 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
               decided_on: "2026-01-03T00:00:00Z",
               rejection_reason: null,
               is_stale: false,
+              requested_by_display_name: null,
+              decided_by_display_name: "Demo Approver",
             },
           },
         ],
@@ -928,11 +1071,91 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
     });
     await renderTab("Remediation");
     expect(screen.getByText("RECOMMEND_CANDIDATE")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Authorized by steward@example.com/),
-    ).toBeInTheDocument();
+    // CDD-091 §9/§22.12: the persisted trusted display snapshot is the
+    // primary label; the opaque machine principal never is.
+    expect(screen.getByText(/Authorized by Demo Approver/)).toBeInTheDocument();
+    expect(screen.queryByText(/steward@example\.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/remediated/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^fixed$/i)).not.toBeInTheDocument();
+  });
+
+  it("an authorization without a display snapshot renders the governed fallback, never the opaque principal", async () => {
+    mockAll({
+      remediation: {
+        case_status: "AUTHORIZED",
+        candidates: [
+          {
+            candidate_id: "c1",
+            proposed_value: "ABC123",
+            basis: "SPECIALIST_SUPPORTED",
+            authorization: {
+              authorization_id: "auth-1",
+              status: "APPROVED",
+              requested_by: "principal-steward",
+              requested_on: "2026-01-02T00:00:00Z",
+              decided_by: "TKdj6d4rM5NYg-opaque",
+              decided_on: "2026-01-03T00:00:00Z",
+              rejection_reason: null,
+              is_stale: false,
+              requested_by_display_name: null,
+              decided_by_display_name: null,
+            },
+          },
+        ],
+        recommendation: null,
+        external_execution: null,
+      },
+    });
+    await renderTab("Remediation");
+    expect(
+      screen.getByText(/Authorized by signed-in principal/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/TKdj6d4rM5NYg-opaque/)).not.toBeInTheDocument();
+  });
+
+  const rejectedRemediation = (decidedByDisplayName: string | null) => ({
+    case_status: "PREPARED",
+    candidates: [
+      {
+        candidate_id: "c1",
+        proposed_value: "ABC123",
+        basis: "SPECIALIST_SUPPORTED",
+        authorization: {
+          authorization_id: "auth-1",
+          status: "REJECTED",
+          requested_by: "principal-steward",
+          requested_on: "2026-01-02T00:00:00Z",
+          decided_by: "principal-approver-opaque",
+          decided_on: "2026-01-03T00:00:00Z",
+          rejection_reason: "rejected",
+          is_stale: false,
+          requested_by_display_name: "Demo Steward",
+          decided_by_display_name: decidedByDisplayName,
+        },
+      },
+    ],
+    recommendation: null,
+    external_execution: null,
+  });
+
+  it("a rejected authorization renders human-readable rejected attribution", async () => {
+    mockAll({ remediation: rejectedRemediation("Demo Approver") });
+    await renderTab("Remediation");
+    expect(screen.getByText(/Rejected by Demo Approver/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/principal-approver-opaque/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a rejected authorization without a display snapshot renders the governed fallback", async () => {
+    mockAll({ remediation: rejectedRemediation(null) });
+    await renderTab("Remediation");
+    expect(
+      screen.getByText(/Rejected by signed-in principal/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/principal-approver-opaque/),
+    ).not.toBeInTheDocument();
   });
 
   it("stale authorization is visibly non-actionable", async () => {
@@ -953,6 +1176,8 @@ describe("OQI Finding Detail — remediation, authorization, resolution", () => 
               decided_on: "2026-01-01T00:00:00Z",
               rejection_reason: null,
               is_stale: true,
+              requested_by_display_name: null,
+              decided_by_display_name: null,
             },
           },
         ],

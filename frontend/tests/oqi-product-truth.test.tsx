@@ -83,6 +83,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
           direct_entity_id: null,
           direct_entity_type: null,
           propagated_path: null,
+          propagated_impacts: [],
         }}
       />,
     );
@@ -249,6 +250,8 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
                 decided_on: "2026-01-01T00:00:00Z",
                 rejection_reason: null,
                 is_stale: false,
+                requested_by_display_name: null,
+                decided_by_display_name: "Demo Approver",
               },
             },
           ],
@@ -259,9 +262,7 @@ describe("CDD-045 §29 UI Truth Table — mechanical enforcement", () => {
         onMutated={() => {}}
       />,
     );
-    expect(
-      screen.getByText(/Authorized by steward@example.com/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Authorized by Demo Approver/)).toBeInTheDocument();
     assertForbidden(container, [/\bremediated\b/i, /\bfixed\b/i]);
   });
 

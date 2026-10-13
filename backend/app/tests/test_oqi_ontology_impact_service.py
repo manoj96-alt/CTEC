@@ -6,6 +6,7 @@ the recursive-CTE traversal itself are proven against real PostgreSQL in
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -54,6 +55,7 @@ class _FakeRepository:
         *,
         tenant_id: str,
         direct_entity_id: UUID,
+        as_of: datetime,
         _test_only_delay_seconds: float | None = None,
     ) -> tuple[PropagatedPathCandidate, ...]:
         return self.propagation
@@ -230,6 +232,7 @@ class TestImpactSetShrinkAndExpansion:
                     entity_id=entity_b,
                     depth=1,
                     relationship_ids=(uuid4(),),
+                    relationship_versions=(1,),
                     policy_ids=(uuid4(),),
                     policy_versions=(1,),
                     directions=("FORWARD",),
@@ -283,6 +286,7 @@ class TestImpactSetShrinkAndExpansion:
                 entity_id=entity_b,
                 depth=1,
                 relationship_ids=(uuid4(),),
+                relationship_versions=(1,),
                 policy_ids=(uuid4(),),
                 policy_versions=(1,),
                 directions=("FORWARD",),
@@ -349,6 +353,7 @@ class TestPathDeduplicationAndCap:
                 entity_id=target,
                 depth=2,
                 relationship_ids=(uuid4(), uuid4()),
+                relationship_versions=(1, 1),
                 policy_ids=(uuid4(), uuid4()),
                 policy_versions=(1, 1),
                 directions=("FORWARD", "FORWARD"),
@@ -357,6 +362,7 @@ class TestPathDeduplicationAndCap:
                 entity_id=target,
                 depth=2,
                 relationship_ids=(uuid4(), uuid4()),
+                relationship_versions=(1, 1),
                 policy_ids=(uuid4(), uuid4()),
                 policy_versions=(1, 1),
                 directions=("FORWARD", "FORWARD"),
@@ -379,6 +385,7 @@ class TestPathDeduplicationAndCap:
                 entity_id=target,
                 depth=2,
                 relationship_ids=(rel_a, rel_b),
+                relationship_versions=(1, 1),
                 policy_ids=(policy, policy),
                 policy_versions=(1, 1),
                 directions=("FORWARD", "FORWARD"),
@@ -402,6 +409,7 @@ class TestPathDeduplicationAndCap:
             entity_id=target,
             depth=2,
             relationship_ids=(rel_a, rel_b),
+            relationship_versions=(1, 1),
             policy_ids=(policy, policy),
             policy_versions=(1, 1),
             directions=("FORWARD", "FORWARD"),
@@ -410,6 +418,7 @@ class TestPathDeduplicationAndCap:
             entity_id=target,
             depth=2,
             relationship_ids=(rel_b, rel_a),
+            relationship_versions=(1, 1),
             policy_ids=(policy, policy),
             policy_versions=(1, 1),
             directions=("FORWARD", "FORWARD"),
@@ -425,6 +434,7 @@ class TestPathDeduplicationAndCap:
                 entity_id=target,
                 depth=1,
                 relationship_ids=(uuid4(),),
+                relationship_versions=(1,),
                 policy_ids=(uuid4(),),
                 policy_versions=(1,),
                 directions=("FORWARD",),
@@ -450,6 +460,7 @@ class TestPathDeduplicationAndCap:
                 entity_id=target,
                 depth=3,
                 relationship_ids=(uuid4(), uuid4(), uuid4()),
+                relationship_versions=(1, 1, 1),
                 policy_ids=(uuid4(), uuid4(), uuid4()),
                 policy_versions=(1, 1, 1),
                 directions=("FORWARD", "FORWARD", "FORWARD"),
@@ -458,6 +469,7 @@ class TestPathDeduplicationAndCap:
                 entity_id=target,
                 depth=1,
                 relationship_ids=(uuid4(),),
+                relationship_versions=(1,),
                 policy_ids=(uuid4(),),
                 policy_versions=(1,),
                 directions=("FORWARD",),
@@ -504,3 +516,71 @@ class TestNoTruthSelectionFirewall:
             "confidence_score",
         ):
             assert forbidden not in source, f"service module references {forbidden!r}"
+
+
+class TestCdd092DigestAndDeterminism:
+    """CDD-092 §12/§21: the traversed-state digest binds the REAL
+    relationship version (CDD-042 §11.4); unchanged inputs replay to the same
+    identity; evaluation results never depend on candidate row order."""
+
+    @staticmethod
+    def _evaluate(
+        candidates: tuple[PropagatedPathCandidate, ...], anchor: UUID, finding: UUID
+    ) -> OntologyImpactEvaluation | None:
+        repo = _FakeRepository(
+            subject=_subject(),
+            direct=DirectImpactResult(ImpactOutcome.IMPACTED, UUID(int=7), anchor),
+            propagation=candidates,
+        )
+        return OqiOntologyImpactEvaluationService(repo, clock=_clock).evaluate_current_state(
+            tenant_id=TENANT, finding_family=FindingFamily.OQI1, finding_id=finding
+        )
+
+    def test_relationship_version_change_changes_evaluation_identity(self) -> None:
+        anchor, target, finding, rel, policy = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+
+        def candidate(version: int) -> PropagatedPathCandidate:
+            return PropagatedPathCandidate(
+                entity_id=target,
+                depth=1,
+                relationship_ids=(rel,),
+                relationship_versions=(version,),
+                policy_ids=(policy,),
+                policy_versions=(1,),
+                directions=("FORWARD",),
+            )
+
+        first = self._evaluate((candidate(1),), anchor, finding)
+        replay = self._evaluate((candidate(1),), anchor, finding)
+        second = self._evaluate((candidate(2),), anchor, finding)
+        assert first is not None and replay is not None and second is not None
+        assert replay.evaluation_id == first.evaluation_id
+        assert replay.traversed_state_digest == first.traversed_state_digest
+        assert first.traversed_state_digest != second.traversed_state_digest
+        assert first.evaluation_id != second.evaluation_id
+
+    def test_shuffled_candidate_order_yields_identical_evaluation(self) -> None:
+        anchor, finding, policy = uuid4(), uuid4(), uuid4()
+        targets = [uuid4() for _ in range(4)]
+        candidates = [
+            PropagatedPathCandidate(
+                entity_id=targets[i % 4],
+                depth=1 + i % 2,
+                relationship_ids=tuple(uuid4() for _ in range(1 + i % 2)),
+                relationship_versions=tuple(1 + i % 3 for _ in range(1 + i % 2)),
+                policy_ids=tuple(policy for _ in range(1 + i % 2)),
+                policy_versions=tuple(1 for _ in range(1 + i % 2)),
+                directions=tuple("FORWARD" for _ in range(1 + i % 2)),
+            )
+            for i in range(12)
+        ]
+        baseline = self._evaluate(tuple(candidates), anchor, finding)
+        assert baseline is not None
+        for seed in range(5):
+            shuffled = list(candidates)
+            random.Random(seed).shuffle(shuffled)
+            result = self._evaluate(tuple(shuffled), anchor, finding)
+            assert result is not None
+            assert result.evaluation_id == baseline.evaluation_id
+            assert result.observations == baseline.observations
+            assert result.paths == baseline.paths

@@ -28,6 +28,8 @@ from app.domain.shared.exceptions import ValidationException
 
 _MAX_TENANT_ID_LENGTH = 200
 _MAX_REJECTION_REASON_LENGTH = 1000
+# CDD-091 §22.7/§22.9: mirrors the VARCHAR(256) snapshot columns.
+_MAX_DISPLAY_NAME_LENGTH = 256
 
 
 class RemediationActionType(StrEnum):
@@ -169,6 +171,14 @@ class RemediationAuthorization:
     rejection_reason: str | None = None
     consumed_on: datetime | None = None
     consumed_execution_id: UUID | None = None
+    # CDD-091 §7/§21.1 (G-R1): event/audit presentation metadata only --
+    # a trusted display-name snapshot observed at the moment of this
+    # specific event, never participating in `requested_by == decided_by`
+    # self-approval comparison or any other authorization logic. Optional:
+    # a historical row predating this correction, or a token that never
+    # carried the claim, is represented by None, never a fabricated name.
+    requested_by_display_name: str | None = None
+    decided_by_display_name: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.authorization_id, UUID):
@@ -184,11 +194,28 @@ class RemediationAuthorization:
         for field_name, actor_value in (
             ("requested_by", self.requested_by),
             ("decided_by", self.decided_by),
+            # CDD-091 §21.1 (G-R1): the same optional-string convention
+            # already used for decided_by -- present means non-blank text,
+            # absent (None) is always valid and never defaulted/invented.
+            ("requested_by_display_name", self.requested_by_display_name),
+            ("decided_by_display_name", self.decided_by_display_name),
         ):
             if actor_value is not None and not isinstance(actor_value, str):
                 raise ValidationException(f"{field_name} must be a plain string")
             if isinstance(actor_value, str) and not actor_value.strip():
                 raise ValidationException(f"{field_name} must not be blank")
+        # CDD-091 §22.9: defensive invariant only -- the trust boundary
+        # (normalize_display_name) already maps an overlong claim to None,
+        # so production input never reaches this; never part of any
+        # separation-of-duty comparison.
+        for field_name, display_value in (
+            ("requested_by_display_name", self.requested_by_display_name),
+            ("decided_by_display_name", self.decided_by_display_name),
+        ):
+            if display_value is not None and len(display_value) > _MAX_DISPLAY_NAME_LENGTH:
+                raise ValidationException(
+                    f"{field_name} must not exceed {_MAX_DISPLAY_NAME_LENGTH} characters"
+                )
         if not self.requested_by:
             raise ValidationException("requested_by is required")
         if self.rejection_reason is not None:

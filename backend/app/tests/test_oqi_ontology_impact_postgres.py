@@ -22,14 +22,16 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from uuid import UUID, uuid4
 
 import alembic.command
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine, event, inspect, text
+from sqlalchemy import Engine, event, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -67,6 +69,7 @@ from app.infrastructure.persistence.models.institutional_relationship import (
 )
 from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
     CurrentOntologyImpactORM,
+    OntologyImpactEvaluationORM,
 )
 from app.infrastructure.persistence.models.relationship_type import RelationshipType
 from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository import (
@@ -1080,7 +1083,9 @@ def test_deny_by_default_no_policy_no_propagation(migrated_engine: Engine) -> No
         _relate(session, tenant_id=tenant_id, relationship_type_id=rel_type, from_id=a, to_id=b)
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         assert candidates == ()
 
 
@@ -1095,7 +1100,9 @@ def test_active_policy_enables_forward_propagation(migrated_engine: Engine) -> N
         _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type)
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         assert {c.entity_id for c in candidates} == {b}
         assert candidates[0].depth == 1
 
@@ -1118,7 +1125,9 @@ def test_reverse_direction_does_not_propagate_forward_policy(migrated_engine: En
 
         # Starting from B (the "to" side): a FORWARD-only policy must not
         # let traversal walk backward across the same edge.
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=b)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=b, as_of=NOW
+        )
         assert candidates == ()
 
 
@@ -1138,7 +1147,9 @@ def test_retired_policy_does_not_propagate(migrated_engine: Engine) -> None:
         )
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         assert candidates == ()
 
 
@@ -1155,7 +1166,9 @@ def test_multi_hop_bom_chain(migrated_engine: Engine) -> None:
         _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=5)
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=c1)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=c1, as_of=NOW
+        )
         by_entity = {c.entity_id: c.depth for c in candidates}
         assert by_entity == {a1: 1, p1: 2}
 
@@ -1174,7 +1187,9 @@ def test_denied_edge_type_does_not_propagate_alongside_allowed_one(migrated_engi
         _policy(session, tenant_id=tenant_id, relationship_type_id=allowed)
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         assert {c.entity_id for c in candidates} == {b}
 
 
@@ -1193,7 +1208,9 @@ def test_self_loop_terminates_and_does_not_propagate(migrated_engine: Engine) ->
         )
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         assert candidates == ()
 
 
@@ -1211,7 +1228,9 @@ def test_three_node_cycle_terminates_deterministically(migrated_engine: Engine) 
         _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=10)
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         entities_reached = {c.entity_id for c in candidates}
         assert entities_reached == {b, c}
         assert all(c.depth <= 2 for c in candidates)
@@ -1233,7 +1252,9 @@ def test_diamond_produces_two_distinct_real_paths(migrated_engine: Engine) -> No
         _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=5)
         session.commit()
 
-        candidates = _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=a, as_of=NOW
+        )
         d_paths = [cand for cand in candidates if cand.entity_id == d]
         node_sets = {frozenset(p.relationship_ids) for p in d_paths}
         assert len(node_sets) == 2
@@ -1257,7 +1278,7 @@ def test_depth_boundary_exact_and_one_beyond(migrated_engine: Engine) -> None:
         session.commit()
 
         candidates = _repo(session).traverse_propagation(
-            tenant_id=tenant_id, direct_entity_id=chain[0]
+            tenant_id=tenant_id, direct_entity_id=chain[0], as_of=NOW
         )
         reached = {c.entity_id for c in candidates}
         assert chain[1] in reached
@@ -1286,7 +1307,7 @@ def test_graph_writer_during_statement_is_not_visible(migrated_engine: Engine) -
         with factory() as reader_session:
             reader_results.append(
                 _repo(reader_session).traverse_propagation(
-                    tenant_id=tenant_id, direct_entity_id=a, _test_only_delay_seconds=0.6
+                    tenant_id=tenant_id, direct_entity_id=a, as_of=NOW, _test_only_delay_seconds=0.6
                 )
             )
 
@@ -1322,7 +1343,7 @@ def test_policy_writer_during_statement_is_not_visible(migrated_engine: Engine) 
         with factory() as reader_session:
             reader_results.append(
                 _repo(reader_session).traverse_propagation(
-                    tenant_id=tenant_id, direct_entity_id=a, _test_only_delay_seconds=0.6
+                    tenant_id=tenant_id, direct_entity_id=a, as_of=NOW, _test_only_delay_seconds=0.6
                 )
             )
 
@@ -1363,7 +1384,7 @@ def test_traversal_is_exactly_one_mutable_statement(migrated_engine: Engine) -> 
     with factory() as session:
         event.listen(session.get_bind(), "before_cursor_execute", _record)
         try:
-            _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a)
+            _repo(session).traverse_propagation(tenant_id=tenant_id, direct_entity_id=a, as_of=NOW)
         finally:
             event.remove(session.get_bind(), "before_cursor_execute", _record)
 
@@ -1457,10 +1478,14 @@ def test_propagation_does_not_cross_tenant_boundary(migrated_engine: Engine) -> 
         _relate(session, tenant_id=tenant_b, relationship_type_id=rel_type_a, from_id=a2, to_id=b2)
         session.commit()
 
-        candidates_b = _repo(session).traverse_propagation(tenant_id=tenant_b, direct_entity_id=a2)
+        candidates_b = _repo(session).traverse_propagation(
+            tenant_id=tenant_b, direct_entity_id=a2, as_of=NOW
+        )
         assert candidates_b == (), "tenant B propagated using tenant A's policy enrollment"
 
-        candidates_a = _repo(session).traverse_propagation(tenant_id=tenant_a, direct_entity_id=a1)
+        candidates_a = _repo(session).traverse_propagation(
+            tenant_id=tenant_a, direct_entity_id=a1, as_of=NOW
+        )
         assert {c.entity_id for c in candidates_a} == {b1}
 
 
@@ -1537,7 +1562,7 @@ def test_bounded_graph_performance_sanity(migrated_engine: Engine) -> None:
 
         started = time.monotonic()
         candidates = _repo(session).traverse_propagation(
-            tenant_id=tenant_id, direct_entity_id=nodes[0]
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
         )
         elapsed = time.monotonic() - started
         assert candidates  # traversal reaches something within the depth cap
@@ -2023,3 +2048,878 @@ def test_oqi4r1ti11_to_ti13_migration_fails_closed_on_invalid_legacy_cross_tenan
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     current_head = ScriptDirectory.from_config(config).get_current_head()
     assert version == current_head  # OQI4-R1-TI-14: current repository head, resolved dynamically
+
+
+# ---------------------------------------------------------------------------
+# CDD-092 -- governed edge/node eligibility (half-open effective interval),
+# real relationship versions in the traversed-state digest, the fail-closed
+# propagation row ceiling, determinism, and the multi-element read model.
+# ---------------------------------------------------------------------------
+
+_DAY = timedelta(days=1)
+
+
+def _chain(session: Session, tenant_id: str, length: int) -> tuple[UUID, list[UUID], list[UUID]]:
+    rel_type = _relationship_type(session, name=f"rt-{uuid4()}")
+    nodes = [_entity(session, tenant_id=tenant_id, name=f"N{i}") for i in range(length)]
+    rels = [
+        _relate(session, tenant_id=tenant_id, relationship_type_id=rel_type, from_id=a, to_id=b)
+        for a, b in pairwise(nodes)
+    ]
+    _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=5)
+    return rel_type, nodes, rels
+
+
+_INELIGIBLE_EDGE_STATES: list[tuple[str, dict[str, object]]] = [
+    ("lifecycle Draft", {"lifecycle_state": "Draft"}),
+    ("lifecycle Suspended", {"lifecycle_state": "Suspended"}),
+    ("lifecycle Archived", {"lifecycle_state": "Archived"}),
+    ("governance Proposed", {"governance_status": "Proposed"}),
+    ("governance Retired", {"governance_status": "Retired"}),
+    ("governance Archived", {"governance_status": "Archived"}),
+    ("future effective_from", {"effective_from": NOW + _DAY}),
+    ("expired effective_to", {"effective_to": NOW - _DAY}),
+    ("effective_to == as_of (half-open)", {"effective_to": NOW}),
+]
+
+
+@pytest.mark.parametrize(("label", "change"), _INELIGIBLE_EDGE_STATES)
+def test_cdd092_ineligible_edge_never_carries_impact(
+    migrated_engine: Engine, label: str, change: dict[str, object]
+) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        _, nodes, rels = _chain(session, tenant_id, 2)
+        session.execute(
+            update(InstitutionalRelationship)
+            .where(InstitutionalRelationship.institutional_relationship_id == rels[0])
+            .values(**change)
+        )
+        session.commit()
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+    assert candidates == (), label
+
+
+def test_cdd092_superseded_edge_never_carries_impact(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        rel_type, nodes, rels = _chain(session, tenant_id, 2)
+        successor = _relate(
+            session,
+            tenant_id=tenant_id,
+            relationship_type_id=rel_type,
+            from_id=nodes[0],
+            to_id=_entity(session, tenant_id=tenant_id, name="successor-target"),
+        )
+        session.execute(
+            update(InstitutionalRelationship)
+            .where(InstitutionalRelationship.institutional_relationship_id == rels[0])
+            .values(superseded_by_id=successor)
+        )
+        session.commit()
+        reached = {
+            c.entity_id
+            for c in _repo(session).traverse_propagation(
+                tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+            )
+        }
+    assert nodes[1] not in reached
+
+
+def test_cdd092_currently_effective_unsuperseded_edge_is_eligible(
+    migrated_engine: Engine,
+) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        _, nodes, rels = _chain(session, tenant_id, 2)
+        session.execute(
+            update(InstitutionalRelationship)
+            .where(InstitutionalRelationship.institutional_relationship_id == rels[0])
+            .values(effective_from=NOW, effective_to=NOW + _DAY)
+        )
+        session.commit()
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+    assert [c.entity_id for c in candidates] == [nodes[1]]
+
+
+_INELIGIBLE_NODE_STATES: list[tuple[str, dict[str, object]]] = [
+    ("lifecycle Draft", {"lifecycle_state": "Draft"}),
+    ("lifecycle Suspended", {"lifecycle_state": "Suspended"}),
+    ("lifecycle Archived", {"lifecycle_state": "Archived"}),
+    ("governance Proposed", {"governance_status": "Proposed"}),
+    ("governance Retired", {"governance_status": "Retired"}),
+    ("governance Archived", {"governance_status": "Archived"}),
+    ("future effective_from", {"effective_from": NOW + _DAY}),
+    ("expired effective_to", {"effective_to": NOW - _DAY}),
+    ("effective_to == as_of (half-open)", {"effective_to": NOW}),
+]
+
+
+@pytest.mark.parametrize(("label", "change"), _INELIGIBLE_NODE_STATES)
+def test_cdd092_valid_edges_never_tunnel_through_an_ineligible_node(
+    migrated_engine: Engine, label: str, change: dict[str, object]
+) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        _, nodes, _ = _chain(session, tenant_id, 3)
+        session.execute(
+            update(EnterpriseEntity)
+            .where(EnterpriseEntity.enterprise_entity_id == nodes[1])
+            .values(**change)
+        )
+        session.commit()
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+    assert candidates == (), label
+
+
+def test_cdd092_ineligible_anchor_propagates_nothing(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        _, nodes, _ = _chain(session, tenant_id, 3)
+        session.execute(
+            update(EnterpriseEntity)
+            .where(EnterpriseEntity.enterprise_entity_id == nodes[0])
+            .values(governance_status="Proposed")
+        )
+        session.commit()
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+    assert candidates == ()
+
+
+def test_cdd092_broken_hop_stops_only_its_own_branch(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        rel_type, nodes, rels = _chain(session, tenant_id, 4)  # A -> B -> C -> D
+        e = _entity(session, tenant_id=tenant_id, name="E")
+        _relate(
+            session, tenant_id=tenant_id, relationship_type_id=rel_type, from_id=nodes[0], to_id=e
+        )
+        session.execute(
+            update(InstitutionalRelationship)
+            .where(InstitutionalRelationship.institutional_relationship_id == rels[1])  # B -> C
+            .values(governance_status="Proposed")
+        )
+        session.commit()
+        reached = {
+            c.entity_id
+            for c in _repo(session).traverse_propagation(
+                tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+            )
+        }
+    assert reached == {nodes[1], e}
+
+
+def test_cdd092_foreign_tenant_policy_never_enables_edges(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_a, tenant_b = f"tenant-{uuid4()}", f"tenant-{uuid4()}"
+    with factory() as session:
+        rel_type = _relationship_type(session, name=f"rt-{uuid4()}")
+        a = _entity(session, tenant_id=tenant_a, name="A")
+        b = _entity(session, tenant_id=tenant_a, name="B")
+        _relate(session, tenant_id=tenant_a, relationship_type_id=rel_type, from_id=a, to_id=b)
+        _policy(session, tenant_id=tenant_b, relationship_type_id=rel_type)
+        session.commit()
+        candidates = _repo(session).traverse_propagation(
+            tenant_id=tenant_a, direct_entity_id=a, as_of=NOW
+        )
+    assert candidates == ()
+
+
+def test_cdd092_traversal_carries_the_real_relationship_version(migrated_engine: Engine) -> None:
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        _, nodes, rels = _chain(session, tenant_id, 2)
+        session.commit()
+        before = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+        session.execute(
+            update(InstitutionalRelationship)
+            .where(InstitutionalRelationship.institutional_relationship_id == rels[0])
+            .values(version_number=2)
+        )
+        session.commit()
+        after = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+    assert before[0].relationship_versions == (1,)
+    assert after[0].relationship_versions == (2,)
+
+
+def test_cdd092_row_ceiling_is_exact_and_fails_closed(
+    migrated_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository as repo_module
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        _, nodes, _ = _chain(session, tenant_id, 5)  # exactly 4 candidate rows
+        session.commit()
+        monkeypatch.setattr(repo_module, "MAX_PROPAGATION_PATH_ROWS", 4)
+        exact = _repo(session).traverse_propagation(
+            tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+        )
+        assert len(exact) == 4
+        monkeypatch.setattr(repo_module, "MAX_PROPAGATION_PATH_ROWS", 3)
+        with pytest.raises(repo_module.PropagationBoundExceededError):
+            _repo(session).traverse_propagation(
+                tenant_id=tenant_id, direct_entity_id=nodes[0], as_of=NOW
+            )
+
+
+def _resolved_oqi1_finding(
+    session: Session, *, tenant_id: str, anchor_name: str
+) -> tuple[UUID, UUID]:
+    """An OQI1 Finding whose direct impact resolves to a fresh anchor entity
+    (the same end-to-end setup as `test_direct_impact_resolved`)."""
+    from app.infrastructure.persistence.source_field_repository import SourceFieldRepositoryImpl
+    from app.tests.test_source_field_persistence_postgres import _source_field
+
+    source_object_id = _seed_source_object(session, tenant_id=tenant_id)
+    field = _source_field(source_object_id=source_object_id, field_label="mrp_controller")
+    SourceFieldRepositoryImpl(session).create(field)
+    session.flush()
+    anchor = _entity(session, tenant_id=tenant_id, name=anchor_name)
+    _resolve_entity(
+        session, tenant_id=tenant_id, source_object_id=source_object_id, entity_id=anchor
+    )
+    finding_id = _oqi1_finding(
+        session,
+        tenant_id=tenant_id,
+        source_object_id=source_object_id,
+        source_field_id=field.source_field_id.value,
+    )
+    return finding_id, anchor
+
+
+def test_cdd092_dense_graph_fails_closed_without_persisting_anything(
+    migrated_engine: Engine,
+) -> None:
+    """Adversarial dense graph (40 x 40 x 40 layered fan-out = 65,640 simple
+    paths, above the real 50,000 ceiling): the bounded statement stops early,
+    the evaluation raises, and no ledger row or current projection is
+    written -- never a truncated, apparently complete result."""
+    from app.infrastructure.persistence.oqi_ontology_impact_evaluation_repository import (
+        MAX_PROPAGATION_PATH_ROWS,
+        PropagationBoundExceededError,
+    )
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    width = 40
+    with factory() as session:
+        finding_id, anchor = _resolved_oqi1_finding(
+            session, tenant_id=tenant_id, anchor_name="Dense"
+        )
+        rel_type = _relationship_type(session, name=f"rt-{uuid4()}")
+        layers = [
+            [_entity(session, tenant_id=tenant_id, name=f"L{level}-{i}") for i in range(width)]
+            for level in range(3)
+        ]
+        edges = [(anchor, b) for b in layers[0]]
+        edges += [(a, b) for a in layers[0] for b in layers[1]]
+        edges += [(a, b) for a in layers[1] for b in layers[2]]
+        session.add_all(
+            InstitutionalRelationship(
+                institutional_relationship_id=uuid4(),
+                tenant_id=tenant_id,
+                institutional_relationship_name=f"dense-{uuid4()}",
+                lifecycle_state="Active",
+                effective_from=NOW,
+                governance_status="Approved",
+                created_by=BOOTSTRAP_SYSTEM_ENTITY_ID,
+                created_on=NOW,
+                relationship_type_id=rel_type,
+                from_entity_id=a,
+                to_entity_id=b,
+            )
+            for a, b in edges
+        )
+        _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=5)
+        session.commit()
+    assert width + width**2 + width**3 > MAX_PROPAGATION_PATH_ROWS
+    with factory() as session:
+        started = time.monotonic()
+        with pytest.raises(PropagationBoundExceededError):
+            _service(session).evaluate_current_state(
+                tenant_id=tenant_id, finding_family=FindingFamily.OQI1, finding_id=finding_id
+            )
+        elapsed = time.monotonic() - started
+        session.rollback()
+    assert elapsed < 30.0
+    with factory() as session:
+        persisted = session.scalar(
+            select(OntologyImpactEvaluationORM).where(
+                OntologyImpactEvaluationORM.tenant_id == tenant_id
+            )
+        )
+        assert persisted is None
+        current = _repo(session).get_current_impacts_for_finding(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI1, finding_id=finding_id
+        )
+        assert current == ()
+
+
+def test_cdd092_shuffled_insertion_order_yields_identical_traversal(
+    migrated_engine: Engine,
+) -> None:
+    """The same labelled topology inserted in different physical orders (two
+    tenants) yields identical elements, depths, and retained label paths."""
+    from app.application.oqi_ontology_impact_evaluation_service import (
+        _deduplicate_and_cap_paths,
+    )
+
+    topology = [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D"), ("D", "E"), ("A", "F")]
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    results = []
+    for order in (topology, list(reversed(topology))):
+        tenant_id = f"tenant-{uuid4()}"
+        with factory() as session:
+            rel_type = _relationship_type(session, name=f"rt-{uuid4()}")
+            labels = sorted({label for edge in topology for label in edge})
+            if order is not topology:
+                labels.reverse()
+            ids = {label: _entity(session, tenant_id=tenant_id, name=label) for label in labels}
+            label_of_rel = {}
+            for a, b in order:
+                rel = _relate(
+                    session,
+                    tenant_id=tenant_id,
+                    relationship_type_id=rel_type,
+                    from_id=ids[a],
+                    to_id=ids[b],
+                )
+                label_of_rel[rel] = f"{a}{b}"
+            _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=5)
+            session.commit()
+            candidates = _repo(session).traverse_propagation(
+                tenant_id=tenant_id, direct_entity_id=ids["A"], as_of=NOW
+            )
+        label_of_id = {v: k for k, v in ids.items()}
+        results.append(
+            {
+                label_of_id[element.element_id]: (
+                    element.depth,
+                    frozenset(
+                        tuple(label_of_rel[r] for r in path.relationship_ids)
+                        for path in element.retained_paths
+                    ),
+                )
+                for element in _deduplicate_and_cap_paths(candidates)
+            }
+        )
+    assert results[0] == results[1]
+    assert results[0]["D"] == (2, frozenset({("AB", "BD"), ("AC", "CD")}))
+    assert results[0]["E"][0] == 3
+
+
+def test_cdd092_read_model_exposes_every_element_with_enriched_ordered_paths(
+    migrated_engine: Engine,
+) -> None:
+    """CDD-092 §15 read model: every propagated element (never only the
+    first), ordered by (depth, name, id); diamond targets carry multiple
+    retained paths; hops carry type and names; the legacy field is retained;
+    a foreign tenant reads nothing."""
+    from app.application.oqi_product_experience_service import OqiProductExperienceService
+
+    factory = sessionmaker(migrated_engine, expire_on_commit=False)
+    tenant_id = f"tenant-{uuid4()}"
+    with factory() as session:
+        finding_id, anchor = _resolved_oqi1_finding(
+            session, tenant_id=tenant_id, anchor_name="Anchor"
+        )
+        rel_type = _relationship_type(session, name=f"rt-{uuid4()}")
+        left = _entity(session, tenant_id=tenant_id, name="Bravo")
+        right = _entity(session, tenant_id=tenant_id, name="Alpha")
+        sink = _entity(session, tenant_id=tenant_id, name="Sink")
+        for a, b in ((anchor, left), (anchor, right), (left, sink), (right, sink)):
+            _relate(session, tenant_id=tenant_id, relationship_type_id=rel_type, from_id=a, to_id=b)
+        _policy(session, tenant_id=tenant_id, relationship_type_id=rel_type, max_depth=5)
+        session.commit()
+    with factory() as session:
+        _service(session).evaluate_current_state(
+            tenant_id=tenant_id, finding_family=FindingFamily.OQI1, finding_id=finding_id
+        )
+        session.commit()
+    with factory() as session:
+        service = OqiProductExperienceService(session)
+        impact = service.get_ontology_impact(tenant_id=tenant_id, finding_id=finding_id)
+        assert impact is not None
+        assert [(i.entity_id, i.depth) for i in impact.propagated_impacts] == [
+            (right, 1),  # "Alpha-..." sorts before "Bravo-..." at equal depth
+            (left, 1),
+            (sink, 2),
+        ]
+        sink_item = impact.propagated_impacts[2]
+        assert len(sink_item.paths) == 2
+        assert all(len(path) == 2 for path in sink_item.paths)
+        assert all(path[0].from_entity_id == anchor for path in sink_item.paths)
+        assert all(path[-1].to_entity_id == sink for path in sink_item.paths)
+        assert sink_item.entity_name.startswith("Sink-")
+        assert impact.propagated_path is not None  # legacy compatibility projection retained
+        foreign = service.get_ontology_impact(tenant_id=f"tenant-{uuid4()}", finding_id=finding_id)
+        assert foreign is None
+
+
+# ---------------------------------------------------------------------------
+# CDD-092 R1 -- Golden propagation-policy enrollment is upgrade-safe: every
+# DemoOqiSeeder.seed() ensures (and semantically validates) the frozen policy
+# set after context ensure and before evaluation, whether the Golden tenant is
+# fresh or was seeded by an earlier application version. Each test runs the
+# real production seeder inside one outer transaction that is rolled back.
+# ---------------------------------------------------------------------------
+
+_GOLDEN_POLICY_IDS = (
+    UUID("680b9f10-82c4-57e6-8655-16bc54bb2d78"),  # supplies FORWARD
+    UUID("42554a60-e7c6-5d03-be94-5258bca06641"),  # usedIn FORWARD
+    UUID("5c9ca4d7-b3a7-5276-941f-573b22b03712"),  # defines FORWARD
+)
+
+
+@pytest.fixture()
+def golden_factory(migrated_engine: Engine) -> Iterator[sessionmaker[Session]]:
+    from app.infrastructure.persistence.blueprint_seed import BlueprintSeeder
+    from app.infrastructure.persistence.ontology_seed import OntologySeeder
+
+    connection = migrated_engine.connect()
+    outer = connection.begin()
+    factory = sessionmaker(bind=connection, join_transaction_mode="create_savepoint")
+    with factory() as session:
+        OntologySeeder(session).load()
+        session.commit()
+        BlueprintSeeder(session).load()
+        session.commit()
+    try:
+        yield factory
+    finally:
+        outer.rollback()
+        connection.close()
+
+
+def _seed_without_policies(factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pre-CDD-092 Golden tenant: base context, ontology chain, findings and
+    evaluations exist, but no propagation policy was ever enrolled (the image
+    that created it predates enrollment)."""
+    import app.infrastructure.persistence.demo_oqi_seeder as seeder_module
+
+    with monkeypatch.context() as patch:
+        patch.setattr(seeder_module, "_GOLDEN_PROPAGATION_POLICIES", ())
+        with factory() as session:
+            seeder_module.DemoOqiSeeder(session).seed()
+            session.commit()
+    with factory() as session:
+        assert _golden_policy_rows(session) == []
+
+
+def _golden_policy_rows(session: Session) -> list[tuple[object, ...]]:
+    """Every policy that is either a frozen Golden ID or belongs to the
+    Golden tenant (other modules commit policies under their own tenants)."""
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID as tenant
+
+    from app.infrastructure.persistence.models.oqi_ontology_impact_policy import (
+        ImpactPropagationPolicyORM as Policy,
+    )
+
+    return [
+        tuple(row)
+        for row in session.execute(
+            select(
+                Policy.policy_id,
+                Policy.tenant_id,
+                Policy.relationship_type_id,
+                Policy.direction,
+                Policy.max_depth,
+                Policy.governance_status,
+                Policy.version_number,
+                Policy.previous_version_id,
+            )
+            .where(Policy.policy_id.in_(_GOLDEN_POLICY_IDS) | (Policy.tenant_id == tenant))
+            .order_by(Policy.policy_id)
+        ).all()
+    ]
+
+
+def _golden_exposure(session: Session) -> list[tuple[str, int]]:
+    from app.application.oqi_product_experience_service import OqiProductExperienceService
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+    from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+    from app.infrastructure.persistence.demo_oqi_seeder import (
+        _COMPARISON_SUBJECT_ID,
+        _QUALITY_CONDITION_ID,
+    )
+
+    impact = OqiProductExperienceService(session).get_ontology_impact(
+        tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+        finding_id=derive_comparison_finding_id(
+            tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+            quality_condition_id=_QUALITY_CONDITION_ID,
+            comparison_subject_id=_COMPARISON_SUBJECT_ID,
+        ),
+    )
+    assert impact is not None
+    return [(item.entity_name, item.depth) for item in impact.propagated_impacts]
+
+
+_GOLDEN_CHAIN = [
+    ("Aurora X1 Battery Cell", 1),
+    ("Aurora X1 Bill of Materials", 2),
+    ("Aurora X1", 3),
+]
+
+
+def _assert_frozen_policy_set(session: Session) -> None:
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+
+    rows = _golden_policy_rows(session)
+    names: dict[object, str] = dict(
+        session.execute(
+            select(RelationshipType.relationship_type_id, RelationshipType.relationship_type_name)
+        ).all()
+    )
+    assert sorted((r[0], names[r[2]], *r[3:]) for r in rows) == sorted(
+        [
+            (_GOLDEN_POLICY_IDS[0], "supplies", "FORWARD", 5, "Active", 1, None),
+            (_GOLDEN_POLICY_IDS[1], "usedIn", "FORWARD", 5, "Active", 1, None),
+            (_GOLDEN_POLICY_IDS[2], "defines", "FORWARD", 5, "Active", 1, None),
+        ]
+    )
+    assert {r[1] for r in rows} == {BOOTSTRAP_DEMO_TENANT_ID}
+
+
+def test_cdd092r1_fresh_golden_seed_enrolls_frozen_policies_then_propagates(
+    golden_factory: sessionmaker[Session],
+) -> None:
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    with golden_factory() as session:
+        DemoOqiSeeder(session).seed()
+        session.commit()
+    with golden_factory() as session:
+        _assert_frozen_policy_set(session)
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+def test_cdd092r1_preseeded_zero_policy_tenant_is_upgraded_before_evaluation(
+    golden_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reproduces the Azure incident: a Golden tenant seeded before policy
+    enrollment existed. `_seed_context` takes its existing-tenant early return
+    (the ontology-chain helper is never reached), yet the frozen policies are
+    ensured before the OQI4 evaluation runs."""
+    import app.infrastructure.persistence.demo_oqi_seeder as seeder_module
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        assert _golden_exposure(session) == []  # the pre-upgrade (Azure) state
+
+    calls: list[str] = []
+    seeder = seeder_module.DemoOqiSeeder
+    for name in ("_seed_aurora_ontology_chain", "_evaluate"):
+        original = getattr(seeder, name)
+
+        def _spy(self: object, *args: object, _name: str = name, _original=original) -> object:  # type: ignore[no-untyped-def]
+            calls.append(f"{_name}:policies={len(_golden_policy_rows(self.session))}")  # type: ignore[attr-defined]
+            return _original(self, *args)
+
+        monkeypatch.setattr(seeder, name, _spy)
+    with golden_factory() as session:
+        seeder(session).seed()
+        session.commit()
+    assert calls == ["_evaluate:policies=3"]  # early return taken; enrolled before evaluation
+    with golden_factory() as session:
+        _assert_frozen_policy_set(session)
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+def test_cdd092r1_repeated_seed_is_row_identical(
+    golden_factory: sessionmaker[Session],
+) -> None:
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    with golden_factory() as session:
+        DemoOqiSeeder(session).seed()
+        session.commit()
+    with golden_factory() as session:
+        before = _golden_policy_rows(session)
+    for _ in range(2):
+        with golden_factory() as session:
+            DemoOqiSeeder(session).seed()
+            session.commit()
+    with golden_factory() as session:
+        assert _golden_policy_rows(session) == before
+        assert len(before) == 3
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+def _insert_policy_row(session: Session, **values: object) -> None:
+    """Adversarial pre-state, written through the governed repository (the
+    single authorized ORM construction site), never a raw ORM row."""
+    OqiOntologyImpactPolicyRepositoryImpl(session).create(
+        ImpactPropagationPolicy(
+            policy_id=values["policy_id"],  # type: ignore[arg-type]
+            tenant_id=values["tenant_id"],  # type: ignore[arg-type]
+            relationship_type_id=values["relationship_type_id"],  # type: ignore[arg-type]
+            direction=PropagationDirection(str(values["direction"])),
+            max_depth=values["max_depth"],  # type: ignore[arg-type]
+            governance_status=PolicyGovernanceStatus(str(values["governance_status"])),
+            version_number=values["version_number"],  # type: ignore[arg-type]
+            previous_version_id=values["previous_version_id"],  # type: ignore[arg-type]
+        )
+    )
+    session.flush()
+
+
+def _type_id(session: Session, name: str) -> UUID:
+    type_id = session.scalar(
+        select(RelationshipType.relationship_type_id).where(
+            RelationshipType.relationship_type_name == name
+        )
+    )
+    assert type_id is not None
+    return type_id
+
+
+def _frozen_supplies_row(session: Session) -> dict[str, object]:
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+
+    return {
+        "policy_id": _GOLDEN_POLICY_IDS[0],
+        "tenant_id": BOOTSTRAP_DEMO_TENANT_ID,
+        "relationship_type_id": _type_id(session, "supplies"),
+        "direction": "FORWARD",
+        "max_depth": 5,
+        "governance_status": "Active",
+        "version_number": 1,
+        "previous_version_id": None,
+    }
+
+
+def test_cdd092r1_partial_policy_set_is_completed_without_touching_the_existing_one(
+    golden_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adversarial recovery state (the governed seeder cannot produce it: all
+    three are written in one transaction): only `supplies` exists."""
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        _insert_policy_row(session, **_frozen_supplies_row(session))
+        session.commit()
+        existing = _golden_policy_rows(session)
+    with golden_factory() as session:
+        DemoOqiSeeder(session).seed()
+        session.commit()
+    with golden_factory() as session:
+        _assert_frozen_policy_set(session)
+        assert existing[0] in _golden_policy_rows(session)
+        assert _golden_exposure(session) == _GOLDEN_CHAIN
+
+
+_SEMANTIC_MISMATCHES: list[tuple[str, dict[str, object]]] = [
+    ("direction", {"direction": "REVERSE"}),
+    ("max_depth", {"max_depth": 4}),
+    ("governance_status", {"governance_status": "Retired"}),
+    ("version_number", {"version_number": 2}),
+    ("relationship_type", {"relationship_type_name": "usedIn"}),
+    ("tenant", {"tenant_id": "foreign-tenant"}),
+]
+
+
+@pytest.mark.parametrize(("label", "mutation"), _SEMANTIC_MISMATCHES)
+def test_cdd092r1_deterministic_id_with_wrong_semantics_fails_closed(
+    golden_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    label: str,
+    mutation: dict[str, object],
+) -> None:
+    """DETERMINISTIC IDENTITY != SEMANTIC EQUIVALENCE: the frozen `supplies`
+    ID exists with one governed field changed. Seeding must refuse -- never
+    accept, overwrite, retire, or re-version it -- and nothing is evaluated."""
+    from app.infrastructure.persistence.demo_oqi_seeder import (
+        DemoOqiSeeder,
+        GoldenPropagationPolicyConflictError,
+    )
+    from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
+        OntologyImpactEvaluationORM,
+    )
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        row = _frozen_supplies_row(session)
+        mutation = dict(mutation)
+        if mutation.get("version_number") == 2:
+            # A governed v2 must name its predecessor: plant a Retired v1.
+            predecessor = {**row, "policy_id": uuid4(), "governance_status": "Retired"}
+            _insert_policy_row(session, **predecessor)
+            mutation["previous_version_id"] = predecessor["policy_id"]
+        if "relationship_type_name" in mutation:
+            row["relationship_type_id"] = _type_id(
+                session, str(mutation.pop("relationship_type_name"))
+            )
+        row.update(mutation)
+        _insert_policy_row(session, **row)
+        session.commit()
+        planted = _golden_policy_rows(session)
+        evaluations = session.scalar(select(func.count()).select_from(OntologyImpactEvaluationORM))
+    with golden_factory() as session:
+        with pytest.raises(GoldenPropagationPolicyConflictError) as raised:
+            DemoOqiSeeder(session).seed()
+        session.rollback()
+    assert str(_GOLDEN_POLICY_IDS[0]) in str(raised.value), label
+    with golden_factory() as session:
+        assert _golden_policy_rows(session) == planted  # untouched, nothing added
+        assert (
+            session.scalar(select(func.count()).select_from(OntologyImpactEvaluationORM))
+            == evaluations
+        )
+
+
+def test_cdd092r1_different_id_active_conflict_is_rejected_by_the_database(
+    golden_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different-ID Active policy already occupies the (tenant, supplies,
+    FORWARD) slot: `uq_impact_propagation_policies_one_active` rejects the
+    frozen insert and the seed transaction fails closed."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.infrastructure.persistence.demo_oqi_seeder import DemoOqiSeeder
+
+    _seed_without_policies(golden_factory, monkeypatch)
+    with golden_factory() as session:
+        row = _frozen_supplies_row(session)
+        row["policy_id"] = uuid4()
+        _insert_policy_row(session, **row)
+        session.commit()
+        planted = _golden_policy_rows(session)
+    with golden_factory() as session:
+        with pytest.raises(IntegrityError, match="uq_impact_propagation_policies_one_active"):
+            DemoOqiSeeder(session).seed()
+        session.rollback()
+    with golden_factory() as session:
+        assert _golden_policy_rows(session) == planted
+
+
+def test_cdd092r1_golden_restore_conflict_commits_nothing_including_scoped_deletes(
+    test_database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real `golden_demo_restore()` entry point (its own session, real
+    commits) on a dedicated throwaway database: a frozen policy ID planted with
+    non-frozen semantics makes enrollment fail closed AFTER the restore's
+    scoped remediation DELETEs ran in the same session -- and nothing is
+    committed: the remediation case survives, the bad row is untouched, and
+    no new ontology-impact evaluation is persisted."""
+    import alembic.command
+    from alembic.config import Config
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import make_url
+
+    import app.infrastructure.persistence.demo_oqi_seeder as seeder_module
+    from app.application.oqi_remediation_service import OqiRemediationService
+    from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
+    import app.core.config as config_module
+    import app.infrastructure.persistence.database_cli as database_cli_module
+    from app.domain.oqi_cross_source.evaluation import derive_comparison_finding_id
+    from app.domain.oqi_remediation.case import FindingFamily as RemediationFindingFamily
+    from app.infrastructure.persistence.blueprint_seed import BlueprintSeeder
+    from app.infrastructure.persistence.models.oqi_ontology_impact_evaluation import (
+        OntologyImpactEvaluationORM,
+    )
+    from app.infrastructure.persistence.models.oqi_remediation import OqiRemediationCaseORM
+    from app.infrastructure.persistence.ontology_seed import OntologySeeder
+    from app.infrastructure.persistence.oqi_remediation_repository import (
+        OqiRemediationParticipantReader,
+        OqiRemediationRepositoryImpl,
+    )
+    from app.infrastructure.persistence.session import create_session_factory
+
+    base_url = make_url(test_database_url)
+    db_name = f"ctec_cdd092r1_{uuid4().hex[:12]}"
+    admin = create_engine(base_url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    with admin.connect() as connection:
+        connection.execute(text(f'CREATE DATABASE "{db_name}"'))
+    url = base_url.set(database=db_name).render_as_string(hide_password=False)
+    monkeypatch.setenv("CTEC_DATABASE_URL", url)
+    monkeypatch.setenv("CTEC_ENVIRONMENT", "demo")
+    monkeypatch.setenv("CTEC_GOLDEN_DEMO_RESTORE_ALLOWED", "true")
+    monkeypatch.setenv("CTEC_GOLDEN_RESTORE_EXPECTED_HOST", base_url.host or "")
+    # Never touch the process-wide lru_cache of get_settings(): other modules'
+    # migration fixtures rely on its existing state. Point both readers (the
+    # alembic env.py import and database_cli) at dedicated settings instead;
+    # monkeypatch restores them.
+    dedicated_settings = config_module.Settings()
+    monkeypatch.setattr(config_module, "get_settings", lambda: dedicated_settings)
+    monkeypatch.setattr(database_cli_module, "get_settings", lambda: dedicated_settings)
+    golden_demo_restore = database_cli_module.golden_demo_restore
+    engine = create_engine(url)
+    try:
+        config = Config("alembic.ini")
+        config.set_main_option("sqlalchemy.url", url)
+        alembic.command.upgrade(config, "head")
+        factory = create_session_factory(engine)
+        with factory() as session:
+            OntologySeeder(session).load()
+            session.commit()
+            BlueprintSeeder(session).load()
+            session.commit()
+        with monkeypatch.context() as patch:  # the pre-enrollment Golden database
+            patch.setattr(seeder_module, "_GOLDEN_PROPAGATION_POLICIES", ())
+            golden_demo_restore()
+        with factory() as session:
+            row = _frozen_supplies_row(session)
+            row["max_depth"] = 4
+            _insert_policy_row(session, **row)
+            OqiRemediationService(
+                repository=OqiRemediationRepositoryImpl(session),
+                participant_reader=OqiRemediationParticipantReader(session),
+            ).extract_candidates(
+                tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+                finding_family=RemediationFindingFamily.OQI2,
+                finding_id=derive_comparison_finding_id(
+                    tenant_id=BOOTSTRAP_DEMO_TENANT_ID,
+                    quality_condition_id=seeder_module._QUALITY_CONDITION_ID,
+                    comparison_subject_id=seeder_module._COMPARISON_SUBJECT_ID,
+                ),
+            )
+            session.commit()
+
+        def _state() -> tuple[object, ...]:
+            with factory() as session:
+                return (
+                    session.scalar(select(func.count()).select_from(OqiRemediationCaseORM)),
+                    _golden_policy_rows(session),
+                    session.scalar(select(func.count()).select_from(OntologyImpactEvaluationORM)),
+                )
+
+        before = _state()
+        assert before[0] == 1 and len(before[1]) == 1  # type: ignore[arg-type]
+        with pytest.raises(seeder_module.GoldenPropagationPolicyConflictError):
+            golden_demo_restore()
+        assert _state() == before
+    finally:
+        engine.dispose()
+        with admin.connect() as connection:
+            connection.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :db AND pid <> pg_backend_pid()"
+                ),
+                {"db": db_name},
+            )
+            connection.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+        admin.dispose()

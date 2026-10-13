@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.supplier_risk.authentication import TrustedPrincipal
 from app.application.ontology_copilot_api import AskStatus, OntologyCopilotApiService
 from app.application.oqi_cross_source_evaluation_service import OqiCrossSourceEvaluationService
+from app.application.oqi_product_experience_service import OqiProductExperienceService
 from app.application.oqi_remediation_service import OqiRemediationError, OqiRemediationService
 from app.core.bootstrap import BOOTSTRAP_DEMO_TENANT_ID
 from app.domain.oqi_business_impact.reliance import RelianceState
@@ -612,3 +613,57 @@ def test_gr1_append_decision_unchanged(session: Session) -> None:
     assert history is not None
     assert history.current_record_identifier == successor.record_id
     assert str(based_on_record_id) in history.historical_record_references
+
+
+# ----------------------------------------------------------------------
+# D16 -- CDD-092 governed propagated exposure (supplier -> product).
+# ----------------------------------------------------------------------
+
+
+def test_d16_governed_propagated_exposure_chain(session: Session) -> None:
+    finding = session.scalar(
+        select(QualityComparisonFindingORM).where(
+            QualityComparisonFindingORM.tenant_id == BOOTSTRAP_DEMO_TENANT_ID,
+            QualityComparisonFindingORM.quality_condition_id == _QUALITY_CONDITION_ID,
+        )
+    )
+    assert finding is not None
+    impact = OqiProductExperienceService(session).get_ontology_impact(
+        tenant_id=BOOTSTRAP_DEMO_TENANT_ID, finding_id=finding.finding_id
+    )
+    assert impact is not None
+    assert impact.outcome.value == "IMPACTED"
+    assert impact.direct_entity_id == _SUPPLIER_ENTITY_ID
+    assert [(item.entity_id, item.depth) for item in impact.propagated_impacts] == [
+        (_AURORA_MATERIAL_ID, 1),
+        (_AURORA_BOM_ID, 2),
+        (_H6_PRODUCT_A_ID, 3),
+    ]
+    assert [item.entity_name for item in impact.propagated_impacts] == [
+        "Aurora X1 Battery Cell",
+        "Aurora X1 Bill of Materials",
+        "Aurora X1",
+    ]
+    aurora = impact.propagated_impacts[2]
+    assert len(aurora.paths) == 1
+    (path,) = aurora.paths
+    assert [hop.relationship_instance_id for hop in path] == [
+        _AURORA_SUPPLIES_EDGE_ID,
+        _AURORA_USED_IN_EDGE_ID,
+        _AURORA_DEFINES_EDGE_ID,
+    ]
+    assert [hop.relationship_type_name for hop in path] == ["supplies", "usedIn", "defines"]
+    assert {hop.direction for hop in path} == {"FORWARD"}
+    assert [hop.from_entity_name for hop in path] == [
+        "Meridian Cell Components",
+        "Aurora X1 Battery Cell",
+        "Aurora X1 Bill of Materials",
+    ]
+    assert path[-1].to_entity_id == _H6_PRODUCT_A_ID
+    every_hop_type = {
+        hop.relationship_type_name
+        for item in impact.propagated_impacts
+        for item_path in item.paths
+        for hop in item_path
+    }
+    assert every_hop_type == {"supplies", "usedIn", "defines"}  # no candidateFor, nothing else

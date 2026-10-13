@@ -215,7 +215,11 @@ function RemediationCandidateCard({
             {authorization.status === "SUPERSEDED"
               ? "Superseded — an alternative candidate was approved"
               : authorization.decided_on
-                ? `${authorization.status === "APPROVED" ? "Authorized" : "Rejected"} by ${authorization.decided_by} at ${new Date(authorization.decided_on).toLocaleString()}`
+                ? // CDD-091 §9/§22.12: the persisted trusted display snapshot,
+                  // never the opaque machine principal, as the primary label;
+                  // a null snapshot gets the neutral governed fallback,
+                  // never an invented or locally-derived name.
+                  `${authorization.status === "APPROVED" ? "Authorized" : "Rejected"} by ${authorization.decided_by_display_name ?? "signed-in principal"} at ${new Date(authorization.decided_on).toLocaleString()}`
                 : "Authorization pending decision"}
           </h5>
         </div>

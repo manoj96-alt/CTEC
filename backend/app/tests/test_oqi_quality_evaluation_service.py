@@ -205,7 +205,7 @@ def test_historical_unknown_lineage_produces_no_evaluation() -> None:
 def test_historical_rejects_naive_horizon() -> None:
     from app.domain.shared.exceptions import ValidationException
 
-    naive_horizon = datetime(2026, 1, 1, tzinfo=None)  # noqa: DTZ001 -- deliberately naive
+    naive_horizon = datetime(2026, 1, 1, tzinfo=None)  # deliberately naive
     repo = _FakeEvaluationRepository()
     service = OqiQualityEvaluationService(evaluation_repository=repo, clock=lambda: NOW)
     with pytest.raises(ValidationException):
