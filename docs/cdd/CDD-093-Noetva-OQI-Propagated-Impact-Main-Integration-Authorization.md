@@ -375,3 +375,54 @@ Make CI tooling deterministic (lockfile, constraints file, or exact/compatible v
 ---
 
 *CDD-093 R1 authorizes integration-governance correction only. It implements, pushes, merges, and deploys nothing itself.*
+
+---
+
+# CDD-093 R2 — Integration of the CDD-094 Frontend Reliability Fix into PR #255 (append-only amendment)
+
+**Status:** FROZEN (R2)
+**Version:** 1.2 (v1.0 and R1 text above are unchanged and remain frozen)
+**Date:** 2026-10-13
+**Originating phases:** NOETVA-OQI-PROPAGATED-IMPACT-INTEGRATION-I-R1 (CI green except `frontend`; controlled re-run failed again) → NOETVA-ONTOLOGY-STUDIO-CI-RELIABILITY-DRG (this freeze)
+**R1 SHA-256 (exact byte prefix of this document):** `c89893da19283d040489dba6ba910594219233e0027bfa140f55cb475658da12`
+**Scope:** integration authorization only. The defect, root cause, fix, and proof requirements are governed by **CDD-094** (`docs/cdd/CDD-094-Noetva-Ontology-Studio-Graph-Test-Determinism.md`, commit `7063cd189811df19119c232978bd10135d0d6606`, SHA-256 `91e31f9224b9a8a2bf482c32375984d093a531ba5606ee7bd543ee21533df894`). R2 does not restate or alter them, and does not reopen CDD-087/090/091/092 or R1.
+
+## R2.1 Incident
+
+PR #255 at `a686b1b42b7e9bbb2d877f18997812fa24c53ea5` (tree `6b4ec5b495ce08d90fe0ff445f362e7ea10b2632`, exactly the R1-frozen tree) has required `backend` and `containers` SUCCESS but `frontend` FAILURE in three executions, all in `frontend/tests/ontology-studio.test.tsx`, a file outside the integration diff. CDD-094 proves a pre-existing test defect present on `main` (TEST DEFECT; not caused by the integration, not a product defect). Because `frontend` is a required check, the certified integration tree cannot merge without the fix; repairing `main` first would move the CDD-093 base (rejected, as in R1).
+
+## R2.2 Integration content (supersedes R1.7 counts)
+
+Relative to `a686b1b`, R2 authorizes exactly:
+- `A docs/cdd/CDD-094-Noetva-Ontology-Studio-Graph-Test-Determinism.md` (byte-identical to commit `7063cd1`, SHA-256 `91e31f92…f894`);
+- `M docs/cdd/CDD-093-Noetva-OQI-Propagated-Impact-Main-Integration-Authorization.md` (to this R2 document's committed bytes; hash recorded in the DRG report);
+- `M frontend/tests/ontology-studio.test.tsx` — exactly the CDD-094 §8 result: blob `4c6e10fe7029589fb1c387f1d752d5ab92d86649`, diff fingerprint `0627e47b792a200a22868b63d25baeb6a7be70a93d7afd2c35e03ade9fd0d266` against blob `d7689631c712a1489f5ceb2636a468320f116247`.
+
+No other path. Every other byte of the R1 tree is unchanged. Expected inventory vs `origin/main` 171a398: **58 paths = 46 MODIFY + 12 CREATE, 0 DELETE** (56 + the CDD-094 document + the ontology-studio test); implementation/test paths (excluding `docs/cdd`) 52. The exact expected implementation fingerprint and final tree are derived by simulation and recorded in the DRG report (a document cannot contain the hash of a tree that includes itself); NOETVA-ONTOLOGY-STUDIO-CI-RELIABILITY-I must re-derive them from the real commits and they must match.
+
+## R2.3 Construction (after NOETVA-ONTOLOGY-STUDIO-CI-RELIABILITY-I has produced and certified the CDD-094 implementation commit)
+
+On the existing branch `governance/oqi-propagated-impact-main-integration`, starting at exactly `a686b1b42b7e9bbb2d877f18997812fa24c53ea5`, in a new worktree:
+
+```
+A. git merge --no-ff 7063cd189811df19119c232978bd10135d0d6606
+     -m "Merge CDD-094 (Ontology Studio graph test determinism) governance into OQI propagated-impact main integration"
+B. git merge --no-ff <this CDD-093 R2 governance commit, full SHA from the DRG report>
+     -m "Merge CDD-093 R2 (CDD-094 integration) governance into OQI propagated-impact main integration"
+C. git merge --no-ff <CDD-094 implementation commit on product/ontology-studio-ci-reliability-i, full SHA from the I report>
+     -m "Merge CDD-094 Ontology Studio test determinism fix into OQI propagated-impact main integration"
+```
+
+Each step must be conflict-free (the three sources touch only the three R2.2 paths; the test file is byte-identical on `main` and the integration); any conflict = STOP. Governance precedes code. No other commit, no amend, no merge of `main` or anything else, no force-push. Resulting tree MUST equal the tree derived and recorded under R2.2 (re-derived from the real commits immediately before step A); any difference = STOP. Push normally (non-force) to the existing branch so PR #255 updates in place; no new PR.
+
+## R2.4 Gates (in addition to R1.9–R1.12, all still binding)
+
+Before push: the complete backend, frontend, and containers CI contracts (R1.2) with the CI-resolved toolchain and parity manifest; CDD-094 §10 stress and CI-equivalent proof on the exact integration commit; CDD-091 identity 36/36 and authorization UI 48/48; CDD-092 40/40 (incl. 50k fail-closed and R1 upgrade-safe); Golden story; `make verify-architecture`; governance hashes (CDD-087/090/091/092 unchanged, CDD-093 = R2 hash, CDD-094 = `91e31f92…`); clean tree. After push: required `backend`, `frontend`, `containers` SUCCESS on the exact new head SHA from its own executions — **a re-run is not certification**; any required-check failure = STOP. The integration phase does not merge; INTEGRATION-VM (R1.12) then certifies the new exact tree and owns the merge.
+
+## R2.5 Boundaries and STOP
+
+No Azure, CIAM, database, dev, or production action. STOP on: drift of `main`, PR #253/#254/#255 heads, or any governance source; any diff beyond R2.2; tree or fingerprint mismatch; any CI-contract, stress, or required-check failure; any new flaky test; any need for timeouts, retries, serialization, or application change.
+
+---
+
+*CDD-093 R2 authorizes integration governance only. It implements, pushes, merges, and deploys nothing itself.*
