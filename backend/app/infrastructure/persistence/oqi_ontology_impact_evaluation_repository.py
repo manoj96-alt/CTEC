@@ -14,6 +14,7 @@ lock seed is introduced, CDD-042 §14)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -76,6 +77,18 @@ GLOBAL_MAX_DEPTH_CEILING = 10
 #: path", not "first found".
 MAX_RETAINED_PATHS_PER_ELEMENT = 3
 
+#: CDD-092 §13: governed upper bound on candidate path rows one propagation
+#: statement may enumerate. The recursive CTE is fetched with LIMIT ceiling+1,
+#: which stops PostgreSQL's recursion early; exceeding it fails closed.
+#: Revisable only by governance amendment.
+MAX_PROPAGATION_PATH_ROWS = 50_000
+
+
+class PropagationBoundExceededError(Exception):
+    """CDD-092 §13: traversal would enumerate more than
+    MAX_PROPAGATION_PATH_ROWS candidate paths. The evaluation fails closed --
+    nothing is persisted; never truncated, never IMPACT_UNKNOWN."""
+
 
 class FindingNotFoundError(Exception):
     """No Finding exists for the given (tenant, finding_family, finding_id),
@@ -107,6 +120,7 @@ class PropagatedPathCandidate:
     entity_id: UUID
     depth: int
     relationship_ids: tuple[UUID, ...]
+    relationship_versions: tuple[int, ...]
     policy_ids: tuple[UUID, ...]
     policy_versions: tuple[int, ...]
     directions: tuple[str, ...]
@@ -126,6 +140,7 @@ class OqiOntologyImpactEvaluationRepository(Protocol):
         *,
         tenant_id: str,
         direct_entity_id: UUID,
+        as_of: datetime,
         _test_only_delay_seconds: float | None = None,
     ) -> tuple[PropagatedPathCandidate, ...]: ...
 
@@ -481,9 +496,15 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
         *,
         tenant_id: str,
         direct_entity_id: UUID,
+        as_of: datetime,
         _test_only_delay_seconds: float | None = None,
     ) -> tuple[PropagatedPathCandidate, ...]:
-        """CDD-042 §9: institutional relationships AND the ACTIVE
+        """CDD-092 §5-§6/§13: only eligible relationships (Active, Approved,
+        effective over the half-open interval at `as_of`, unsuperseded)
+        between eligible entities (Active, Approved, effective at `as_of`)
+        carry impact; the anchor must itself be eligible; the statement is
+        fetched with LIMIT ceiling+1 and fails closed beyond the ceiling.
+        CDD-042 §9: institutional relationships AND the ACTIVE
         propagation-policy set are read inside this one statement's one
         READ COMMITTED snapshot -- never a separate policy pre-query. Tenant
         is re-applied at the anchor and at every recursive step (never only
@@ -500,6 +521,8 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
             "tenant_id": tenant_id,
             "direct_entity_id": direct_entity_id,
             "global_ceiling": GLOBAL_MAX_DEPTH_CEILING,
+            "as_of": as_of,
+            "row_limit": MAX_PROPAGATION_PATH_ROWS + 1,
         }
         if _test_only_delay_seconds is not None:
             delay_join = "CROSS JOIN (SELECT pg_sleep(:test_delay)) AS delay_gate"
@@ -512,46 +535,74 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
                 FROM impact_propagation_policies
                 WHERE tenant_id = :tenant_id AND governance_status = 'Active'
             ),
+            eligible_entities AS (
+                SELECT enterprise_entity_id AS entity_id
+                FROM enterprise_entities
+                WHERE tenant_id = :tenant_id
+                  AND lifecycle_state = 'Active'
+                  AND governance_status = 'Approved'
+                  AND effective_from <= :as_of
+                  AND (effective_to IS NULL OR effective_to > :as_of)
+            ),
+            eligible_relationships AS (
+                SELECT institutional_relationship_id, relationship_type_id,
+                       from_entity_id, to_entity_id, version_number
+                FROM institutional_relationships
+                WHERE tenant_id = :tenant_id
+                  AND lifecycle_state = 'Active'
+                  AND governance_status = 'Approved'
+                  AND effective_from <= :as_of
+                  AND (effective_to IS NULL OR effective_to > :as_of)
+                  AND superseded_by_id IS NULL
+            ),
             traversable_edges AS (
                 SELECT
                     ir.institutional_relationship_id AS rel_id,
+                    ir.version_number AS rel_version,
                     ir.from_entity_id AS src,
                     ir.to_entity_id AS dst,
                     ap.policy_id AS policy_id,
                     ap.version_number AS policy_version,
                     ap.max_depth AS max_depth,
                     'FORWARD' AS traversal_direction
-                FROM institutional_relationships ir
+                FROM eligible_relationships ir
                 JOIN active_policies ap ON ap.relationship_type_id = ir.relationship_type_id
-                WHERE ir.tenant_id = :tenant_id AND ap.direction IN ('FORWARD', 'BOTH')
+                JOIN eligible_entities target ON target.entity_id = ir.to_entity_id
+                WHERE ap.direction IN ('FORWARD', 'BOTH')
                 UNION ALL
                 SELECT
                     ir.institutional_relationship_id AS rel_id,
+                    ir.version_number AS rel_version,
                     ir.to_entity_id AS src,
                     ir.from_entity_id AS dst,
                     ap.policy_id AS policy_id,
                     ap.version_number AS policy_version,
                     ap.max_depth AS max_depth,
                     'REVERSE' AS traversal_direction
-                FROM institutional_relationships ir
+                FROM eligible_relationships ir
                 JOIN active_policies ap ON ap.relationship_type_id = ir.relationship_type_id
-                WHERE ir.tenant_id = :tenant_id AND ap.direction IN ('REVERSE', 'BOTH')
+                JOIN eligible_entities target ON target.entity_id = ir.from_entity_id
+                WHERE ap.direction IN ('REVERSE', 'BOTH')
             ),
             traversal AS (
                 SELECT
-                    CAST(:direct_entity_id AS uuid) AS entity_id,
+                    anchor.entity_id AS entity_id,
                     0 AS depth,
-                    ARRAY[CAST(:direct_entity_id AS uuid)]::uuid[] AS visited,
+                    ARRAY[anchor.entity_id]::uuid[] AS visited,
                     ARRAY[]::uuid[] AS rel_path,
+                    ARRAY[]::integer[] AS rel_version_path,
                     ARRAY[]::uuid[] AS policy_path,
                     ARRAY[]::integer[] AS policy_version_path,
                     ARRAY[]::text[] AS dir_path
+                FROM eligible_entities anchor
+                WHERE anchor.entity_id = CAST(:direct_entity_id AS uuid)
                 UNION ALL
                 SELECT
                     te.dst,
                     t.depth + 1,
                     t.visited || te.dst,
                     t.rel_path || te.rel_id,
+                    t.rel_version_path || te.rel_version,
                     t.policy_path || te.policy_id,
                     t.policy_version_path || te.policy_version,
                     t.dir_path || te.traversal_direction
@@ -561,18 +612,25 @@ class OqiOntologyImpactEvaluationRepositoryImpl:
                   AND t.depth < :global_ceiling
                   AND NOT (te.dst = ANY(t.visited))
             )
-            SELECT entity_id, depth, rel_path, policy_path, policy_version_path, dir_path
+            SELECT entity_id, depth, rel_path, rel_version_path, policy_path,
+                   policy_version_path, dir_path
             FROM traversal
             {delay_join}
             WHERE depth > 0
+            LIMIT :row_limit
             """
         )
         rows = self.session.execute(stmt, params).all()
+        if len(rows) > MAX_PROPAGATION_PATH_ROWS:
+            raise PropagationBoundExceededError(
+                f"propagation would enumerate more than {MAX_PROPAGATION_PATH_ROWS} paths"
+            )
         return tuple(
             PropagatedPathCandidate(
                 entity_id=row.entity_id,
                 depth=row.depth,
                 relationship_ids=tuple(row.rel_path),
+                relationship_versions=tuple(row.rel_version_path),
                 policy_ids=tuple(row.policy_path),
                 policy_versions=tuple(row.policy_version_path),
                 directions=tuple(row.dir_path),

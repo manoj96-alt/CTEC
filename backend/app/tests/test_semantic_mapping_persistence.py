@@ -38,7 +38,7 @@ def _semantic_mapping(**overrides: object) -> SemanticMapping:
 
 def test_semantic_mapping_requires_timezone_aware_created_on() -> None:
     with pytest.raises(ValidationException):
-        _semantic_mapping(created_on=datetime(2026, 1, 1))  # noqa: DTZ001
+        _semantic_mapping(created_on=datetime(2026, 1, 1))
 
 
 def test_semantic_mapping_requires_identifiers() -> None:

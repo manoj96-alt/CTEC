@@ -281,7 +281,7 @@ def test_store_returns_ordered_history_and_current_projection() -> None:
     ]
     assert store.current(assertion_id, as_of=NOW + timedelta(days=2)) == second
     with pytest.raises(ValueError, match="timezone-aware"):
-        store.current(assertion_id, as_of=datetime(2026, 1, 1))  # noqa: DTZ001
+        store.current(assertion_id, as_of=datetime(2026, 1, 1))
 
 
 def test_rfc_011_query_orders_by_effective_produced_and_identifier() -> None:

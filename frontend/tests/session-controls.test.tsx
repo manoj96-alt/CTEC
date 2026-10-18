@@ -5,6 +5,7 @@ import { SessionControls } from "@/components/session-controls";
 
 const {
   accessTokenMock,
+  getUserMock,
   observeSessionLossMock,
   sessionManagerMock,
   signInMock,
@@ -13,6 +14,7 @@ const {
   usePathnameMock,
 } = vi.hoisted(() => ({
   accessTokenMock: vi.fn(),
+  getUserMock: vi.fn(),
   observeSessionLossMock: vi.fn(),
   sessionManagerMock: vi.fn(),
   signInMock: vi.fn(),
@@ -36,8 +38,11 @@ vi.mock("next/navigation", () => ({
 type UserLoadedCallback = (user: User) => void;
 type UserUnloadedCallback = () => void;
 
-function fakeUser(expired: boolean): User {
-  return { expired } as User;
+function fakeUser(
+  expired: boolean,
+  profile: Record<string, unknown> = {},
+): User {
+  return { expired, profile } as User;
 }
 
 let userLoadedCallback: UserLoadedCallback | null;
@@ -47,6 +52,7 @@ let unsubscribeUnloadedMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   accessTokenMock.mockReset();
+  getUserMock.mockReset();
   observeSessionLossMock.mockReset();
   signInMock.mockReset();
   signOutMock.mockReset();
@@ -58,6 +64,10 @@ beforeEach(() => {
   signInMock.mockResolvedValue(undefined);
   signOutMock.mockResolvedValue(undefined);
   usePathnameMock.mockReturnValue("/quality");
+  // CDD-091 §6: the cosmetic display-name read -- defaults to "no user",
+  // matching accessToken()'s own default-null posture in every existing
+  // test below unless a test explicitly overrides it.
+  getUserMock.mockResolvedValue(null);
 
   userLoadedCallback = null;
   userUnloadedCallback = null;
@@ -65,6 +75,7 @@ beforeEach(() => {
   unsubscribeUnloadedMock = vi.fn();
 
   sessionManagerMock.mockReturnValue({
+    getUser: getUserMock,
     events: {
       addUserLoaded: vi.fn((cb: UserLoadedCallback) => {
         userLoadedCallback = cb;
@@ -333,4 +344,100 @@ test("a userLoaded event on /auth/callback still shows Sign out, despite accessT
       screen.getByRole("button", { name: "Sign out" }),
     ).toBeInTheDocument(),
   );
+});
+
+// CDD-091 §6/§16-§19: active-principal display -- cosmetic only, derived
+// from the same already-held ID token, never influencing signedIn/signIn/
+// signOut behavior (all proven unchanged above).
+
+test("displays the trusted name claim once an existing session is confirmed on mount", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  getUserMock.mockResolvedValue(fakeUser(false, { name: "Demo Steward" }));
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByText("Demo Steward")).toBeInTheDocument(),
+  );
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+});
+
+test("falls back to preferred_username when name is absent", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  getUserMock.mockResolvedValue(
+    fakeUser(false, { preferred_username: "demo-approver" }),
+  );
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByText("demo-approver")).toBeInTheDocument(),
+  );
+});
+
+test("omits the identity label entirely when neither trusted claim is present -- Sign out still renders", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  getUserMock.mockResolvedValue(fakeUser(false, {}));
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Sign out" }),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/./, { selector: "span" })).not.toBeInTheDocument();
+});
+
+test("never renders the opaque sub claim as the identity label", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  getUserMock.mockResolvedValue(
+    fakeUser(false, { sub: "TKdj6d4rM5NYg_JW9-kMDCd-2JzutQ2Q-AeRHHalCLo" }),
+  );
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Sign out" }),
+    ).toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByText("TKdj6d4rM5NYg_JW9-kMDCd-2JzutQ2Q-AeRHHalCLo"),
+  ).not.toBeInTheDocument();
+});
+
+test("a userLoaded event updates the displayed name without remounting", async () => {
+  accessTokenMock.mockResolvedValue(null);
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument(),
+  );
+
+  userLoadedCallback?.(fakeUser(false, { name: "Demo Approver" }));
+
+  await waitFor(() =>
+    expect(screen.getByText("Demo Approver")).toBeInTheDocument(),
+  );
+});
+
+test("a userUnloaded event clears the displayed name along with Sign out", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  getUserMock.mockResolvedValue(fakeUser(false, { name: "Demo Steward" }));
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByText("Demo Steward")).toBeInTheDocument(),
+  );
+
+  userUnloadedCallback?.();
+
+  await waitFor(() =>
+    expect(screen.queryByText("Demo Steward")).not.toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Sign out" }),
+  ).not.toBeInTheDocument();
+});
+
+test("sign-out still works regardless of display-name presence", async () => {
+  accessTokenMock.mockResolvedValue("a-real-access-token");
+  getUserMock.mockResolvedValue(fakeUser(false, { name: "Demo Steward" }));
+  render(<SessionControls />);
+  await waitFor(() =>
+    expect(screen.getByText("Demo Steward")).toBeInTheDocument(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  expect(signOutMock).toHaveBeenCalledTimes(1);
 });

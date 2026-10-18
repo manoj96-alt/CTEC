@@ -127,6 +127,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// ReactFlow v11 copies its `nodes` prop into an internal store inside a
+// passive effect (`useStoreUpdater`), so the graph container is committed
+// one render before any concept node exists. Querying a concept label right
+// after merely finding the container therefore races React's passive-effect
+// flush. Wait for the rendered concept itself -- the semantic condition the
+// following query depends on -- never for the container alone.
+async function waitForRenderedConcept(name: string): Promise<HTMLElement> {
+  const graph = await screen.findByLabelText(
+    /Ontology concept and relationship graph/,
+  );
+  await within(graph).findAllByText(name);
+  return graph;
+}
+
 test("shows a loading state before data arrives", () => {
   vi.stubGlobal(
     "fetch",
@@ -197,11 +211,7 @@ test("selecting a concept node shows its detail", async () => {
   ]);
   render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   const supplierNodes = screen.getAllByText("Supplier");
   fireEvent.click(supplierNodes[0]);
 
@@ -305,11 +315,7 @@ test("CDD-062: concept lifecycle_state and governance_status render as a visual 
   ]);
   render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   const supplierNodes = screen.getAllByText("Supplier");
   fireEvent.click(supplierNodes[0]);
 
@@ -337,11 +343,7 @@ test("WOW-I3-B: a curated concept's real discovery_label renders as a truthful p
   ]);
   render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   const supplierNodes = screen.getAllByText("Supplier");
   fireEvent.click(supplierNodes[0]);
 
@@ -369,11 +371,7 @@ test("WOW-I3-B: an auto-discovered concept's real discovery_label renders truthf
   ]);
   render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   const supplierNodes = screen.getAllByText("Supplier");
   fireEvent.click(supplierNodes[0]);
 
@@ -391,11 +389,7 @@ test("WOW-I3-B: node selection uses the real --obs-intelligence token, and the l
   ]);
   render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   const supplierNodes = screen.getAllByText("Supplier");
   fireEvent.click(supplierNodes[0]);
 
@@ -483,11 +477,7 @@ test("WOW-I3-B-R3: selecting a concept renders only it and its directly connecte
   const { container } = render(<StudioClient />);
 
   // Overview mode: Region is real and present in the canvas.
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Region");
   const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
   expect(within(canvas).getAllByText("Region").length).toBeGreaterThan(0);
 
@@ -748,11 +738,7 @@ test("WOW-I3-B-R3: Supplier focus mode renders exactly Supplier/Material/Region/
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("BOM");
   const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
   // Before selecting, Overview mode renders BOM too (it is real and
   // unrelated to nothing at this stage) -- its disappearance from the
@@ -786,11 +772,7 @@ test("WOW-I3-B-R2: selecting Supplier makes 'Supplier — boundBy → Contract' 
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   fireEvent.click(screen.getAllByText("Supplier")[0]);
 
   await waitFor(() =>
@@ -833,11 +815,7 @@ test("WOW-I3-B-R2: selecting Contract directly, unambiguously exposes both of it
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Contract");
   fireEvent.click(screen.getAllByText("Contract")[0]);
 
   await waitFor(() =>
@@ -866,11 +844,7 @@ test("WOW-I3-B-R2: selecting Material distinguishes its real incoming relationsh
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Material");
   fireEvent.click(screen.getAllByText("Material")[0]);
 
   await waitFor(() =>
@@ -907,11 +881,7 @@ test("WOW-I3-B-R3: Contract focus mode renders only its two real incoming neighb
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Contract");
   const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
   fireEvent.click(within(canvas).getAllByText("Contract")[0]);
 
@@ -936,11 +906,7 @@ test("WOW-I3-B-R3: Material focus mode renders exactly its 4 real direct neighbo
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Material");
   const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
   fireEvent.click(within(canvas).getAllByText("Material")[0]);
 
@@ -965,11 +931,7 @@ test("WOW-I3-B-R3: an obvious 'View full ontology' control returns from Concept 
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   expect(
     screen.queryByRole("button", { name: "View full ontology" }),
   ).not.toBeInTheDocument();
@@ -1007,11 +969,7 @@ test("WOW-I3-B-R3: selected/connected concept tiers are distinguished by border 
   ]);
   const { container } = render(<StudioClient />);
 
-  await waitFor(() =>
-    expect(
-      screen.getByLabelText(/Ontology concept and relationship graph/),
-    ).toBeInTheDocument(),
-  );
+  await waitForRenderedConcept("Supplier");
   const canvas = container.querySelector(".obs-ontology-canvas") as HTMLElement;
   fireEvent.click(screen.getAllByText("Supplier")[0]);
 

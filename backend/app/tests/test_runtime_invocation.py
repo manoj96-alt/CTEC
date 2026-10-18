@@ -166,7 +166,7 @@ def test_trusted_admission_builder_runs_once_and_reuses_committed_payload() -> N
 
 
 def test_invalid_trusted_clock_prevents_partial_admission() -> None:
-    store = InMemoryExecutionStore(clock=lambda: datetime(2026, 1, 1))  # noqa: DTZ001
+    store = InMemoryExecutionStore(clock=lambda: datetime(2026, 1, 1))
     value = request()
     with pytest.raises(ValueError, match="timezone-aware"):
         store.admit(value, b"fingerprint")

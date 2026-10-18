@@ -68,11 +68,35 @@ export interface OntologyImpactPathSegment {
   direction: string;
 }
 
+// CDD-092 §15: one hop of a retained governed path proof, in traversal
+// order. IDs are authoritative; names are server-side read-time presentation.
+export interface PropagatedImpactHop {
+  relationship_instance_id: string;
+  relationship_type_name: string;
+  direction: string;
+  from_entity_id: string;
+  from_entity_name: string;
+  to_entity_id: string;
+  to_entity_name: string;
+}
+
+// CDD-092 §15: one propagated-exposure element with its retained (at most 3,
+// shortest-first) governed path proofs.
+export interface PropagatedImpact {
+  entity_id: string;
+  entity_type_name: string;
+  entity_name: string;
+  depth: number;
+  paths: PropagatedImpactHop[][];
+}
+
 export interface OntologyImpactResponse {
   outcome: string;
   direct_entity_id: string | null;
   direct_entity_type: string | null;
+  // Legacy, non-authoritative (CDD-092 §15): use propagated_impacts instead.
   propagated_path: OntologyImpactPathSegment[] | null;
+  propagated_impacts: PropagatedImpact[];
 }
 
 export interface BusinessImpactDependency {
@@ -128,6 +152,11 @@ export interface RemediationCandidateAuthorizationView {
   decided_on: string | null;
   rejection_reason: string | null;
   is_stale: boolean;
+  // CDD-091 §12/§22.12: server-owned trusted display-name snapshots,
+  // captured once per event from the validated access token. Presentation
+  // only -- never derived client-side, never an authorization input.
+  requested_by_display_name: string | null;
+  decided_by_display_name: string | null;
 }
 
 export interface RemediationCandidateItemView {
@@ -154,9 +183,11 @@ export interface RemediationResponse {
   external_execution: RemediationExternalExecutionView | null;
 }
 
+// decided_by is deliberately not a field here: the decision actor identity
+// is authoritative only from the server-validated authenticated principal,
+// never client input (NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1).
 export interface DecideAuthorizationRequest {
   approve: boolean;
-  decided_by: string;
   rejection_reason?: string | null;
 }
 

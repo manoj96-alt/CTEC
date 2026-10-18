@@ -338,6 +338,7 @@ class OqiRemediationService:
         tenant_id: str,
         instruction_id: UUID,
         requested_by: str,
+        requested_by_display_name: str | None = None,
         now: datetime | None = None,
     ) -> RemediationAuthorization:
         moment = now if now is not None else datetime.now(UTC)
@@ -354,6 +355,7 @@ class OqiRemediationService:
             requested_by=requested_by,
             requested_on=moment,
             status=RemediationAuthorizationStatus.PENDING,
+            requested_by_display_name=requested_by_display_name,
         )
         self._repository.create_authorization(authorization)
         return authorization
@@ -364,6 +366,7 @@ class OqiRemediationService:
         tenant_id: str,
         authorization_id: UUID,
         decided_by: str,
+        decided_by_display_name: str | None = None,
         now: datetime | None = None,
     ) -> RemediationAuthorization:
         """CDD-085 G-R3 Sec10-Sec13: the single-effective-approval
@@ -393,6 +396,7 @@ class OqiRemediationService:
             tenant_id=tenant_id,
             authorization_id=authorization_id,
             decided_by=decided_by,
+            decided_by_display_name=decided_by_display_name,
             new_status=RemediationAuthorizationStatus.APPROVED,
             rejection_reason=None,
             now=moment,
@@ -424,12 +428,14 @@ class OqiRemediationService:
         authorization_id: UUID,
         decided_by: str,
         rejection_reason: str | None,
+        decided_by_display_name: str | None = None,
         now: datetime | None = None,
     ) -> RemediationAuthorization:
         return self._decide(
             tenant_id=tenant_id,
             authorization_id=authorization_id,
             decided_by=decided_by,
+            decided_by_display_name=decided_by_display_name,
             new_status=RemediationAuthorizationStatus.REJECTED,
             rejection_reason=rejection_reason,
             now=now,
@@ -444,6 +450,7 @@ class OqiRemediationService:
         new_status: RemediationAuthorizationStatus,
         rejection_reason: str | None,
         now: datetime | None,
+        decided_by_display_name: str | None = None,
     ) -> RemediationAuthorization:
         moment = now if now is not None else datetime.now(UTC)
         authorization = self._repository.get_authorization_for_update(authorization_id)
@@ -469,6 +476,11 @@ class OqiRemediationService:
             rejection_reason=rejection_reason,
             consumed_on=authorization.consumed_on,
             consumed_execution_id=authorization.consumed_execution_id,
+            # CDD-091 §21.1 (G-R1): the requester's own snapshot, taken at
+            # request time, is never touched by a decision -- carried
+            # through unchanged from the pre-decision row.
+            requested_by_display_name=authorization.requested_by_display_name,
+            decided_by_display_name=decided_by_display_name,
         )
         self._repository.update_authorization_decision(decided)
         return decided

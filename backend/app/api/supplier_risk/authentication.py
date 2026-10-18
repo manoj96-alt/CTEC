@@ -25,6 +25,36 @@ class TrustedPrincipal:
     issuer: str
     issued_at: datetime
     expires_at: datetime
+    # CDD-091 §7: presentation evidence only, never authorization/security
+    # authority. Sourced exclusively from the same validated access token
+    # as `principal_id` (never request input) -- but unlike `principal_id`,
+    # its absence is always safe: `None` degrades to a neutral UI fallback,
+    # never an authentication failure.
+    display_name: str | None = None
+
+
+# CDD-091 §22.7/§22.8: the directory's own documented displayName bound
+# (Microsoft Graph user.displayName, max 256 characters), matching the
+# VARCHAR(256) snapshot columns exactly.
+MAX_DISPLAY_NAME_LENGTH = 256
+
+
+def normalize_display_name(raw: object) -> str | None:
+    """CDD-091 §22.8: the single trust-boundary normalization of the
+    presentation-only display claim. Missing, non-string, empty, or
+    whitespace-only -> None; otherwise surrounding whitespace is trimmed and
+    every interior character preserved exactly (no Unicode normalization,
+    case folding, or identity canonicalization). A trimmed value longer than
+    MAX_DISPLAY_NAME_LENGTH -> None -- never truncated (that would falsify
+    the trusted snapshot) and never an error (presentation identity must
+    never become an authentication or authorization availability
+    dependency)."""
+    if not isinstance(raw, str):
+        return None
+    trimmed = raw.strip()
+    if not trimmed or len(trimmed) > MAX_DISPLAY_NAME_LENGTH:
+        return None
+    return trimmed
 
 
 class TokenVerifier(Protocol):
@@ -99,6 +129,12 @@ class OidcJwtVerifier:
             raise AuthenticationError("AUTH_TENANT_MISSING_OR_AMBIGUOUS")
         scopes = _claim_values(claims.get(self._settings.oidc_scope_claim))
         roles = _claim_values(claims.get(self._settings.oidc_roles_claim))
+        # CDD-091 §6/§7: never security-critical -- a missing, blank, or
+        # non-string claim simply degrades to None, exactly like any other
+        # optional presentation value. It never raises AuthenticationError
+        # and is never consulted by any authorization/separation-of-duty
+        # check.
+        display_name = normalize_display_name(claims.get(self._settings.oidc_display_name_claim))
         return TrustedPrincipal(
             principal_id=subject,
             tenant_id=tenant,
@@ -107,6 +143,7 @@ class OidcJwtVerifier:
             issuer=self._settings.oidc_issuer,
             issued_at=datetime.fromtimestamp(int(claims.get("iat", 0)), UTC),
             expires_at=datetime.fromtimestamp(int(claims["exp"]), UTC),
+            display_name=display_name,
         )
 
 

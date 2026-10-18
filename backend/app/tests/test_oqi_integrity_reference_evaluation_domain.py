@@ -135,7 +135,7 @@ def test_derive_reference_evaluation_id_rejects_naive_horizon() -> None:
             relationship_requirement_id=uuid4(),
             source_object_id=uuid4(),
             resolution_record_id=uuid4(),
-            evaluation_horizon=datetime(2026, 1, 1),  # noqa: DTZ001 -- deliberately naive
+            evaluation_horizon=datetime(2026, 1, 1),  # deliberately naive
         )
 
 

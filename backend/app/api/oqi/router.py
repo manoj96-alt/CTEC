@@ -39,6 +39,8 @@ from app.api.oqi.schemas import (
     OntologyImpactResultView,
     PrepareRemediationRequest,
     PrepareRemediationResponse,
+    PropagatedImpact,
+    PropagatedImpactHop,
     RecordHumanVerifiedEvidenceRequest,
     ReferenceEvidenceAssertionResponse,
     ReferenceEvidenceConflictListResponse,
@@ -389,6 +391,30 @@ def get_ontology_impact(
         direct_entity_id=row.direct_entity_id,
         direct_entity_type=row.direct_entity_type.value if row.direct_entity_type else None,
         propagated_path=propagated_path,
+        propagated_impacts=tuple(
+            PropagatedImpact(
+                entity_id=item.entity_id,
+                entity_type_name=item.entity_type_name,
+                entity_name=item.entity_name,
+                depth=item.depth,
+                paths=tuple(
+                    tuple(
+                        PropagatedImpactHop(
+                            relationship_instance_id=hop.relationship_instance_id,
+                            relationship_type_name=hop.relationship_type_name,
+                            direction=hop.direction,
+                            from_entity_id=hop.from_entity_id,
+                            from_entity_name=hop.from_entity_name,
+                            to_entity_id=hop.to_entity_id,
+                            to_entity_name=hop.to_entity_name,
+                        )
+                        for hop in path
+                    )
+                    for path in item.paths
+                ),
+            )
+            for item in row.propagated_impacts
+        ),
     )
 
 
@@ -491,6 +517,8 @@ def get_remediation(
                     decided_on=item.authorization.decided_on,
                     rejection_reason=item.authorization.rejection_reason,
                     is_stale=item.authorization.is_stale,
+                    requested_by_display_name=item.authorization.requested_by_display_name,
+                    decided_by_display_name=item.authorization.decided_by_display_name,
                 )
                 if item.authorization is not None
                 else None
@@ -537,6 +565,9 @@ def prepare_remediation(
             finding_id=finding_id,
             requested_by=authenticated.principal_id,
             correlation_id=body.correlation_id,
+            # CDD-091 §22.4: trusted presentation snapshot from the same
+            # validated access token as `principal_id` -- never request input.
+            requested_by_display_name=authenticated.display_name,
         )
     except ProductionRemediationOrchestrationError as exc:
         raise HTTPException(
@@ -593,12 +624,20 @@ def decide_authorization(
 ) -> RemediationCaseActionResponse:
     authorize(authenticated, "oqi-remediation:authorize", dependencies, correlation)
     try:
+        # NOETVA-GOVERNED-AUTHORITY-BINDING-I-R1: the decision actor identity
+        # is bound exclusively to the server-validated authenticated
+        # principal -- never to client-supplied input -- mirroring the
+        # existing, correct `requested_by=authenticated.principal_id` pattern
+        # above. A client-supplied actor field would let the caller control
+        # who the audit trail (and the requester != authorizer guard) says
+        # made the decision.
         status_value = service.decide_authorization(
             tenant_id=authenticated.tenant_id,
             authorization_id=authorization_id,
             approve=body.approve,
-            decided_by=body.decided_by,
+            decided_by=authenticated.principal_id,
             rejection_reason=body.rejection_reason,
+            decided_by_display_name=authenticated.display_name,
         )
     except OqiRemediationError as exc:
         raise HTTPException(

@@ -168,7 +168,7 @@ def test_structural_entity_validation_requires_timezone() -> None:
         RelationshipType(
             relationship_type_id=IDENTIFIER,
             relationship_type_name=CanonicalName("Supplied By"),
-            **_profile(effective_from=datetime(2026, 1, 1)),  # noqa: DTZ001
+            **_profile(effective_from=datetime(2026, 1, 1)),
         )
 
 

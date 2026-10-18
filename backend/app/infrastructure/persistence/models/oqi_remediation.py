@@ -174,3 +174,8 @@ class OqiRemediationAuthorizationORM(BaseEntity):
     rejection_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     consumed_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consumed_execution_id: Mapped[UUID | None] = mapped_column(Uuid(), nullable=True)
+    # CDD-091 §21.1 (G-R1): additive, nullable-only trusted display-name
+    # snapshots -- never backfilled, never required, never consulted by
+    # any authorization/security logic.
+    requested_by_display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    decided_by_display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)

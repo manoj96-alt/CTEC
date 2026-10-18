@@ -394,6 +394,10 @@ class OqiRemediationRepositoryImpl:
         model.decided_by = authorization.decided_by
         model.decided_on = authorization.decided_on
         model.rejection_reason = authorization.rejection_reason
+        # CDD-091 §21.1 (G-R1): the decider's trusted display-name snapshot,
+        # persisted alongside the immutable machine identity above -- never
+        # itself compared for self-approval or any other security decision.
+        model.decided_by_display_name = authorization.decided_by_display_name
 
     def supersede_pending_sibling_authorizations(
         self, *, case_id: UUID, excluding_authorization_id: UUID, now: datetime
@@ -782,6 +786,10 @@ def _authorization_to_orm(
         rejection_reason=authorization.rejection_reason,
         consumed_on=authorization.consumed_on,
         consumed_execution_id=authorization.consumed_execution_id,
+        # CDD-091 §21.1 (G-R1): trusted display-name snapshots -- carried
+        # verbatim, never resolved/looked-up here.
+        requested_by_display_name=authorization.requested_by_display_name,
+        decided_by_display_name=authorization.decided_by_display_name,
     )
 
 
@@ -801,4 +809,6 @@ def _authorization_to_domain(
         rejection_reason=model.rejection_reason,
         consumed_on=model.consumed_on,
         consumed_execution_id=model.consumed_execution_id,
+        requested_by_display_name=model.requested_by_display_name,
+        decided_by_display_name=model.decided_by_display_name,
     )

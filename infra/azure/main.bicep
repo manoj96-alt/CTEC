@@ -86,6 +86,9 @@ param dbBootstrapAppPassword string = ''
 @description('CDD-068: password to (re)set for the noetva_migrate role during bootstrap. Required only when deployDbBootstrapJob=true.')
 param dbBootstrapMigratePassword string = ''
 
+@description('CDD-087: false (default, safe) = do not deploy the Golden Demo restore Container Apps Job. Gated entirely independently of deployApplicationTier, mirroring deployDbBootstrapJob.')
+param deployGoldenRestoreJob bool = false
+
 param enableNatGateway bool = true
 param backendMinReplicas int = 1
 param backendMaxReplicas int = 3
@@ -136,6 +139,7 @@ module resources 'resources.bicep' = {
     dbBootstrapAdminPassword: dbBootstrapAdminPassword
     dbBootstrapAppPassword: dbBootstrapAppPassword
     dbBootstrapMigratePassword: dbBootstrapMigratePassword
+    deployGoldenRestoreJob: deployGoldenRestoreJob
     enableNatGateway: enableNatGateway
     backendMinReplicas: backendMinReplicas
     backendMaxReplicas: backendMaxReplicas
@@ -160,3 +164,4 @@ output keyVaultUri string = resources.outputs.keyVaultUri
 output postgresServerFqdn string = resources.outputs.postgresServerFqdn
 output cicdIdentityClientId string = resources.outputs.cicdIdentityClientId
 output dbBootstrapJobName string = resources.outputs.dbBootstrapJobName
+output goldenRestoreJobName string = resources.outputs.goldenRestoreJobName
