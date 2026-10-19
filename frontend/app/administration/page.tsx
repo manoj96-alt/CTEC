@@ -74,9 +74,9 @@ export default function Page() {
 
       <section className="panel" style={{ marginTop: "1.5rem" }}>
         <span className="eyebrow">Users &amp; Access</span>
-        <h2>Not managed by CTEC</h2>
+        <h2>Not managed by Noetva</h2>
         <p style={{ color: "var(--muted)" }}>
-          CTEC has no user, role, or tenant management capability of its own.
+          Noetva has no user, role, or tenant management capability of its own.
           Identity, authentication, and authorization are fully delegated to the
           identity provider.
         </p>

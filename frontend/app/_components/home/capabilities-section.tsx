@@ -24,7 +24,7 @@ const CAPABILITIES = [
 export function CapabilitiesSection() {
   return (
     <section className="mt-16">
-      <p className="eyebrow">What CTEC does</p>
+      <p className="eyebrow">What Noetva does</p>
       <h2 className="mt-2 text-2xl font-bold tracking-tight">
         Major capabilities
       </h2>

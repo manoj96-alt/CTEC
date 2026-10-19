@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/design-system/page-header";
 // Fitness's own classification for the identical situation (CDD-033 §15).
 const CARDS = [
   {
-    name: "Ask CTEC",
+    name: "Ask Noetva",
     href: "/intelligence/ask-ctec",
     status: "SUPPORTED_NOW" as const,
   },

@@ -19,7 +19,7 @@ export default function Page() {
         <h2>Ontology Proposal Governance</h2>
         <p style={{ color: "var(--muted)" }}>
           Review, approve, reject, and publish proposed ontology concepts and
-          relationships. This is CTEC&apos;s existing design-time governance
+          relationships. This is Noetva&apos;s existing design-time governance
           capability, not a runtime human-approval workflow.
         </p>
         <div style={{ marginTop: "0.5rem" }}>
@@ -54,9 +54,9 @@ export default function Page() {
         <span className="eyebrow">Approvals</span>
         <h2>Runtime human approval is not available</h2>
         <p style={{ color: "var(--muted)" }}>
-          CTEC does not have a durable, cross-workspace human-approval workflow
-          or approval queue for supply-chain decisions. Only the design-time
-          ontology-proposal review above exists today.
+          Noetva does not have a durable, cross-workspace human-approval
+          workflow or approval queue for supply-chain decisions. Only the
+          design-time ontology-proposal review above exists today.
         </p>
       </section>
     </div>

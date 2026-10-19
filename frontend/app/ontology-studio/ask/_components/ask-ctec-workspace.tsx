@@ -40,7 +40,7 @@ export function AskCtecWorkspace() {
       }
       setState({
         status: "error",
-        message: "The Ask CTEC service could not be reached.",
+        message: "The Ask Noetva service could not be reached.",
       });
     }
   }
@@ -55,7 +55,7 @@ export function AskCtecWorkspace() {
       <div className="page-heading">
         <div>
           <span className="eyebrow">Ontology Studio</span>
-          <h1>Ask CTEC</h1>
+          <h1>Ask Noetva</h1>
           <p>
             Ask a supported question about the governed enterprise ontology.
             Every answer is derived deterministically from persisted,
@@ -64,7 +64,7 @@ export function AskCtecWorkspace() {
         </div>
       </div>
 
-      <section className="panel" aria-label="Ask CTEC">
+      <section className="panel" aria-label="Ask Noetva">
         <form
           onSubmit={handleSubmit}
           className="action-row"
@@ -86,7 +86,7 @@ export function AskCtecWorkspace() {
             className="button"
             disabled={state.status === "loading"}
           >
-            Ask CTEC
+            Ask Noetva
           </button>
         </form>
         <p style={{ color: "var(--muted)", marginTop: "0.5rem" }}>
@@ -104,7 +104,7 @@ export function AskCtecWorkspace() {
         <div className="panel" role="alert">
           <p style={{ fontWeight: 700 }}>Sign in required</p>
           <p style={{ color: "var(--muted)" }}>
-            You must sign in to ask CTEC a question.
+            You must sign in to ask Noetva a question.
           </p>
           <button
             type="button"
@@ -126,7 +126,7 @@ export function AskCtecWorkspace() {
 
       {state.status === "error" && (
         <div className="panel error-summary" role="alert">
-          <p style={{ fontWeight: 700 }}>Ask CTEC service unavailable</p>
+          <p style={{ fontWeight: 700 }}>Ask Noetva service unavailable</p>
           <p>{state.message}</p>
           <button
             type="button"
@@ -152,7 +152,7 @@ function AskResult({ response }: { response: AskResponse }) {
           This question type is not supported yet
         </p>
         <p style={{ color: "var(--muted)" }}>
-          CTEC currently supports questions like <em>{EXAMPLE_QUESTION}</em>
+          Noetva currently supports questions like <em>{EXAMPLE_QUESTION}</em>
         </p>
       </div>
     );

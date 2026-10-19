@@ -72,7 +72,7 @@ export function ReportExecutionDialog({
         <h2 id={titleId}>Report Execution</h2>
         <p>
           I am reporting that the externally authorized remediation has been
-          executed. CTEC does not perform this execution itself and does not
+          executed. Noetva does not perform this execution itself and does not
           write to the source system.
         </p>
         <p style={{ color: "var(--muted)" }}>
